@@ -1,0 +1,1952 @@
+{
+  "DAE_Banners": {
+    "columns": [
+      {
+        "COLUMN_NAME": "BannerID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "BannerImagePath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "BannerType",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "BannerID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_ItemCategory": {
+    "columns": [
+      {
+        "COLUMN_NAME": "ItemCategoryID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemCategoryShortDescription",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemCategoryLongDescription",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemCategoryImagePath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Sequence",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "ItemCategoryID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_ItemCategoryCinemaWise": {
+    "columns": [
+      {
+        "COLUMN_NAME": "ItemCategoryCinemaWiseID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemCategoryID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "ItemCategoryCinemaWiseID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_ItemCinemaPrice": {
+    "columns": [
+      {
+        "COLUMN_NAME": "ItemCinemaPrice",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Item_strMasterItemcode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Monday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Tuesday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Wednesday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Thursday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Friday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Saturday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementPrice_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscountType_Sunday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementDiscount_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemComplementSellingPrice_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ToDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Sequence",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "QRDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "KioskDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "SeatQRDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "BillMeDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "ItemCinemaPrice"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_Items": {
+    "columns": [
+      {
+        "COLUMN_NAME": "ItemID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemCategoryID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDescription",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemWeight",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemImagePath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Monday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Monday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Tuesday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Tuesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Wednesday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Wednesday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Thursday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Thursday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Friday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Friday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Saturday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Saturday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemPrice_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscountType_Sunday",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemDiscount_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemSellingPrice_Sunday",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "TaxSlabID",
+        "DATA_TYPE": "nchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsItemComplementary",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "((0))"
+      },
+      {
+        "COLUMN_NAME": "IsAddon",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "((0))"
+      },
+      {
+        "COLUMN_NAME": "IsAddonItemParentID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "QRDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "KioskDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "SeatQRDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "BillMeDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "ItemID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_OrderItems": {
+    "columns": [
+      {
+        "COLUMN_NAME": "OrderItemID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ItemID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Quantity",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ProductPrice",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "DiscountPrice",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "TotalPrice",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "OrderItemID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_Orders": {
+    "columns": [
+      {
+        "COLUMN_NAME": "OrderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Session_lngSessionId",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderStatusID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "PromoCodeID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderSource",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderDiscount",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderPrice",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderFinalPrice",
+        "DATA_TYPE": "numeric",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderPaymentReferenceNumber",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 100,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderPaymentSourceID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderPreferenceComments",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderCustomerEmail",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderCustomerMobile",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 12,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderCustomerScreenNumber",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderCustomerSeatNumber",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 20,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "strTransId",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "intBookId",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "strBookId",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "RazorPayOrderID",
+        "DATA_TYPE": "nvarchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Mode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Film_strTitle",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Film_strCode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 20,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Session_dtmRealShow",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Source",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "is_sms_sent",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "('N')"
+      },
+      {
+        "COLUMN_NAME": "OrderDeliveryStatus",
+        "DATA_TYPE": "char",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderDeliveryDateTime",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "OrderID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_OrderStatus": {
+    "columns": [
+      {
+        "COLUMN_NAME": "OrderStatusID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "OrderStatus",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "OrderStatusID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_SystemConfig": {
+    "columns": [
+      {
+        "COLUMN_NAME": "ID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "key_id",
+        "DATA_TYPE": "nvarchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "key_secret",
+        "DATA_TYPE": "nvarchar",
+        "CHARACTER_MAXIMUM_LENGTH": -1,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "ID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_UserRoleForms": {
+    "columns": [
+      {
+        "COLUMN_NAME": "UserRoleFormID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuSubHeaderID",
+        "DATA_TYPE": "nchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuFormID",
+        "DATA_TYPE": "nchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "UserRoleID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "(getdate())"
+      }
+    ],
+    "primaryKey": [
+      "UserRoleFormID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_UserRoles": {
+    "columns": [
+      {
+        "COLUMN_NAME": "UserRoleID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "UserRoleName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "UserDescription",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 250,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "UserRoleID"
+    ],
+    "foreignKeys": []
+  },
+  "DAE_Users": {
+    "columns": [
+      {
+        "COLUMN_NAME": "UserID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "UserTypeID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "UserRoleID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Username",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Password",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "FirstName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MiddleName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "LastName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MobileNumber",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 12,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ProfilePicturePath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "DateOfBirth",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "UserID"
+    ],
+    "foreignKeys": []
+  },
+  "MenuForms": {
+    "columns": [
+      {
+        "COLUMN_NAME": "MenuFormID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuSubHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuFormCaption",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuFormIconPath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuFormURL",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "(getdate())"
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "MenuFormID"
+    ],
+    "foreignKeys": []
+  },
+  "MenuHeader": {
+    "columns": [
+      {
+        "COLUMN_NAME": "MenuHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuHeaderCaption",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuIconPath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuHeaderURL",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "(getdate())"
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "MenuHeaderID"
+    ],
+    "foreignKeys": []
+  },
+  "MenuSubHeader": {
+    "columns": [
+      {
+        "COLUMN_NAME": "MenuSubHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuHeaderID",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuSubHeaderCaption",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuSubHeaderIconPath",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "MenuSubHeaderURL",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 500,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "IsActive",
+        "DATA_TYPE": "bit",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "CreatedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": "(getdate())"
+      },
+      {
+        "COLUMN_NAME": "ModifiedBy",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "ModifiedDate",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      }
+    ],
+    "primaryKey": [
+      "MenuSubHeaderID"
+    ],
+    "foreignKeys": []
+  },
+  "tblCinema": {
+    "columns": [
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_dtmLastDataRefresh",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceURL",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 255,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceLogin",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServicePWD",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_intTimeOut",
+        "DATA_TYPE": "smallint",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "((0))"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strCatalogue1",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strCatalogue2",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strCatalogue3",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_dtmStamp",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "(getdate())"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strLicenseName",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strLicenseNo",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 20,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceDomain",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_intWebTimeOut",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "((10))"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strIsOnline",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('Y')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_intSyncSequence",
+        "DATA_TYPE": "smallint",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "((1))"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceVersion",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 20,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strVistaRemoteVersion",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('Bigtree.VistaRemote.dll')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strCompanyCode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strRegion",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 30,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strBranchCode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 4,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strScreenList",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 1000,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strParams",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 255,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strUseHOCode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 1,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('N')"
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceURL2",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 255,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_strWebServiceURL3",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 255,
+        "IS_NULLABLE": "YES",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "Cinema_intSyncTimeOut",
+        "DATA_TYPE": "int",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "((180))"
+      }
+    ],
+    "primaryKey": [
+      "Cinema_strID"
+    ],
+    "foreignKeys": []
+  },
+  "tblLicenses": {
+    "columns": [
+      {
+        "COLUMN_NAME": "Cinema_strID",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "License_strType",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "License_strCode",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "License_strPayType",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": null
+      },
+      {
+        "COLUMN_NAME": "License_dtmStamp",
+        "DATA_TYPE": "datetime",
+        "CHARACTER_MAXIMUM_LENGTH": null,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "(getdate())"
+      },
+      {
+        "COLUMN_NAME": "License_strUserNo",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 10,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      },
+      {
+        "COLUMN_NAME": "License_strWorkstationId",
+        "DATA_TYPE": "varchar",
+        "CHARACTER_MAXIMUM_LENGTH": 50,
+        "IS_NULLABLE": "NO",
+        "COLUMN_DEFAULT": "('')"
+      }
+    ],
+    "primaryKey": [
+      "Cinema_strID",
+      "License_strType"
+    ],
+    "foreignKeys": [
+      {
+        "constraint_name": "FK_tblLicenses_tblCinema",
+        "column_name": "Cinema_strID",
+        "referenced_table": "tblCinema",
+        "referenced_column": "Cinema_strID"
+      }
+    ]
+  }
+}

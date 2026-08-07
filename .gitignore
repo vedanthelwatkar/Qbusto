@@ -39,3 +39,6 @@ Thumbs.db
 # Misc
 coverage/
 .cache/
+
+# claude
+.claude/

@@ -1,0 +1,1088 @@
+{
+  "cinema_ids": [
+    {
+      "Cinema_strID": "1038",
+      "Cinema_strName": "Miraj Cinemas Gurdaspur"
+    },
+    {
+      "Cinema_strID": "1046",
+      "Cinema_strName": "Miraj Test"
+    },
+    {
+      "Cinema_strID": "1051",
+      "Cinema_strName": "Miraj Cinemas - Sekaran Mall, Chennai"
+    },
+    {
+      "Cinema_strID": "1052",
+      "Cinema_strName": "Akash Miraj cinemas : Azadpur"
+    },
+    {
+      "Cinema_strID": "1055",
+      "Cinema_strName": "Miraj Cinemas Vizag"
+    },
+    {
+      "Cinema_strID": "1057",
+      "Cinema_strName": "MIRAJ CINEMAS : Blue City Mall, Jodhpur"
+    },
+    {
+      "Cinema_strID": "1058",
+      "Cinema_strName": "Miraj TGIP Noida"
+    },
+    {
+      "Cinema_strID": "1061",
+      "Cinema_strName": "Miraj Cinemas: Geetanjali, Karwar"
+    },
+    {
+      "Cinema_strID": "1065",
+      "Cinema_strName": "Miraj Cinema Pune "
+    },
+    {
+      "Cinema_strID": "1067",
+      "Cinema_strName": "Miraj Cinema Alwar"
+    },
+    {
+      "Cinema_strID": "1068",
+      "Cinema_strName": "Miraj Cinemas : RMall, Mulund"
+    },
+    {
+      "Cinema_strID": "1069",
+      "Cinema_strName": "Miraj Cinemas: Salt Lake, Kolkata"
+    },
+    {
+      "Cinema_strID": "1070",
+      "Cinema_strName": "Miraj Cinema Shalin Square"
+    },
+    {
+      "Cinema_strID": "1071",
+      "Cinema_strName": "Miraj Cinema Ansal"
+    },
+    {
+      "Cinema_strID": "1074",
+      "Cinema_strName": "Miraj Cinemas Imax : Wadala"
+    },
+    {
+      "Cinema_strID": "1077",
+      "Cinema_strName": "Miraj Cinemas: India Expo Plaza"
+    },
+    {
+      "Cinema_strID": "1079",
+      "Cinema_strName": "Miraj Vardhman Cinemas: Sanand, Ahmedabad"
+    },
+    {
+      "Cinema_strID": "1080",
+      "Cinema_strName": "Miraj Cinemas Entertainland, Orris, Gurgaon"
+    },
+    {
+      "Cinema_strID": "1085",
+      "Cinema_strName": "Miraj Cinemas KLJ Square Gurugram"
+    },
+    {
+      "Cinema_strID": "1090",
+      "Cinema_strName": "Miraj ATS Ghaziabad"
+    }
+  ],
+  "category_samples": [
+    {
+      "ItemCategoryID": 1,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "ALL TIME FAVOURITES",
+      "Sequence": 1,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 2,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "SANDWICHES & BURGERS",
+      "Sequence": 4,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 3,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "BURGER GRILLS",
+      "Sequence": 15,
+      "IsActive": false
+    },
+    {
+      "ItemCategoryID": 4,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "PIZZERIA & FRIES",
+      "Sequence": 5,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 5,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "APPETIZERS",
+      "Sequence": 6,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 6,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "COMBOS",
+      "Sequence": 7,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 18,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "Sandwich's",
+      "Sequence": 16,
+      "IsActive": false
+    },
+    {
+      "ItemCategoryID": 21,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "MOCKTAILS & SHAKES",
+      "Sequence": 9,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 22,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "RTD BEVERAGES",
+      "Sequence": 2,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 23,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "SIP-N-SNACKS",
+      "Sequence": 8,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 24,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "SNACKS",
+      "Sequence": 3,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 25,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "DESSERTS",
+      "Sequence": 10,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 26,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "WOK & PASTA",
+      "Sequence": 17,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 27,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "OFFERDAY",
+      "Sequence": 12,
+      "IsActive": false
+    },
+    {
+      "ItemCategoryID": 28,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "HOT BEVERAGE",
+      "Sequence": 20,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 29,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "RICE BOWL & SALADS",
+      "Sequence": 18,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 30,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "JAIN MENU",
+      "Sequence": 21,
+      "IsActive": true
+    },
+    {
+      "ItemCategoryID": 31,
+      "Cinema_strID": "0",
+      "ItemCategoryShortDescription": "CHAAT",
+      "Sequence": 27,
+      "IsActive": true
+    }
+  ],
+  "category_cinema_wise": [
+    {
+      "ItemCategoryCinemaWiseID": 4171,
+      "ItemCategoryID": 1128,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4172,
+      "ItemCategoryID": 1166,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4173,
+      "ItemCategoryID": 1136,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4174,
+      "ItemCategoryID": 1191,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4175,
+      "ItemCategoryID": 1179,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4176,
+      "ItemCategoryID": 1143,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4177,
+      "ItemCategoryID": 1133,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4178,
+      "ItemCategoryID": 1057,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4179,
+      "ItemCategoryID": 1146,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4180,
+      "ItemCategoryID": 1181,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4181,
+      "ItemCategoryID": 1180,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4182,
+      "ItemCategoryID": 1068,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4183,
+      "ItemCategoryID": 1123,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4184,
+      "ItemCategoryID": 1120,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4185,
+      "ItemCategoryID": 1119,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4186,
+      "ItemCategoryID": 1046,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4187,
+      "ItemCategoryID": 1136,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4188,
+      "ItemCategoryID": 1125,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4189,
+      "ItemCategoryID": 1150,
+      "Cinema_strID": null
+    },
+    {
+      "ItemCategoryCinemaWiseID": 4190,
+      "ItemCategoryID": 1187,
+      "Cinema_strID": null
+    }
+  ],
+  "item_samples": [
+    {
+      "ItemID": 2046,
+      "ItemCategoryID": 2,
+      "ItemName": "LOADED VEGGIE BURGER",
+      "ItemWeight": "160GM",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2047,
+      "ItemCategoryID": 1,
+      "ItemName": "MEGA SALTED POPCORN",
+      "ItemWeight": "200gm",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2048,
+      "ItemCategoryID": 1,
+      "ItemName": "MEGA CHEESE POPCORN",
+      "ItemWeight": "200gm",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2049,
+      "ItemCategoryID": 1,
+      "ItemName": "MEGA CARAMEL POPCORN",
+      "ItemWeight": "200GM",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2050,
+      "ItemCategoryID": 1,
+      "ItemName": "FAMILY SALTED POPCORN",
+      "ItemWeight": "90GM",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2051,
+      "ItemCategoryID": 1,
+      "ItemName": "FAMILY CHEESE POPCORN",
+      "ItemWeight": "90GM",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2052,
+      "ItemCategoryID": 1,
+      "ItemName": "FAMILY CARAMEL POPCORN",
+      "ItemWeight": "90GM",
+      "IsActive": false,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2053,
+      "ItemCategoryID": 1,
+      "ItemName": "COKE 850 ML",
+      "ItemWeight": "",
+      "IsActive": true,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2054,
+      "ItemCategoryID": 1,
+      "ItemName": "THUMSUP 850 ML",
+      "ItemWeight": "",
+      "IsActive": true,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemID": 2055,
+      "ItemCategoryID": 1,
+      "ItemName": "SPRITE 850 ML",
+      "ItemWeight": "",
+      "IsActive": true,
+      "IsItemComplementary": false,
+      "IsAddon": false,
+      "IsAddonItemParentID": 0,
+      "TaxSlabID": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    }
+  ],
+  "item_pricing_sample": [
+    {
+      "ItemCinemaPrice": 1059,
+      "ItemID": 2047,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001624",
+      "ItemComplementPrice_Monday": 150,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1060,
+      "ItemID": 2048,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001027",
+      "ItemComplementPrice_Monday": 390,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1061,
+      "ItemID": 2049,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001217",
+      "ItemComplementPrice_Monday": 390,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1062,
+      "ItemID": 2050,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001089",
+      "ItemComplementPrice_Monday": 320,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1063,
+      "ItemID": 2051,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001023",
+      "ItemComplementPrice_Monday": 320,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1064,
+      "ItemID": 2052,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000001211",
+      "ItemComplementPrice_Monday": 320,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 0,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 0,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1065,
+      "ItemID": 2053,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000000018",
+      "ItemComplementPrice_Monday": 420,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1066,
+      "ItemID": 2054,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000000029",
+      "ItemComplementPrice_Monday": 420,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1067,
+      "ItemID": 2055,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000000040",
+      "ItemComplementPrice_Monday": 420,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    },
+    {
+      "ItemCinemaPrice": 1068,
+      "ItemID": 2056,
+      "Cinema_strID": "1204",
+      "Item_strMasterItemcode": "I000000035",
+      "ItemComplementPrice_Monday": 270,
+      "ItemComplementDiscountType_Monday": null,
+      "QRDiscount": 5,
+      "KioskDiscount": 0,
+      "SeatQRDiscount": 5,
+      "BillMeDiscount": 0
+    }
+  ],
+  "order_sources": [
+    {
+      "OrderSource": "K"
+    }
+  ],
+  "order_modes": [
+    {
+      "Mode": "BillMe"
+    },
+    {
+      "Mode": null
+    },
+    {
+      "Mode": "QRseat"
+    },
+    {
+      "Mode": "Kiosk"
+    },
+    {
+      "Mode": "QR"
+    }
+  ],
+  "order_sources_field": [
+    {
+      "Source": "Unknown"
+    },
+    {
+      "Source": "Windows Desktop"
+    },
+    {
+      "Source": "Android Mobile"
+    },
+    {
+      "Source": "Android"
+    },
+    {
+      "Source": "Mac Desktop"
+    },
+    {
+      "Source": null
+    },
+    {
+      "Source": "iOS Mobile"
+    },
+    {
+      "Source": "Linux Desktop"
+    }
+  ],
+  "order_statuses": [
+    {
+      "OrderStatusID": 1,
+      "OrderStatus": "Initiated",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 2,
+      "OrderStatus": "Rejected",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 3,
+      "OrderStatus": "Order Received, Vista posting successful",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 4,
+      "OrderStatus": "Payment Refund",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 5,
+      "OrderStatus": "Order Received, Vista posting pending",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 6,
+      "OrderStatus": "Order Ready",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 7,
+      "OrderStatus": "Order Delivered",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 9,
+      "OrderStatus": "Payment Initiated",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "OrderStatusID": 11,
+      "OrderStatus": "Order Received, Vista posting successful (Manual)",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": "2022-11-25T00:00:00.000Z",
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    }
+  ],
+  "order_delivery_statuses": [
+    {
+      "OrderDeliveryStatus": "Y"
+    },
+    {
+      "OrderDeliveryStatus": null
+    },
+    {
+      "OrderDeliveryStatus": "N"
+    }
+  ],
+  "order_samples": [
+    {
+      "OrderID": 1003770,
+      "Cinema_strID": "1074",
+      "OrderStatusID": 9,
+      "OrderSource": "K",
+      "OrderDate": "2026-07-23T22:17:35.510Z",
+      "OrderDiscount": 0,
+      "OrderPrice": 532,
+      "OrderFinalPrice": 532,
+      "OrderPaymentReferenceNumber": "-",
+      "OrderPaymentSourceID": 1,
+      "OrderCustomerScreenNumber": 1,
+      "OrderCustomerSeatNumber": "D-16",
+      "Mode": "QR",
+      "Source": "iOS Mobile",
+      "OrderDeliveryStatus": null
+    },
+    {
+      "OrderID": 1003769,
+      "Cinema_strID": "1128",
+      "OrderStatusID": 3,
+      "OrderSource": "K",
+      "OrderDate": "2026-07-23T22:16:22.087Z",
+      "OrderDiscount": 0,
+      "OrderPrice": 551,
+      "OrderFinalPrice": 551,
+      "OrderPaymentReferenceNumber": "pay_TH0za7yv3R2bMS",
+      "OrderPaymentSourceID": 1,
+      "OrderCustomerScreenNumber": 1,
+      "OrderCustomerSeatNumber": "B-10",
+      "Mode": "QRseat",
+      "Source": "Android Mobile",
+      "OrderDeliveryStatus": null
+    },
+    {
+      "OrderID": 1003768,
+      "Cinema_strID": "1074",
+      "OrderStatusID": 9,
+      "OrderSource": "K",
+      "OrderDate": "2026-07-23T22:14:14.553Z",
+      "OrderDiscount": 0,
+      "OrderPrice": 494,
+      "OrderFinalPrice": 494,
+      "OrderPaymentReferenceNumber": "-",
+      "OrderPaymentSourceID": 1,
+      "OrderCustomerScreenNumber": 1,
+      "OrderCustomerSeatNumber": "F-13",
+      "Mode": "QR",
+      "Source": "Android Mobile",
+      "OrderDeliveryStatus": null
+    },
+    {
+      "OrderID": 1003767,
+      "Cinema_strID": "1191",
+      "OrderStatusID": 3,
+      "OrderSource": "K",
+      "OrderDate": "2026-07-23T22:12:48.520Z",
+      "OrderDiscount": 0,
+      "OrderPrice": 408.5,
+      "OrderFinalPrice": 408.5,
+      "OrderPaymentReferenceNumber": "pay_TH0vyb0Sb5zfoH",
+      "OrderPaymentSourceID": 1,
+      "OrderCustomerScreenNumber": 4,
+      "OrderCustomerSeatNumber": "C-16",
+      "Mode": "QR",
+      "Source": "Linux Desktop",
+      "OrderDeliveryStatus": "N"
+    },
+    {
+      "OrderID": 1003766,
+      "Cinema_strID": "1143",
+      "OrderStatusID": 3,
+      "OrderSource": "K",
+      "OrderDate": "2026-07-23T22:11:50.760Z",
+      "OrderDiscount": 0,
+      "OrderPrice": 684,
+      "OrderFinalPrice": 684,
+      "OrderPaymentReferenceNumber": "pay_TH0uzG4RcQNiZZ",
+      "OrderPaymentSourceID": 1,
+      "OrderCustomerScreenNumber": 1,
+      "OrderCustomerSeatNumber": "F-9",
+      "Mode": "QR",
+      "Source": "iOS Mobile",
+      "OrderDeliveryStatus": "N"
+    }
+  ],
+  "banner_types": [
+    {
+      "BannerType": "H"
+    },
+    {
+      "BannerType": "I"
+    }
+  ],
+  "user_roles": [
+    {
+      "UserRoleID": 1,
+      "UserRoleName": "Admin",
+      "UserDescription": "Administrator",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": null,
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "UserRoleID": 2,
+      "UserRoleName": "IT",
+      "UserDescription": "IT Team",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": null,
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "UserRoleID": 3,
+      "UserRoleName": "CM",
+      "UserDescription": "CM Team",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": null,
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    },
+    {
+      "UserRoleID": 4,
+      "UserRoleName": "DM",
+      "UserDescription": "DM Team",
+      "IsActive": true,
+      "CreatedBy": 1,
+      "CreatedDate": null,
+      "ModifiedBy": null,
+      "ModifiedDate": null
+    }
+  ],
+  "user_samples": [
+    {
+      "UserID": 2,
+      "Cinema_strID": "0",
+      "UserTypeID": 1,
+      "UserRoleID": 1,
+      "Username": "Admin",
+      "FirstName": "Admin",
+      "LastName": null
+    },
+    {
+      "UserID": 3,
+      "Cinema_strID": "0",
+      "UserTypeID": 1,
+      "UserRoleID": 1,
+      "Username": "vista.fnb",
+      "FirstName": "Vista",
+      "LastName": "FNB"
+    },
+    {
+      "UserID": 4,
+      "Cinema_strID": "1046",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.rajasthan",
+      "FirstName": "IT",
+      "LastName": "Rajasthan"
+    },
+    {
+      "UserID": 5,
+      "Cinema_strID": "1046",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.centraleast",
+      "FirstName": "IT",
+      "LastName": "Centraleast"
+    },
+    {
+      "UserID": 6,
+      "Cinema_strID": "1046",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.north",
+      "FirstName": "IT",
+      "LastName": "North"
+    },
+    {
+      "UserID": 7,
+      "Cinema_strID": "1046",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.gujarat",
+      "FirstName": "IT",
+      "LastName": "Gujarat"
+    },
+    {
+      "UserID": 8,
+      "Cinema_strID": "1046",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.mumbai",
+      "FirstName": "IT",
+      "LastName": "Mumbai"
+    },
+    {
+      "UserID": 9,
+      "Cinema_strID": "1210",
+      "UserTypeID": 1,
+      "UserRoleID": 2,
+      "Username": "it.coimbatore",
+      "FirstName": "IT",
+      "LastName": "Coimbatore"
+    },
+    {
+      "UserID": 10,
+      "Cinema_strID": "0",
+      "UserTypeID": 1,
+      "UserRoleID": 1,
+      "Username": "bivash.sarkar",
+      "FirstName": "Bivash",
+      "LastName": "Sarkar"
+    },
+    {
+      "UserID": 11,
+      "Cinema_strID": "0",
+      "UserTypeID": 1,
+      "UserRoleID": 1,
+      "Username": "chitrang.naik",
+      "FirstName": "Chitrang",
+      "LastName": "Naik"
+    }
+  ],
+  "discount_types_items": [],
+  "item_prices_sample": [
+    {
+      "ItemID": 2046,
+      "ItemName": "LOADED VEGGIE BURGER",
+      "ItemPrice_Monday": 250,
+      "ItemDiscountType_Monday": null,
+      "ItemDiscount_Monday": null,
+      "ItemSellingPrice_Monday": null
+    },
+    {
+      "ItemID": 2047,
+      "ItemName": "MEGA SALTED POPCORN",
+      "ItemPrice_Monday": 420,
+      "ItemDiscountType_Monday": null,
+      "ItemDiscount_Monday": null,
+      "ItemSellingPrice_Monday": null
+    },
+    {
+      "ItemID": 2048,
+      "ItemName": "MEGA CHEESE POPCORN",
+      "ItemPrice_Monday": 420,
+      "ItemDiscountType_Monday": null,
+      "ItemDiscount_Monday": null,
+      "ItemSellingPrice_Monday": null
+    },
+    {
+      "ItemID": 2049,
+      "ItemName": "MEGA CARAMEL POPCORN",
+      "ItemPrice_Monday": 420,
+      "ItemDiscountType_Monday": null,
+      "ItemDiscount_Monday": null,
+      "ItemSellingPrice_Monday": null
+    },
+    {
+      "ItemID": 2050,
+      "ItemName": "FAMILY SALTED POPCORN",
+      "ItemPrice_Monday": 340,
+      "ItemDiscountType_Monday": null,
+      "ItemDiscount_Monday": null,
+      "ItemSellingPrice_Monday": null
+    }
+  ],
+  "indexes": [
+    {
+      "table_name": "DAE_Banners",
+      "index_name": "PK_DAE_HomePageBanner",
+      "is_unique": true,
+      "columns": "BannerID"
+    },
+    {
+      "table_name": "DAE_ItemCategory",
+      "index_name": "PK_DAE_ProductCategory",
+      "is_unique": true,
+      "columns": "ItemCategoryID"
+    },
+    {
+      "table_name": "DAE_ItemCategoryCinemaWise",
+      "index_name": "PK_DAE_ItemCategoryCinemaWise",
+      "is_unique": true,
+      "columns": "ItemCategoryCinemaWiseID"
+    },
+    {
+      "table_name": "DAE_ItemCinemaPrice",
+      "index_name": "PK_DAE_[ItemCinemaPrice",
+      "is_unique": true,
+      "columns": "ItemCinemaPrice"
+    },
+    {
+      "table_name": "DAE_Items",
+      "index_name": "PK_DAE_Items",
+      "is_unique": true,
+      "columns": "ItemID"
+    },
+    {
+      "table_name": "DAE_OrderItems",
+      "index_name": "PK_DAE_OrderItems",
+      "is_unique": true,
+      "columns": "OrderItemID"
+    },
+    {
+      "table_name": "DAE_Orders",
+      "index_name": "PK_Order",
+      "is_unique": true,
+      "columns": "OrderID"
+    },
+    {
+      "table_name": "DAE_OrderStatus",
+      "index_name": "PK_DAE_OrderStatus",
+      "is_unique": true,
+      "columns": "OrderStatusID"
+    },
+    {
+      "table_name": "DAE_SystemConfig",
+      "index_name": "PK_DAE_SystemConfig",
+      "is_unique": true,
+      "columns": "ID"
+    },
+    {
+      "table_name": "DAE_UserRoleForms",
+      "index_name": "PK_UserRoleForms",
+      "is_unique": true,
+      "columns": "UserRoleFormID"
+    },
+    {
+      "table_name": "DAE_UserRoles",
+      "index_name": "PK_UserRoles",
+      "is_unique": true,
+      "columns": "UserRoleID"
+    },
+    {
+      "table_name": "DAE_Users",
+      "index_name": "PK_Users",
+      "is_unique": true,
+      "columns": "UserID"
+    },
+    {
+      "table_name": "tblCinema",
+      "index_name": "PK_tblCinema",
+      "is_unique": true,
+      "columns": "Cinema_strID"
+    },
+    {
+      "table_name": "tblLicenses",
+      "index_name": "PK_tblLicenses",
+      "is_unique": true,
+      "columns": "Cinema_strID, License_strType"
+    }
+  ]
+}
