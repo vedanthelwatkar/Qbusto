@@ -14,6 +14,13 @@ const { PAGINATION } = require('../constants');
 /** A positive integer primary key. */
 const id = Joi.number().integer().positive();
 
+/**
+ * A plaintext password on its way to the User model's hashing hook.
+ * Capped at 72 because bcrypt silently ignores anything past 72 bytes - a
+ * longer password would give a false sense of strength.
+ */
+const password = Joi.string().min(8).max(72);
+
 /** `{ id }` route params, e.g. GET /products/:id */
 const idParam = Joi.object({
   id: id.required(),
@@ -32,4 +39,4 @@ const paginationQuery = Joi.object({
   search: Joi.string().trim().max(200).allow(''),
 });
 
-module.exports = { id, idParam, paginationQuery };
+module.exports = { id, idParam, password, paginationQuery };

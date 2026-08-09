@@ -2,6 +2,8 @@
 
 const { Model } = require('sequelize');
 
+const { ValidationError } = require('../src/utils/errors');
+
 const CHANNEL_DISCOUNT_FIELDS = [
   'discountOnQr',
   'discountOnKiosk',
@@ -114,9 +116,14 @@ module.exports = (sequelize, DataTypes) => {
     );
 
     if (orphaned.length > 0) {
-      throw new Error(
-        `discountType must be set ('P' or 'F') when any discount amount is provided; ` +
-          `got values for: ${orphaned.join(', ')}.`
+      // ValidationError: the payload contradicts itself, independently of
+      // anything stored, so this is a 400.
+      throw new ValidationError(
+        "discountType must be set ('P' or 'F') when any discount amount is provided",
+        orphaned.map((field) => ({
+          field,
+          message: `'${field}' requires 'discountType' to be set`,
+        }))
       );
     }
   });

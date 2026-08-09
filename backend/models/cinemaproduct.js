@@ -2,6 +2,8 @@
 
 const { Model } = require('sequelize');
 
+const { ConflictError } = require('../src/utils/errors');
+
 module.exports = (sequelize, DataTypes) => {
   class CinemaProduct extends Model {
     static associate(models) {
@@ -101,9 +103,17 @@ module.exports = (sequelize, DataTypes) => {
     if (!cinema || !product) return;
 
     if (cinema.chainId !== product.chainId) {
-      throw new Error(
-        `Cross-tenant link rejected: cinema ${cinema.id} belongs to chain ${cinema.chainId} ` +
-          `but product ${product.id} belongs to chain ${product.chainId}.`
+      // ConflictError, not ValidationError: both ids are well-formed and both
+      // rows exist. What fails is their relationship to stored state, so the
+      // client gets a 409 rather than a 500.
+      throw new ConflictError(
+        'A cinema can only be linked to a product belonging to the same chain',
+        {
+          cinemaId: cinema.id,
+          cinemaChainId: cinema.chainId,
+          productId: product.id,
+          productChainId: product.chainId,
+        }
       );
     }
   });

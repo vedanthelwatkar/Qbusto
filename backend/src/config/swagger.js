@@ -39,6 +39,8 @@ const definition = {
   tags: [
     { name: 'Health', description: 'Liveness, readiness and version probes' },
     { name: 'Meta', description: 'API metadata' },
+    { name: 'Auth', description: 'Login, session and password management' },
+    { name: 'Users', description: 'User accounts and module permissions' },
   ],
   components: {
     securitySchemes: {
@@ -79,6 +81,71 @@ const definition = {
             },
           },
           meta: { $ref: '#/components/schemas/ResponseMeta' },
+        },
+      },
+      UserPermission: {
+        type: 'object',
+        properties: {
+          moduleName: {
+            type: 'string',
+            enum: [
+              'Dashboard',
+              'Orders',
+              'Products',
+              'Categories',
+              'Pricing',
+              'Banners',
+              'Users',
+              'Reports',
+              'POS Integrations',
+              'Settings',
+            ],
+            example: 'Orders',
+          },
+          canRead: { type: 'boolean', example: true },
+          canEdit: { type: 'boolean', example: false },
+          canDelete: { type: 'boolean', example: false },
+        },
+      },
+      UserPermissionInput: {
+        allOf: [
+          { $ref: '#/components/schemas/UserPermission' },
+          { type: 'object', required: ['moduleName'] },
+        ],
+        description: 'Omitted flags default to false.',
+      },
+      // The password hash is not part of this schema and is never returned.
+      User: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 12 },
+          chainId: { type: 'integer', example: 1 },
+          cinemaId: { type: 'integer', nullable: true, example: 3 },
+          role: {
+            type: 'string',
+            enum: ['owner', 'chain_admin', 'cinema_admin', 'kitchen_staff', 'cinema_accountant'],
+            example: 'cinema_admin',
+          },
+          username: { type: 'string', example: 'jordan.p' },
+          firstName: { type: 'string', nullable: true, example: 'Jordan' },
+          lastName: { type: 'string', nullable: true, example: 'Pereira' },
+          mobile: { type: 'string', nullable: true, example: '9876543210' },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          permissions: {
+            type: 'array',
+            description: 'Present only when the user was loaded with permissions.',
+            items: { $ref: '#/components/schemas/UserPermission' },
+          },
+        },
+      },
+      LoginResult: {
+        type: 'object',
+        properties: {
+          token: { type: 'string', description: 'Signed JWT. Send as `Authorization: Bearer`.' },
+          expiresIn: { type: 'string', example: '1d' },
+          user: { $ref: '#/components/schemas/User' },
         },
       },
     },
