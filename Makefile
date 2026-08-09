@@ -2,6 +2,7 @@
         dev-consumer dev-dashboard dev-kitchen dev-backend \
         build build-consumer build-dashboard build-kitchen \
         migrate migrate-undo seed db-create \
+        verify-schema healthcheck verify setup \
         gen-api gen-spec gen-api-consumer gen-api-dashboard gen-api-kitchen \
         clean
 
@@ -61,6 +62,31 @@ migrate-undo:
 
 seed:
 	cd backend && npx sequelize-cli db:seed:all
+
+# ---- Verification ----
+# verify-schema: models, associations, Sequelize init (run after migrating).
+# healthcheck:   deployment readiness - connection, migrations, seeds, env vars.
+
+verify-schema:
+	cd backend && npm run verify-schema
+
+healthcheck:
+	cd backend && npm run healthcheck
+
+verify:
+	cd backend && npm run verify-schema
+	cd backend && npm run healthcheck
+
+# ---- First-time setup ----
+# Installs, creates the database, migrates, seeds, then verifies.
+
+setup:
+	cd backend && npm install
+	cd backend && npx sequelize-cli db:create
+	cd backend && npx sequelize-cli db:migrate
+	cd backend && npx sequelize-cli db:seed:all
+	cd backend && npm run verify-schema
+	cd backend && npm run healthcheck
 
 # ---- API client generation ----
 # Run this after changing/adding backend routes to keep frontend API calls in sync.

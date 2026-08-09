@@ -1,0 +1,18 @@
+node_modules
+coverage
+logs
+package-lock.json
+
+# Frozen database layer and its tooling - formatting these would produce a large
+# diff against files that are deliberately not being changed.
+migrations
+models
+seeders
+config/config.js
+scripts/verify-schema.js
+scripts/healthcheck.js
+scripts/inspect-legacy-schema.js
+scripts/inspect-legacy-samples.js
+scripts/legacy-schema-output.json
+scripts/legacy-samples-output.json
+docs

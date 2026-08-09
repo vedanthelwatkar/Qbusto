@@ -1,8 +1,8 @@
 # QBusto Database Schema
 
 > Technical source of truth for the database.
-> Last updated: 2026-08-07
-> Revision: 6 - user permissions, banner scheduling, and clarified discount semantics updated.
+> Last updated: 2026-08-09
+> Revision: 7 - documented `IX_product_availability_hours_lookup` and the as-implemented audit-FK delete rule.
 
 ---
 
@@ -40,7 +40,11 @@ Reasons:
 - `orders` and `order_items` are business/history records where per-row creator/updater FKs add little value.
 - `users` should not be self-referenced with audit fields unless a future requirement explicitly needs it.
 
-All audit-user FKs use `ON DELETE SET NULL` so business records are preserved if a user is deleted or deactivated.
+Audit-user FKs are intended to behave as `ON DELETE SET NULL` so business records are preserved if a user is deleted or deactivated.
+
+**As implemented, all audit-user FKs use `ON DELETE NO ACTION, ON UPDATE NO ACTION`.** SQL Server rejects two cascading foreign keys from the same table to the same parent table (Msg 1785, "may cause cycles or multiple cascade paths"), and every audit table declares both `created_by` and `updated_by` against `users.id`. The null-on-delete behaviour is therefore enforced by the application layer, not the database. This supersedes the `ON DELETE SET NULL` annotation shown in the per-column tables below - treat those annotations as intent, not as implemented DDL.
+
+In normal operation this is not exercised: soft deletion (`is_active = 0`) is the standard deactivation pattern and user rows are not hard-deleted.
 
 ---
 
@@ -208,6 +212,8 @@ Checks:
 - `start_time < end_time` is intentionally not enforced so overnight windows can be represented and interpreted by application logic.
 
 Unique constraint: `(cinema_product_id, day_of_week, start_time, end_time)` to prevent exact duplicate windows.
+
+Non-unique index `IX_product_availability_hours_lookup` on `(cinema_product_id, day_of_week)` optimizes lookup of a product's availability schedule for a given day of the week.
 
 Multiple windows per product and day are allowed. Overlapping windows for the same product and day should be prevented by application validation.
 
@@ -700,6 +706,7 @@ Unique constraints and indexes used in the active schema:
 - `cinema_products(cinema_id, product_id)` unique
 - `product_pricing(cinema_id, product_id, day_of_week)` unique
 - `product_availability_hours(cinema_product_id, day_of_week, start_time, end_time)` unique
+- `product_availability_hours(cinema_product_id, day_of_week)` non-unique index, name `IX_product_availability_hours_lookup` - optimizes lookup of a product's availability schedule for a given day of week
 - `order_statuses.code` unique
 - `payment_statuses.code` unique
 - `users.username` unique
