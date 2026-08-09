@@ -41,6 +41,9 @@ const definition = {
     { name: 'Meta', description: 'API metadata' },
     { name: 'Auth', description: 'Login, session and password management' },
     { name: 'Users', description: 'User accounts and module permissions' },
+    { name: 'Chains', description: 'Cinema chains - the top of the tenant tree' },
+    { name: 'Cinemas', description: 'Cinemas belonging to a chain' },
+    { name: 'Screens', description: 'Screens belonging to a cinema' },
   ],
   components: {
     securitySchemes: {
@@ -138,6 +141,59 @@ const definition = {
             description: 'Present only when the user was loaded with permissions.',
             items: { $ref: '#/components/schemas/UserPermission' },
           },
+        },
+      },
+      Chain: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          name: { type: 'string', example: 'Starlight Cinemas' },
+          logoImageUrl: {
+            type: 'string',
+            nullable: true,
+            example: 'https://cdn.qbusto.com/chains/1/logo.png',
+          },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      Cinema: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 3 },
+          chainId: { type: 'integer', example: 1 },
+          code: {
+            type: 'string',
+            description: 'Short identifier used in QR ordering URLs. Unique system-wide.',
+            example: 'BLR-01',
+          },
+          name: { type: 'string', example: 'Starlight Indiranagar' },
+          location: { type: 'string', nullable: true, example: '100 Feet Road, Indiranagar' },
+          city: { type: 'string', nullable: true, example: 'Bengaluru' },
+          gstNumber: { type: 'string', nullable: true, example: '29ABCDE1234F1Z5' },
+          fssaiNumber: { type: 'string', nullable: true, example: '12345678901234' },
+          activeSince: { type: 'string', format: 'date-time', nullable: true },
+          smsEnabled: { type: 'boolean', example: false },
+          whatsappEnabled: { type: 'boolean', example: false },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      Screen: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 8 },
+          cinemaId: { type: 'integer', example: 3 },
+          name: {
+            type: 'string',
+            description: 'Unique within its cinema.',
+            example: 'Screen 1',
+          },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
         },
       },
       LoginResult: {

@@ -10,6 +10,9 @@
 const express = require('express');
 
 const authRoutes = require('./auth.routes');
+const chainRoutes = require('./chain.routes');
+const cinemaRoutes = require('./cinema.routes');
+const screenRoutes = require('./screen.routes');
 const userRoutes = require('./user.routes');
 const { success } = require('../utils/response');
 
@@ -31,5 +34,8 @@ router.get('/', (req, res) => success(res, { message: 'QBusto API' }));
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
+router.use('/chains', chainRoutes);
+router.use('/cinemas', cinemaRoutes);
+router.use('/screens', screenRoutes);
 
 module.exports = router;

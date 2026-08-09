@@ -11,7 +11,7 @@
 
 const Joi = require('joi');
 
-const { id, idParam, password, paginationQuery } = require('./common.validators');
+const { id, idParam, password, optionalText, paginationQuery } = require('./common.validators');
 const { MODULE_NAMES, ROLE_NAMES } = require('../constants');
 
 /**
@@ -28,9 +28,6 @@ const SORTABLE_FIELDS = [
   'createdAt',
   'updatedAt',
 ];
-
-/** An optional free-text field stored as a nullable varchar. */
-const optionalText = (max) => Joi.string().trim().max(max).allow(null, '');
 
 /**
  * One row of user_permissions. Absent flags default to false, so a client can
