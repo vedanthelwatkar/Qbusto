@@ -1,122 +1,161 @@
 // QBusto V1 Database Schema
 // Source of truth: backend/docs/schema.md
 // Import at: https://dbdiagram.io
-// 21 active V1 tables - source_discounts, price_change_logs, user_login_logs are NOT included (deferred)
+// 24 active V1 tables - source_discounts, price_change_logs, user_login_logs are NOT included (deferred)
 
-// ─── TENANCY ────────────────────────────────────────────────────────────────
+// Core foreign keys use ON DELETE NO ACTION and ON UPDATE NO ACTION unless stated otherwise.
+// Tenant consistency for cinema-scoped rows is enforced in application code, not by DB constraints.
 
-Table chains {
-  id         int          [pk, increment]
-  name       varchar(100) [not null]
-  is_active  bit          [not null, default: 1]
-  created_at datetime2    [not null]
-  updated_at datetime2    [not null]
+Table chains [note: 'Audit-user links use nullable FKs to users.id and ON DELETE SET NULL.'] {
+  id                 int           [pk, increment]
+  name               varchar(100)  [not null]
+  logo_image_url     varchar(500)
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
 }
 
-Table cinemas {
-  id         int          [pk, increment]
-  chain_id   int          [not null]
-  code       varchar(10)  [not null, unique, note: 'QBusto-owned cinema code used in QR URLs. NOT the external POS cinema ID - that lives on pos_integrations.external_cinema_id.']
-  name       varchar(100) [not null]
-  location   varchar(255)
-  is_active  bit          [not null, default: 1]
-  created_at datetime2    [not null]
-  updated_at datetime2    [not null]
+Table cinemas [note: 'Cinema-level notification preferences live here.'] {
+  id                 int           [pk, increment]
+  chain_id           int           [not null]
+  code               varchar(10)   [not null, unique, note: 'QBusto-owned cinema code used in QR URLs. Not the external POS cinema id.']
+  name               varchar(100)  [not null]
+  location           varchar(255)
+  city               varchar(100)
+  gst_number         varchar(50)
+  fssai_number       varchar(50)
+  active_since       datetime2
+  sms_enabled        bit           [not null, default: 0]
+  whatsapp_enabled   bit           [not null, default: 0]
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
 }
 
 Table screens {
-  id         int         [pk, increment]
-  cinema_id  int         [not null]
-  name       varchar(50) [not null]
-  is_active  bit         [not null, default: 1]
-  created_at datetime2   [not null]
-  updated_at datetime2   [not null]
+  id                 int           [pk, increment]
+  cinema_id          int           [not null]
+  name               varchar(50)   [not null]
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
 }
-
-// ─── CATALOG (CHAIN-SCOPED) ──────────────────────────────────────────────────
 
 Table categories {
-  id          int           [pk, increment]
-  chain_id    int           [not null]
-  name        varchar(200)  [not null]
-  description nvarchar(max)
-  image_url   varchar(500)
-  is_active   bit           [not null, default: 1]
-  created_at  datetime2     [not null]
-  updated_at  datetime2     [not null]
+  id                 int           [pk, increment]
+  chain_id           int           [not null]
+  name               varchar(200)  [not null]
+  description        nvarchar(max)
+  image_url          varchar(500)
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
 }
 
-Table products {
-  id               int           [pk, increment]
-  chain_id         int           [not null]
-  category_id      int           [not null]
-  name             varchar(200)  [not null]
-  description      nvarchar(max)
-  weight           varchar(50)
-  image_url        varchar(500)
-  tax_slab_code    varchar(20)
-  is_complementary bit           [not null, default: 0, note: 'Legacy field. No V1 behavior.']
-  is_addon         bit           [not null, default: 0]
-  addon_parent_id  int           [note: 'Self-reference: parent product for add-ons. Nullable.']
-  is_active        bit           [not null, default: 1]
-  created_at       datetime2     [not null]
-  updated_at       datetime2     [not null]
-}
-
-// ─── CATALOG (CINEMA-SCOPED) ─────────────────────────────────────────────────
-
-Table cinema_categories {
-  id          int       [pk, increment]
-  cinema_id   int       [not null]
-  category_id int       [not null]
-  sequence    int       [not null, default: 0]
-  is_active   bit       [not null, default: 1]
-  created_at  datetime2 [not null]
-  updated_at  datetime2 [not null]
+Table cinema_categories [note: 'Application code must validate that the linked category belongs to the same chain as the cinema.'] {
+  id                 int       [pk, increment]
+  cinema_id          int       [not null]
+  category_id        int       [not null]
+  sequence           int       [not null, default: 0]
+  is_active          bit       [not null, default: 1]
+  created_by int       [note: 'Nullable FK to users.id.']
+  updated_by int       [note: 'Nullable FK to users.id.']
+  created_at         datetime2 [not null]
+  updated_at         datetime2 [not null]
 
   indexes {
     (cinema_id, category_id) [unique, name: 'UQ_cinema_categories']
   }
 }
 
-Table cinema_products {
-  id         int       [pk, increment]
-  cinema_id  int       [not null]
-  product_id int       [not null]
-  sequence   int       [not null, default: 0]
-  is_active  bit       [not null, default: 1]
-  created_at datetime2 [not null]
-  updated_at datetime2 [not null]
+Table products {
+  id                 int           [pk, increment]
+  chain_id           int           [not null]
+  category_id        int           [not null]
+  name               varchar(200)  [not null]
+  description        nvarchar(max)
+  weight             varchar(50)
+  image_url          varchar(500)
+  tax_slab_code      varchar(20)
+  is_addon           bit           [not null, default: 0]
+  addon_parent_id    int           [note: 'Self-reference to products.id. Nullable.']
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
+}
+
+Table cinema_products [note: 'Application code must validate that the linked product belongs to the same chain as the cinema.'] {
+  id                 int       [pk, increment]
+  cinema_id          int       [not null]
+  product_id         int       [not null]
+  sequence           int       [not null, default: 0]
+  available_from     datetime2
+  available_until    datetime2
+  is_active          bit       [not null, default: 1]
+  created_by int       [note: 'Nullable FK to users.id.']
+  updated_by int       [note: 'Nullable FK to users.id.']
+  created_at         datetime2 [not null]
+  updated_at         datetime2 [not null]
 
   indexes {
     (cinema_id, product_id) [unique, name: 'UQ_cinema_products']
   }
 }
 
+Table product_availability_hours {
+  id                 int       [pk, increment]
+  cinema_product_id  int       [not null]
+  day_of_week        tinyint   [not null, note: '0=all days, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday']
+  start_time         time      [not null]
+  end_time           time      [not null]
+  created_by int       [note: 'Nullable FK to users.id.']
+  updated_by int       [note: 'Nullable FK to users.id.']
+  created_at         datetime2 [not null]
+  updated_at         datetime2 [not null]
+
+  indexes {
+    (cinema_product_id, day_of_week, start_time, end_time) [unique, name: 'UQ_product_availability_hours']
+    (cinema_product_id, day_of_week) [name: 'IX_product_availability_hours_lookup']
+  }
+}
+
 Table product_pricing {
-  id               int           [pk, increment]
-  cinema_id        int           [not null]
-  product_id       int           [not null]
-  day_of_week      tinyint       [not null, default: 0, note: '0=default/all days, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun. Backend tries specific day first, falls back to 0.']
-  base_price       decimal(10,2) [not null]
-  discount_type    char(1)       [note: 'P=percent, F=flat. Nullable.']
-  discount_value   decimal(10,2)
-  complement_price decimal(10,2) [note: 'Legacy field. No V1 behavior.']
-  is_active        bit           [not null, default: 1]
-  created_at       datetime2     [not null]
-  updated_at       datetime2     [not null]
+  id                  int           [pk, increment]
+  cinema_id           int           [not null]
+  product_id          int           [not null]
+  day_of_week         tinyint       [not null, default: 0, note: '0=default/all days, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday, 7=Sunday']
+  base_price          decimal(10,2) [not null, note: 'CHECK >= 0']
+  discount_type       char(1)       [note: 'Allowed values: P (Percentage), F (Flat Amount).']
+  discount_value      decimal(10,2) [note: 'CHECK >= 0 when present']
+  discount_on_qr      decimal(10,2) [note: 'Follows discount_type']
+  discount_on_kiosk   decimal(10,2) [note: 'Follows discount_type']
+  discount_on_seat_qr decimal(10,2) [note: 'Follows discount_type']
+  discount_on_counter decimal(10,2) [note: 'Follows discount_type']
+  is_active           bit           [not null, default: 1]
+  created_by  int           [note: 'Nullable FK to users.id.']
+  updated_by  int           [note: 'Nullable FK to users.id.']
+  created_at          datetime2     [not null]
+  updated_at          datetime2     [not null]
 
   indexes {
     (cinema_id, product_id, day_of_week) [unique, name: 'UQ_product_pricing']
   }
 }
 
-// ─── STATUS MASTER TABLES (SYSTEM-GLOBAL) ───────────────────────────────────
-
 Table order_statuses {
   id          int          [pk, increment]
-  code        varchar(30)  [not null, unique, note: 'Stable machine-readable identifier. App logic depends on code, NEVER on numeric id. Seeded values: initiated | confirmed | preparing | ready | delivered | rejected']
-  name        varchar(100) [not null, note: 'Display-friendly label. Can change without breaking app logic.']
+  code        varchar(30)  [not null, unique, note: 'Stable machine-readable identifier.']
+  name        varchar(100) [not null]
   description varchar(255)
   is_active   bit          [not null, default: 1]
   created_at  datetime2    [not null]
@@ -125,7 +164,7 @@ Table order_statuses {
 
 Table payment_statuses {
   id          int          [pk, increment]
-  code        varchar(30)  [not null, unique, note: 'Stable machine-readable identifier. App logic depends on code, NEVER on numeric id. Seeded values: pending | paid | failed | refunded']
+  code        varchar(30)  [not null, unique, note: 'Stable machine-readable identifier.']
   name        varchar(100) [not null]
   description varchar(255)
   is_active   bit          [not null, default: 1]
@@ -133,78 +172,80 @@ Table payment_statuses {
   updated_at  datetime2    [not null]
 }
 
-// ─── ORDERS ──────────────────────────────────────────────────────────────────
-
 Table orders {
-  id                   int           [pk, increment]
-  cinema_id            int           [not null]
-  screen_id            int           [note: 'Nullable - counter/kiosk orders may not be screen-specific.']
-  seat_number          varchar(20)
-  status_id            int           [not null, note: 'FK → order_statuses. App sets via cached statusMap[code].']
-  source               varchar(20)   [note: 'qr | seat_qr | kiosk | counter']
-  customer_mobile      varchar(15)
-  customer_email       varchar(200)
-  film_title           varchar(200)  [note: 'Provider-neutral display snapshot at order time.']
-  show_time            datetime2     [note: 'Provider-neutral display snapshot at order time.']
-  subtotal             decimal(10,2) [not null]
-  discount             decimal(10,2) [not null, default: 0]
-  total                decimal(10,2) [not null]
-  payment_status_id    int           [not null, note: 'FK → payment_statuses. Independent of order status.']
-  razorpay_order_id    varchar(100)
-  razorpay_payment_id  varchar(100)
-  razorpay_signature   varchar(255)
-  notes                varchar(500)
-  delivered_at         datetime2
-  created_at           datetime2     [not null]
-  updated_at           datetime2     [not null]
+  id                  int           [pk, increment]
+  cinema_id           int           [not null]
+  screen_id           int           [note: 'Nullable - counter and kiosk orders may not be screen-specific.']
+  seat_number         varchar(20)
+  status_id           int           [not null, note: 'FK to order_statuses.id.']
+  source              varchar(20)   [note: 'Allowed values: qr, seat_qr, kiosk, counter.']
+  customer_mobile     varchar(15)
+  customer_email      varchar(200)
+  film_title          varchar(200)  [note: 'Provider-neutral display snapshot.']
+  show_time           datetime2     [note: 'Provider-neutral display snapshot.']
+  subtotal            decimal(10,2) [not null, note: 'CHECK >= 0']
+  discount            decimal(10,2) [not null, default: 0, note: 'CHECK >= 0']
+  total               decimal(10,2) [not null, note: 'CHECK >= 0']
+  payment_status_id   int           [not null, note: 'FK to payment_statuses.id.']
+  sms_status          varchar(20)   [note: 'Allowed values: pending, success, failed. NULL means not applicable or not enabled.']
+  whatsapp_status     varchar(20)   [note: 'Allowed values: pending, success, failed. NULL means not applicable or not enabled.']
+  razorpay_order_id   varchar(100)
+  razorpay_payment_id varchar(100)
+  razorpay_signature  varchar(255)
+  notes               varchar(500)
+  delivered_at        datetime2
+  created_at          datetime2     [not null]
+  updated_at          datetime2     [not null]
+
+  indexes {
+    (cinema_id, created_at) [name: 'IX_orders_cinema_created_at']
+    (status_id) [name: 'IX_orders_status_id']
+    (payment_status_id) [name: 'IX_orders_payment_status_id']
+  }
 }
 
 Table order_items {
   id           int           [pk, increment]
   order_id     int           [not null]
   product_id   int           [not null]
-  product_name varchar(200)  [not null, note: 'Snapshot of product name at time of order. Preserved even if product is renamed.']
-  pos_item_id  varchar(50)   [note: 'Snapshot of external POS item ID resolved at order time from product_pos_mappings. Nullable - counter/no-POS orders may lack this.']
-  quantity     int           [not null]
-  unit_price   decimal(10,2) [not null, note: 'Snapshot price at order time.']
-  discount     decimal(10,2) [not null, default: 0]
-  total        decimal(10,2) [not null]
+  product_name varchar(200)  [not null, note: 'Historical snapshot.']
+  pos_item_id  varchar(50)   [note: 'Snapshot of external POS item identifier.']
+  quantity     int           [not null, note: 'CHECK > 0']
+  unit_price   decimal(10,2) [not null, note: 'CHECK >= 0']
+  discount     decimal(10,2) [not null, default: 0, note: 'CHECK >= 0']
+  total        decimal(10,2) [not null, note: 'CHECK >= 0']
+
+  indexes {
+    (order_id) [name: 'IX_order_items_order_id']
+  }
 }
 
-// ─── STATUS AUDIT LOGS ───────────────────────────────────────────────────────
-
 Table order_status_logs {
-  id                  int          [pk, increment]
-  order_id            int          [not null]
-  previous_status_id  int          [note: 'NULL on first entry (order creation). FK → order_statuses.']
-  new_status_id       int          [not null, note: 'FK → order_statuses.']
-  changed_by_user_id  int          [note: 'NULL for system-generated transitions (e.g. payment confirmation). FK → users.']
-  reason              varchar(500)
-  created_at          datetime2    [not null]
-
-  Note: 'UPDATE orders.status_id + INSERT here must occur in the SAME database transaction.'
+  id                 int          [pk, increment]
+  order_id           int          [not null]
+  previous_status_id int          [note: 'Nullable on first entry.']
+  new_status_id      int          [not null]
+  changed_by_user_id int          [note: 'Nullable FK to users.id.']
+  reason             varchar(500)
+  created_at         datetime2    [not null]
 }
 
 Table payment_status_logs {
   id                  int          [pk, increment]
   order_id            int          [not null]
-  previous_status_id  int          [note: 'NULL on first entry. FK → payment_statuses.']
-  new_status_id       int          [not null, note: 'FK → payment_statuses.']
-  changed_by_user_id  int          [note: 'NULL for system/webhook-driven transitions. FK → users.']
-  razorpay_payment_id varchar(100) [note: 'Razorpay reference for this transition (e.g. pay_ABC on pending→paid).']
+  previous_status_id  int          [note: 'Nullable on first entry.']
+  new_status_id       int          [not null]
+  changed_by_user_id  int          [note: 'Nullable FK to users.id.']
+  razorpay_payment_id varchar(100)
   reason              varchar(500)
   created_at          datetime2    [not null]
-
-  Note: 'UPDATE orders.payment_status_id + INSERT here must occur in the SAME database transaction.'
 }
-
-// ─── AUTH ─────────────────────────────────────────────────────────────────────
 
 Table users {
   id            int          [pk, increment]
   chain_id      int          [not null]
-  cinema_id     int          [note: 'NULL for owner and chain_admin roles. Must belong to chain_id - validated in app code.']
-  role          varchar(20)  [not null, note: 'owner | chain_admin | cinema_admin | kitchen_staff']
+  cinema_id     int          [note: 'Nullable for owner and chain_admin roles.']
+  role          varchar(20)  [not null, note: 'Allowed values: owner, chain_admin, cinema_admin, kitchen_staff, cinema_accountant.']
   username      varchar(50)  [not null, unique]
   password_hash varchar(255) [not null]
   first_name    varchar(50)
@@ -215,30 +256,51 @@ Table users {
   updated_at    datetime2    [not null]
 }
 
-// ─── CONTENT ──────────────────────────────────────────────────────────────────
+Table user_permissions {
+  id                 int       [pk, increment]
+  user_id            int       [not null]
+  module_name        varchar(50) [not null, note: 'Allowed values: Dashboard, Orders, Products, Categories, Pricing, Banners, Users, Reports, POS Integrations, Settings.']
+  can_read           bit       [not null, default: 0]
+  can_edit           bit       [not null, default: 0]
+  can_delete         bit       [not null, default: 0]
+  created_by int       [note: 'Nullable FK to users.id.']
+  updated_by int       [note: 'Nullable FK to users.id.']
+  created_at         datetime2 [not null]
+  updated_at         datetime2 [not null]
 
-Table banners {
-  id         int          [pk, increment]
-  cinema_id  int          [not null]
-  image_url  varchar(500) [not null]
-  type       char(1)      [note: 'H or I. Legacy field - semantics unconfirmed. Not blocking V1.']
-  is_active  bit          [not null, default: 1]
-  created_at datetime2    [not null]
-  updated_at datetime2    [not null]
+  indexes {
+    (user_id, module_name) [unique, name: 'UQ_user_permissions']
+  }
 }
 
-// ─── POS INTEGRATION LAYER ───────────────────────────────────────────────────
+Table banners {
+  id                 int           [pk, increment]
+  cinema_id          int           [not null]
+  image_url          varchar(500)  [not null]
+  type               char(1)       [not null, note: 'Allowed values: H (Header), I (Inner). V1 uses Header only.']
+  sequence           int           [not null, default: 0]
+  start_date         datetime2
+  end_date           datetime2
+  is_active          bit           [not null, default: 1]
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2    [not null]
+  updated_at         datetime2    [not null]
+}
 
-Table pos_integrations [note: 'FILTERED UNIQUE INDEX (SQL Server only - cannot be expressed in DBML): CREATE UNIQUE INDEX UQ_pos_integrations_active_cinema ON pos_integrations(cinema_id) WHERE is_active = 1. Enforces at most ONE active POS per cinema.'] {
-  id                  int           [pk, increment]
-  cinema_id           int           [not null]
-  provider            varchar(30)   [not null, note: 'vista | showbizz | future providers']
-  external_cinema_id  varchar(50)   [not null, note: 'Cinema identifier used by the external POS provider. Vista: Cinema_strID. Showbizz: TheatreId.']
-  is_active           bit           [not null, default: 1]
-  credential_ref      varchar(200)  [note: 'Pointer to external secrets manager (e.g. "pos/showbizz/cinema-1074"). NULL = use provider-wide env vars. Actual secrets are NEVER stored in the DB.']
-  config              nvarchar(max) [note: 'Non-secret JSON config only. Example: {"api_base_url": "...", "transaction_type": "InCinemaFB", "timeout_ms": 30000}']
-  created_at          datetime2     [not null]
-  updated_at          datetime2     [not null]
+Table pos_integrations [note: 'SQL Server filtered unique index: one active row per cinema where is_active = 1.'] {
+  id                 int           [pk, increment]
+  cinema_id          int           [not null]
+  provider           varchar(30)   [not null, note: 'Allowed values: vista, showbizz, impact, qbusto.']
+  external_cinema_id varchar(50)   [not null, note: 'External POS cinema identifier.']
+  api_url            varchar(500)  [not null]
+  is_active          bit           [not null, default: 1]
+  credential_ref     varchar(200)  [note: 'Pointer to external secrets storage.']
+  config             nvarchar(max) [note: 'Non-secret JSON config only.']
+  created_by int           [note: 'Nullable FK to users.id.']
+  updated_by int           [note: 'Nullable FK to users.id.']
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
 
   indexes {
     (cinema_id, provider) [unique, name: 'UQ_pos_integrations_cinema_provider']
@@ -250,6 +312,8 @@ Table screen_pos_mappings {
   pos_integration_id int         [not null]
   screen_id          int         [not null]
   external_screen_id varchar(50) [not null]
+  created_by int         [note: 'Nullable FK to users.id.']
+  updated_by int         [note: 'Nullable FK to users.id.']
   created_at         datetime2   [not null]
   updated_at         datetime2   [not null]
 
@@ -262,97 +326,126 @@ Table product_pos_mappings {
   id                 int         [pk, increment]
   pos_integration_id int         [not null]
   product_id         int         [not null]
-  external_item_id   varchar(50) [not null, note: 'POS item identifier. Vista: master_item_code (e.g. "I000001624"). Showbizz: ItemId.']
-  external_group_id  varchar(50) [note: 'Showbizz MainItemId (parent/group concept). Nullable - Vista does not use this.']
+  external_item_id   varchar(50) [not null]
+  external_group_id  varchar(50)
+  created_by int         [note: 'Nullable FK to users.id.']
+  updated_by int         [note: 'Nullable FK to users.id.']
   created_at         datetime2   [not null]
   updated_at         datetime2   [not null]
 
   indexes {
-    (pos_integration_id, product_id) [unique, name: 'UQ_product_pos_mappings', note: 'V1 assumes 1:1 product-to-POS-item mapping per integration.']
+    (pos_integration_id, product_id) [unique, name: 'UQ_product_pos_mappings']
   }
 }
 
-Table order_pos_context {
+Table order_pos_context [note: 'Immutable after creation. No updated_at column.'] {
   id                  int          [pk, increment]
   order_id            int          [not null, unique, note: 'Exactly one POS context per order.']
   pos_integration_id  int          [not null]
-  external_session_id varchar(100) [note: 'Vista: Session_lngSessionId. Showbizz: BookingId.']
-  external_film_id    varchar(50)  [note: 'Vista: Film_strCode. Showbizz: FilmId.']
+  external_session_id varchar(100)
+  external_film_id    varchar(50)
   external_screen_id  varchar(50)
+  external_booking_id varchar(100) [note: 'Implements POS_BookingId.']
   created_at          datetime2    [not null]
-
-  Note: 'Immutable after creation. Created at order time; never updated. No updated_at column.'
 }
 
 Table pos_transactions {
   id                   int           [pk, increment]
   order_id             int           [not null]
   pos_integration_id   int           [not null]
-  operation            varchar(30)   [not null, note: 'Showbizz: book_items | buy_item | cancel | refund. Vista: post_sale (inferred) | refund (unconfirmed).']
-  idempotency_key      varchar(100)  [not null, unique, note: 'Format: order_{id}_{operation}. Same key on every retry. UNIQUE prevents duplicate internal rows - does NOT guarantee the external POS processes only once.']
-  status               varchar(20)   [not null, default: 'pending', note: 'pending=in-flight. success=POS confirmed. failed=POS rejected (safe to retry). unknown=ambiguous outcome - do NOT blindly retry.']
-  attempt_count        int           [not null, default: 1]
+  operation            varchar(30)   [not null, note: 'Integration operation name.']
+  idempotency_key      varchar(100)  [not null, unique]
+  status               varchar(20)   [not null, default: 'pending', note: 'Allowed values: pending, success, failed, unknown.']
+  attempt_count        int           [not null, default: 1, note: 'CHECK >= 1']
   external_response_id varchar(100)
-  request_payload      nvarchar(4000) [note: 'Sanitized JSON of latest attempt. NEVER store passwords, tokens, or PII.']
-  response_payload     nvarchar(4000) [note: 'Sanitized JSON of latest attempt.']
+  request_payload      nvarchar(4000)
+  response_payload     nvarchar(4000)
   last_error           varchar(500)
   last_attempted_at    datetime2
   created_at           datetime2     [not null]
   updated_at           datetime2     [not null]
+
+  indexes {
+    (order_id) [name: 'IX_pos_transactions_order_id']
+  }
 }
 
-// ─── RELATIONSHIPS ────────────────────────────────────────────────────────────
+Table payment_gateway_config [note: 'SQL Server filtered unique index: one active row per cinema where is_active = 1.'] {
+  id                         int           [pk, increment]
+  cinema_id                  int           [not null]
+  gateway_url                varchar(500)  [not null]
+  gateway_id                 varchar(255)  [not null]
+  gateway_secret_encrypted   varchar(1000) [not null]
+  is_active                  bit           [not null, default: 1]
+  created_by         int           [note: 'Nullable FK to users.id.']
+  updated_by         int           [note: 'Nullable FK to users.id.']
+  created_at                 datetime2     [not null]
+  updated_at                 datetime2     [not null]
+}
 
-// Tenancy
-Ref: cinemas.chain_id        > chains.id
-Ref: screens.cinema_id       > cinemas.id
-Ref: users.chain_id          > chains.id
-Ref: users.cinema_id         > cinemas.id
-Ref: banners.cinema_id       > cinemas.id
+// Relationships
+Ref: cinemas.chain_id > chains.id
+Ref: screens.cinema_id > cinemas.id
+Ref: users.chain_id > chains.id
+Ref: users.cinema_id > cinemas.id
+Ref: user_permissions.user_id > users.id
+Ref: banners.cinema_id > cinemas.id
 
-// Catalog - chain ownership
-Ref: categories.chain_id     > chains.id
-Ref: products.chain_id       > chains.id
-Ref: products.category_id    > categories.id
-Ref: products.addon_parent_id > products.id  // self-reference: add-on → parent product
+Ref: categories.chain_id > chains.id
+Ref: products.chain_id > chains.id
+Ref: products.category_id > categories.id
+Ref: products.addon_parent_id > products.id
 
-// Catalog - cinema availability
-Ref: cinema_categories.cinema_id   > cinemas.id
+Ref: cinema_categories.cinema_id > cinemas.id
 Ref: cinema_categories.category_id > categories.id
-Ref: cinema_products.cinema_id     > cinemas.id
-Ref: cinema_products.product_id    > products.id
-Ref: product_pricing.cinema_id     > cinemas.id
-Ref: product_pricing.product_id    > products.id
+Ref: cinema_products.cinema_id > cinemas.id
+Ref: cinema_products.product_id > products.id
+Ref: product_availability_hours.cinema_product_id > cinema_products.id
+Ref: product_pricing.cinema_id > cinemas.id
+Ref: product_pricing.product_id > products.id
 
-// Orders - core
-Ref: orders.cinema_id         > cinemas.id
-Ref: orders.screen_id         > screens.id
-Ref: orders.status_id         > order_statuses.id
+Ref: orders.cinema_id > cinemas.id
+Ref: orders.screen_id > screens.id
+Ref: orders.status_id > order_statuses.id
 Ref: orders.payment_status_id > payment_statuses.id
-
-// Order items
-Ref: order_items.order_id   > orders.id
+Ref: order_items.order_id > orders.id
 Ref: order_items.product_id > products.id
-
-// Order status audit log
-Ref: order_status_logs.order_id           > orders.id
+Ref: order_status_logs.order_id > orders.id
 Ref: order_status_logs.previous_status_id > order_statuses.id
-Ref: order_status_logs.new_status_id      > order_statuses.id
+Ref: order_status_logs.new_status_id > order_statuses.id
 Ref: order_status_logs.changed_by_user_id > users.id
-
-// Payment status audit log
-Ref: payment_status_logs.order_id           > orders.id
+Ref: payment_status_logs.order_id > orders.id
 Ref: payment_status_logs.previous_status_id > payment_statuses.id
-Ref: payment_status_logs.new_status_id      > payment_statuses.id
+Ref: payment_status_logs.new_status_id > payment_statuses.id
 Ref: payment_status_logs.changed_by_user_id > users.id
 
-// POS integration layer
-Ref: pos_integrations.cinema_id            > cinemas.id
-Ref: screen_pos_mappings.pos_integration_id > pos_integrations.id
-Ref: screen_pos_mappings.screen_id          > screens.id
-Ref: product_pos_mappings.pos_integration_id > pos_integrations.id
-Ref: product_pos_mappings.product_id         > products.id
-Ref: order_pos_context.order_id             > orders.id
-Ref: order_pos_context.pos_integration_id   > pos_integrations.id
-Ref: pos_transactions.order_id              > orders.id
-Ref: pos_transactions.pos_integration_id    > pos_integrations.id
+Ref: user_permissions.created_by > users.id
+Ref: user_permissions.updated_by > users.id
+Ref: chains.created_by > users.id
+Ref: chains.updated_by > users.id
+Ref: cinemas.created_by > users.id
+Ref: cinemas.updated_by > users.id
+Ref: screens.created_by > users.id
+Ref: screens.updated_by > users.id
+Ref: categories.created_by > users.id
+Ref: categories.updated_by > users.id
+Ref: cinema_categories.created_by > users.id
+Ref: cinema_categories.updated_by > users.id
+Ref: products.created_by > users.id
+Ref: products.updated_by > users.id
+Ref: cinema_products.created_by > users.id
+Ref: cinema_products.updated_by > users.id
+Ref: product_availability_hours.created_by > users.id
+Ref: product_availability_hours.updated_by > users.id
+Ref: product_pricing.created_by > users.id
+Ref: product_pricing.updated_by > users.id
+Ref: banners.created_by > users.id
+Ref: banners.updated_by > users.id
+Ref: pos_integrations.created_by > users.id
+Ref: pos_integrations.updated_by > users.id
+Ref: screen_pos_mappings.created_by > users.id
+Ref: screen_pos_mappings.updated_by > users.id
+Ref: product_pos_mappings.created_by > users.id
+Ref: product_pos_mappings.updated_by > users.id
+Ref: payment_gateway_config.created_by > users.id
+Ref: payment_gateway_config.updated_by > users.id
