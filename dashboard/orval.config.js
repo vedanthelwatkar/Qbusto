@@ -7,7 +7,7 @@ module.exports = {
       client: "axios",
       override: {
         mutator: {
-          path: "./src/api/axios-instance.js",
+          path: "./src/services/api.ts",
           name: "customInstance",
         },
       },

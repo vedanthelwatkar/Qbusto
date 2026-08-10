@@ -1,0 +1,149 @@
+// Layout glue only. Anything antd already styles is left to antd; these rules
+// cover the shell, the login screen and a couple of spacing primitives.
+
+$sider-bg: #001529;
+$content-padding: 24px;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.app-shell {
+  min-height: 100vh;
+
+  &__header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 1px solid rgba(5, 5, 5, 0.06);
+  }
+
+  &__content {
+    padding: $content-padding;
+  }
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+
+  &__user {
+    padding-inline: 8px;
+  }
+
+  &__user-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @media (max-width: 575px) {
+      display: none;
+    }
+  }
+}
+
+.user-menu__identity {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  padding-block: 4px;
+}
+
+.sidebar {
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 56px;
+    padding-inline: 20px;
+    color: #fff;
+    background: $sider-bg;
+  }
+
+  &__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #1668dc;
+    font-weight: 700;
+  }
+
+  &__wordmark {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+}
+
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+  background: #f5f6f8;
+
+  &__card {
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  &__heading {
+    margin-bottom: 24px;
+    text-align: center;
+
+    h3 {
+      margin-bottom: 4px;
+    }
+  }
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  &__title {
+    margin-bottom: 4px;
+  }
+}
+
+// Vertical page stack. antd's Space is inline-flex by default, which would
+// collapse the page to its content width.
+.stack {
+  display: flex;
+  width: 100%;
+}
+
+.form-alert {
+  margin-bottom: 16px;
+}
+
+.app-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+
+  &__target {
+    width: 120px;
+    height: 40px;
+  }
+}

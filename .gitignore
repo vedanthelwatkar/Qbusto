@@ -36,6 +36,10 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
+# Local-only developer scripts. Kept on disk, never committed: they write real
+# rows with passwords chosen on the command line.
+backend/scripts/create-dev-user.js
+
 # Misc
 coverage/
 .cache/
