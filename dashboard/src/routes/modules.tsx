@@ -11,10 +11,13 @@ import type { ReactNode } from 'react';
 import {
   AppstoreOutlined,
   BarChartOutlined,
+  ClusterOutlined,
   DashboardOutlined,
+  DesktopOutlined,
   DollarOutlined,
   PictureOutlined,
   SettingOutlined,
+  ShopOutlined,
   ShoppingCartOutlined,
   TagsOutlined,
   TeamOutlined,
@@ -30,6 +33,19 @@ export interface NavModule {
   module: ModuleName;
   icon: ReactNode;
   implemented: boolean;
+  /**
+   * Screens that hang off this entry and are authorised against the same
+   * module. Chains, cinemas and screens sit under Settings because that is the
+   * module the backend checks them against - the frozen
+   * CK_user_permissions_module_name constraint has no entry of their own.
+   */
+  children?: NavChild[];
+}
+
+export interface NavChild {
+  path: string;
+  label: string;
+  icon: ReactNode;
 }
 
 export const NAV_MODULES: NavModule[] = [
@@ -96,5 +112,25 @@ export const NAV_MODULES: NavModule[] = [
     module: 'Settings',
     icon: <SettingOutlined />,
     implemented: false,
+    children: [
+      { path: '/settings/chains', label: 'Chains', icon: <ClusterOutlined /> },
+      { path: '/settings/cinemas', label: 'Cinemas', icon: <ShopOutlined /> },
+      { path: '/settings/screens', label: 'Screens', icon: <DesktopOutlined /> },
+    ],
   },
 ];
+
+/**
+ * Every navigable path, parents and children alike, paired with the module it
+ * is authorised against. A child inherits its parent's module, which is what
+ * keeps the chain, cinema and screen screens on Settings without repeating it.
+ */
+export const NAV_ROUTES: { path: string; label: string; module: ModuleName }[] =
+  NAV_MODULES.flatMap((entry) => [
+    { path: entry.path, label: entry.label, module: entry.module },
+    ...(entry.children ?? []).map((child) => ({
+      path: child.path,
+      label: child.label,
+      module: entry.module,
+    })),
+  ]);

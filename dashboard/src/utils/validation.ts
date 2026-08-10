@@ -13,7 +13,11 @@
 import { ERROR_CODES, type ApiError } from '@/types/api';
 
 interface ValidationDetail {
-  source: string;
+  /**
+   * Absent on validation errors raised by a service rather than by the request
+   * validator - those are always about the body, so they carry only the field.
+   */
+  source?: string;
   field: string;
   message: string;
 }
@@ -42,13 +46,20 @@ export function fieldErrorsFrom<Values>(error: ApiError): FieldError<Values>[] {
     return [];
   }
 
-  return error.details
-    .filter((detail) => detail.source === 'body')
-    .map((detail) => ({
-      // The server names the field as a plain string. Which of the form's
-      // fields that is cannot be known at compile time, so this is asserted
-      // here; a name that matches nothing is simply ignored by antd.
-      name: detail.field as keyof Values & string,
-      errors: [detail.message],
-    }));
+  return (
+    error.details
+      // Only query and params are excluded, and a missing source is kept rather
+      // than dropped: validate.js stamps a source on every Joi failure, but the
+      // services raise their own ValidationErrors with just a field - "An add-on
+      // cannot be the parent of another add-on" is one - and requiring the key
+      // would silently throw those away.
+      .filter((detail) => detail.source === undefined || detail.source === 'body')
+      .map((detail) => ({
+        // The server names the field as a plain string. Which of the form's
+        // fields that is cannot be known at compile time, so this is asserted
+        // here; a name that matches nothing is simply ignored by antd.
+        name: detail.field as keyof Values & string,
+        errors: [detail.message],
+      }))
+  );
 }

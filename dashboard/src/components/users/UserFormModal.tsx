@@ -19,14 +19,14 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Form, Input, InputNumber, Modal, Select, Spin, Switch } from 'antd';
+import { Alert, App, Form, Input, Modal, Select, Spin, Switch } from 'antd';
 
 import type {
-  Chain,
-  Cinema,
   PostApiUsersBody,
   PutApiUsersIdBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
+import ChainSelect from '@/components/chains/ChainSelect';
+import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import PermissionsEditor from '@/components/users/PermissionsEditor';
 import { toApiError } from '@/services/api';
 import * as usersService from '@/services/users.service';
@@ -76,9 +76,11 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
    */
   const [visible, setVisible] = useState(true);
 
-  const [chains, setChains] = useState<Chain[] | null>(null);
-  const [cinemas, setCinemas] = useState<Cinema[] | null>(null);
-
+  /**
+   * Owners can put a user in another chain, so the cinema list follows whatever
+   * chain the form currently names. Every other role is scoped to one chain by
+   * the backend, which ignores the parameter.
+   */
   const chainId = Form.useWatch('chainId', form);
 
   useEffect(() => {
@@ -119,32 +121,6 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
     };
   }, [form, userId]);
 
-  // Chains and cinemas are authorised as Settings, not Users, so a user
-  // administrator without that module gets a 403. That is not an error worth
-  // showing - the form falls back to a plain id field, which the API accepts
-  // just the same.
-  useEffect(() => {
-    if (!actor) return;
-
-    let active = true;
-
-    if (actor.role === 'owner') {
-      usersService
-        .listChains()
-        .then((loaded) => active && setChains(loaded))
-        .catch(() => active && setChains(null));
-    }
-
-    usersService
-      .listCinemas(actor.role === 'owner' ? chainId : undefined)
-      .then((loaded) => active && setCinemas(loaded))
-      .catch(() => active && setCinemas(null));
-
-    return () => {
-      active = false;
-    };
-  }, [actor, chainId]);
-
   const handleSubmit = async (values: FormValues) => {
     setSubmitting(true);
     setError(null);
@@ -174,7 +150,13 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
           role: values.role,
           // Honoured for owners only; ignored for every other role, which
           // creates inside its own chain whatever is sent.
-          chainId: values.chainId,
+          //
+          // Cleared means "omit the field", not "send null": the validator
+          // types chainId as a positive integer with no null allowed, so a
+          // null would come back as a 400 rather than defaulting to the
+          // actor's own chain. cinemaId below is the opposite - it does allow
+          // null, which is how a chain-wide role is expressed.
+          chainId: values.chainId ?? undefined,
           cinemaId: values.cinemaId ?? null,
           isActive: values.isActive,
           permissions: values.permissions ?? [],
@@ -307,15 +289,7 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
               label="Chain"
               extra="Cannot be changed after the user is created."
             >
-              {chains ? (
-                <Select
-                  allowClear
-                  placeholder="Your own chain"
-                  options={chains.map((chain) => ({ value: chain.id, label: chain.name }))}
-                />
-              ) : (
-                <InputNumber min={1} placeholder="Chain id" style={{ width: '100%' }} />
-              )}
+              <ChainSelect allowClear placeholder="Your own chain" />
             </Form.Item>
           )}
 
@@ -324,15 +298,11 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
             label="Cinema"
             extra="Required for roles that work at a single cinema; leave empty for chain-wide roles."
           >
-            {cinemas ? (
-              <Select
-                allowClear
-                placeholder="All cinemas"
-                options={cinemas.map((cinema) => ({ value: cinema.id, label: cinema.name }))}
-              />
-            ) : (
-              <InputNumber min={1} placeholder="Cinema id" style={{ width: '100%' }} />
-            )}
+            <CinemaSelect
+              allowClear
+              placeholder="All cinemas"
+              chainId={actor?.role === 'owner' ? chainId : undefined}
+            />
           </Form.Item>
 
           <Form.Item

@@ -6,22 +6,16 @@
  * written by hand - they all come from shared/openapi.json.
  */
 
-import { getChains } from '@/api/generated/chains/chains';
-import { getCinemas } from '@/api/generated/cinemas/cinemas';
-import { getUsers as getUsersApi } from '@/api/generated/users/users';
 import type {
-  Chain,
-  Cinema,
   GetApiUsersParams,
   PostApiUsersBody,
   PutApiUsersIdBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
+import { getUsers as getUsersApi } from '@/api/generated/users/users';
 import { ERROR_CODES, type ApiError, type Pagination } from '@/types/api';
 import type { User } from '@/types/auth';
 
 const usersApi = getUsersApi();
-const chainsApi = getChains();
-const cinemasApi = getCinemas();
 
 const MALFORMED: ApiError = {
   status: null,
@@ -74,24 +68,4 @@ export async function deactivateUser(id: number): Promise<User> {
   if (!data) throw MALFORMED;
 
   return data;
-}
-
-/**
- * Lookups for the user form's chain and cinema selects.
- *
- * They live here rather than in a module of their own because the user form is
- * the only screen that needs them. Both are authorised as Settings, not Users,
- * so a chain administrator with only the Users permission gets a 403 - the form
- * treats that as "no list available" and falls back to entering the id.
- */
-export async function listChains(): Promise<Chain[]> {
-  const response = await chainsApi.getApiChains({ limit: 100, isActive: true });
-
-  return response.data ?? [];
-}
-
-export async function listCinemas(chainId?: number): Promise<Cinema[]> {
-  const response = await cinemasApi.getApiCinemas({ limit: 100, isActive: true, chainId });
-
-  return response.data ?? [];
 }

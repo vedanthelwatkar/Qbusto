@@ -24,17 +24,31 @@ export default function SidebarNav({ collapsed = false, onNavigate }: SidebarNav
   const navigate = useNavigate();
   const location = useLocation();
 
-  const items = NAV_MODULES.filter((entry) => hasPermission(user, entry.module)).map((entry) => ({
+  const visible = NAV_MODULES.filter((entry) => hasPermission(user, entry.module));
+
+  // An entry with children becomes a submenu. Its own key is not navigable in
+  // that case, which suits Settings: the module's own screen does not exist yet
+  // and the entry is there to hold Chains, Cinemas and Screens.
+  const items = visible.map((entry) => ({
     key: entry.path,
     icon: entry.icon,
     label: entry.label,
+    children: entry.children?.map((child) => ({
+      key: child.path,
+      icon: child.icon,
+      label: child.label,
+    })),
   }));
+
+  /** Every navigable key, children included, for the prefix match below. */
+  const keys = visible.flatMap((entry) =>
+    entry.children ? entry.children.map((child) => child.path) : [entry.path]
+  );
 
   // Longest matching prefix, so /products/12 keeps Products highlighted. '/' is
   // excluded from prefix matching or it would match everything.
   const selected =
-    items
-      .map((item) => item.key)
+    keys
       .filter((key) => key !== '/' && location.pathname.startsWith(key))
       .sort((a, b) => b.length - a.length)[0] ?? (location.pathname === '/' ? '/' : '');
 
@@ -50,6 +64,12 @@ export default function SidebarNav({ collapsed = false, onNavigate }: SidebarNav
         theme="dark"
         items={items}
         selectedKeys={selected ? [selected] : []}
+        // Read once, at mount, which is all that is needed: a submenu is
+        // already open when its own entries are clicked, so this only matters
+        // for arriving at a nested path directly.
+        defaultOpenKeys={visible
+          .filter((entry) => entry.children?.some((child) => child.path === selected))
+          .map((entry) => entry.path)}
         onClick={({ key }) => {
           navigate(key);
           onNavigate?.();

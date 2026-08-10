@@ -150,11 +150,20 @@ export default function ProductFormModal({ product, onClose, onSaved }: ProductF
 
       form.setFields(fieldErrorsFrom<FormValues>(apiError));
 
-      // A duplicate name in the category comes back as a 409 naming no field.
-      // The other 409 here is a cross-chain category, which is about the
-      // category box instead.
+      // Three different 409s share this status and none names a field:
+      //   "A product with this name already exists in this category"
+      //   "The selected category belongs to a different chain"
+      //   "The add-on parent belongs to a different chain"
+      // The last two both mention a chain, so the parent has to be matched
+      // first or its message lands on the category box.
       if (apiError.status === 409) {
-        const field = apiError.message.toLowerCase().includes('chain') ? 'categoryId' : 'name';
+        const message = apiError.message.toLowerCase();
+        const field = message.includes('add-on parent')
+          ? 'addonParentId'
+          : message.includes('chain')
+            ? 'categoryId'
+            : 'name';
+
         form.setFields([{ name: field, errors: [apiError.message] }]);
       }
 

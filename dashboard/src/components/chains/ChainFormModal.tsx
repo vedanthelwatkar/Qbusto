@@ -1,9 +1,10 @@
 /**
- * Create and edit a category.
+ * Create and edit a chain.
  *
- * One modal for both. Creating adds a chain for owners; editing drops it,
- * because `chainId` cannot change - moving a category between chains would drag
- * its products across a tenant boundary.
+ * One modal for both. Creating is offered to owners only - not a frontend rule
+ * but the backend's: every other role is pinned to their own chain by tenant
+ * scope, so a chain they created would be a row they could never read back, and
+ * chain.service refuses it outright.
  *
  * Mounted only while it is open, so each open starts from a clean form and a
  * correct initial loading state instead of an effect resetting the last one.
@@ -13,38 +14,33 @@ import { useEffect, useState } from 'react';
 import { Alert, App, Form, Input, Modal, Spin, Switch } from 'antd';
 
 import type {
-  Category,
-  PostApiCategoriesBody,
-  PutApiCategoriesIdBody,
+  Chain,
+  PostApiChainsBody,
+  PutApiChainsIdBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
-import ChainSelect from '@/components/chains/ChainSelect';
 import { toApiError } from '@/services/api';
-import * as categoriesService from '@/services/categories.service';
-import { useAuthStore } from '@/stores/auth.store';
+import * as chainsService from '@/services/chains.service';
 import { fieldErrorsFrom } from '@/utils/validation';
 
 interface FormValues {
   name: string;
-  description?: string | null;
-  imageUrl?: string | null;
-  chainId?: number;
+  logoImageUrl?: string | null;
   isActive: boolean;
 }
 
-interface CategoryFormModalProps {
-  /** Omitted for a new category. Only `id` is read - the rest is refetched. */
-  category?: Category;
+interface ChainFormModalProps {
+  /** Omitted for a new chain. Only `id` is read - the rest is refetched. */
+  chain?: Chain;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function CategoryFormModal({ category, onClose, onSaved }: CategoryFormModalProps) {
+export default function ChainFormModal({ chain, onClose, onSaved }: ChainFormModalProps) {
   const [form] = Form.useForm<FormValues>();
   const { message } = App.useApp();
-  const actor = useAuthStore((state) => state.user);
 
-  const categoryId = category?.id;
-  const isEdit = categoryId !== undefined;
+  const chainId = chain?.id;
+  const isEdit = chainId !== undefined;
 
   const [loading, setLoading] = useState(isEdit);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -55,19 +51,18 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    if (categoryId === undefined) return;
+    if (chainId === undefined) return;
 
     let active = true;
 
-    categoriesService
-      .getCategory(categoryId)
+    chainsService
+      .getChain(chainId)
       .then((full) => {
         if (!active) return;
 
         form.setFieldsValue({
           name: full.name,
-          description: full.description,
-          imageUrl: full.imageUrl,
+          logoImageUrl: full.logoImageUrl,
           isActive: full.isActive !== false,
         });
 
@@ -77,7 +72,7 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
         if (!active) return;
         setError(toApiError(caught).message);
         // Saving is blocked from here on: the form still holds the defaults for
-        // a *new* category, so submitting would write those over the one that
+        // a *new* chain, so submitting would write those over the one that
         // failed to load.
         setLoadFailed(true);
         setLoading(false);
@@ -86,39 +81,31 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
     return () => {
       active = false;
     };
-  }, [form, categoryId]);
+  }, [form, chainId]);
 
   const handleSubmit = async (values: FormValues) => {
     setSubmitting(true);
     setError(null);
 
     try {
-      if (categoryId !== undefined) {
-        const body: PutApiCategoriesIdBody = {
+      if (chainId !== undefined) {
+        const body: PutApiChainsIdBody = {
           name: values.name,
-          description: values.description ?? null,
-          imageUrl: values.imageUrl ?? null,
+          logoImageUrl: values.logoImageUrl ?? null,
           isActive: values.isActive,
         };
 
-        await categoriesService.updateCategory(categoryId, body);
-        message.success('Category updated');
+        await chainsService.updateChain(chainId, body);
+        message.success('Chain updated');
       } else {
-        const body: PostApiCategoriesBody = {
+        const body: PostApiChainsBody = {
           name: values.name,
-          description: values.description ?? null,
-          imageUrl: values.imageUrl ?? null,
-          // Honoured for owners only; every other role creates inside its own
-          // chain whatever is sent. Cleared means "omit the field", not "send
-          // null" - the validator types this as a positive integer and would
-          // reject a null with a 400 instead of defaulting to the actor's own
-          // chain.
-          chainId: values.chainId ?? undefined,
+          logoImageUrl: values.logoImageUrl ?? null,
           isActive: values.isActive,
         };
 
-        await categoriesService.createCategory(body);
-        message.success('Category created');
+        await chainsService.createChain(body);
+        message.success('Chain created');
       }
 
       onSaved();
@@ -142,8 +129,8 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
   return (
     <Modal
       open={visible}
-      title={isEdit ? `Edit ${category?.name ?? 'category'}` : 'New category'}
-      okText={isEdit ? 'Save changes' : 'Create category'}
+      title={isEdit ? `Edit ${chain?.name ?? 'chain'}` : 'New chain'}
+      okText={isEdit ? 'Save changes' : 'Create chain'}
       onOk={() => form.submit()}
       onCancel={() => setVisible(false)}
       afterClose={onClose}
@@ -162,46 +149,34 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
           requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
-          initialValues={{ isActive: true, chainId: actor?.chainId }}
+          initialValues={{ isActive: true }}
         >
           <Form.Item
             name="name"
             label="Name"
             rules={[
               { required: true, message: 'Enter a name' },
-              { max: 200, message: 'Use at most 200 characters' },
+              { min: 2, message: 'Use at least 2 characters' },
+              { max: 100, message: 'Use at most 100 characters' },
             ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
 
           <Form.Item
-            name="description"
-            label="Description"
-            rules={[{ max: 4000, message: 'Use at most 4000 characters' }]}
-          >
-            <Input.TextArea rows={3} />
-          </Form.Item>
-
-          <Form.Item
-            name="imageUrl"
-            label="Image URL"
+            name="logoImageUrl"
+            label="Logo URL"
             rules={[{ max: 500, message: 'Use at most 500 characters' }]}
           >
             <Input placeholder="https://..." />
           </Form.Item>
 
-          {isEdit || actor?.role !== 'owner' ? null : (
-            <Form.Item
-              name="chainId"
-              label="Chain"
-              extra="Cannot be changed after the category is created."
-            >
-              <ChainSelect allowClear placeholder="Your own chain" />
-            </Form.Item>
-          )}
-
-          <Form.Item name="isActive" label="Active" valuePropName="checked">
+          <Form.Item
+            name="isActive"
+            label="Active"
+            valuePropName="checked"
+            extra="Deactivating a chain does not deactivate its cinemas, users, categories or products."
+          >
             <Switch />
           </Form.Item>
         </Form>
