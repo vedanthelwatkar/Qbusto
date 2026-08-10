@@ -81,6 +81,39 @@
           "requestId": {
             "type": "string",
             "format": "uuid"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "description": "Present in `meta` on paginated list responses.",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 20
+          },
+          "total": {
+            "type": "integer",
+            "example": 137
+          },
+          "totalPages": {
+            "type": "integer",
+            "example": 7
+          },
+          "hasNextPage": {
+            "type": "boolean",
+            "example": true
+          },
+          "hasPreviousPage": {
+            "type": "boolean",
+            "example": false
           }
         }
       },
@@ -4156,8 +4189,7 @@
                       "I"
                     ],
                     "default": "H",
-                    "description": "H = header",
-                    "I = inner.": null
+                    "description": "H = header, I = inner."
                   },
                   "sequence": {
                     "type": "integer",

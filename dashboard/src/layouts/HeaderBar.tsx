@@ -10,7 +10,7 @@ import { Avatar, Button, Dropdown, Space, Tag, Typography, type MenuProps } from
 import { KeyOutlined, LogoutOutlined, MenuOutlined, UserOutlined } from '@ant-design/icons';
 
 import { useAuthStore } from '@/stores/auth.store';
-import { ROLE_LABELS, displayName } from '@/utils/permissions';
+import { displayName, roleLabel } from '@/utils/permissions';
 
 const { Text } = Typography;
 
@@ -54,9 +54,13 @@ export default function HeaderBar({ onToggleNav, onChangePassword }: HeaderBarPr
       />
 
       <Space size="middle" align="center">
-        {user ? <Tag color="blue">{ROLE_LABELS[user.role]}</Tag> : null}
+        {user ? <Tag color="blue">{roleLabel(user.role)}</Tag> : null}
 
-        <Dropdown menu={{ items, onClick: handleMenuClick }} trigger={['click']} placement="bottomRight">
+        <Dropdown
+          menu={{ items, onClick: handleMenuClick }}
+          trigger={['click']}
+          placement="bottomRight"
+        >
           <Button type="text" className="header-bar__user">
             <Space size="small">
               <Avatar size="small" icon={<UserOutlined />} />

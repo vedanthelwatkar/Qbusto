@@ -33,7 +33,13 @@ export default function ProtectedRoute() {
   return <DashboardLayout />;
 }
 
-export function RequireModule({ module, children }: { module: ModuleName; children: React.ReactNode }) {
+export function RequireModule({
+  module,
+  children,
+}: {
+  module: ModuleName;
+  children: React.ReactNode;
+}) {
   const user = useAuthStore((state) => state.user);
 
   if (!hasPermission(user, module)) return <ForbiddenPage />;

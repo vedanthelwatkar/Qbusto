@@ -137,7 +137,7 @@ router.get(
  *             properties:
  *               cinemaId:  { type: integer }
  *               imageUrl:  { type: string, maxLength: 500 }
- *               type:      { type: string, enum: [H, I], default: H, description: H = header, I = inner. }
+ *               type:      { type: string, enum: [H, I], default: H, description: 'H = header, I = inner.' }
  *               sequence:  { type: integer, minimum: 0, default: 0 }
  *               startDate: { type: string, format: date-time, nullable: true }
  *               endDate:   { type: string, format: date-time, nullable: true }

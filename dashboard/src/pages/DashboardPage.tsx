@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom';
 import PageHeader from '@/components/PageHeader';
 import { NAV_MODULES } from '@/routes/modules';
 import { useAuthStore } from '@/stores/auth.store';
-import { ROLE_LABELS, displayName, hasPermission } from '@/utils/permissions';
+import { displayName, hasPermission, roleLabel } from '@/utils/permissions';
 
 const { Text } = Typography;
 
@@ -28,7 +28,7 @@ export default function DashboardPage() {
       <PageHeader
         title={`Welcome back, ${displayName(user)}`}
         description="Cinema food ordering management"
-        extra={user ? <Tag color="blue">{ROLE_LABELS[user.role]}</Tag> : undefined}
+        extra={user ? <Tag color="blue">{roleLabel(user.role)}</Tag> : undefined}
       />
 
       <Row gutter={[16, 16]}>

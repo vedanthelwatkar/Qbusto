@@ -7,14 +7,26 @@
  * vertical slice is built.
  */
 
+import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import ComingSoonPage from '@/pages/ComingSoonPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import UsersPage from '@/pages/UsersPage';
 import ProtectedRoute, { RequireModule } from '@/routes/ProtectedRoute';
 import { NAV_MODULES } from '@/routes/modules';
+
+/**
+ * The screens that exist, by path. A module with no entry here renders the
+ * placeholder - which is what `implemented` on the same module records, so the
+ * two are kept in step as each vertical slice lands.
+ */
+const PAGES: Record<string, ReactNode> = {
+  '/': <DashboardPage />,
+  '/users': <UsersPage />,
+};
 
 export default function AppRoutes() {
   return (
@@ -25,7 +37,7 @@ export default function AppRoutes() {
         {NAV_MODULES.map((entry) => {
           const element = (
             <RequireModule module={entry.module}>
-              {entry.path === '/' ? <DashboardPage /> : <ComingSoonPage title={entry.label} />}
+              {PAGES[entry.path] ?? <ComingSoonPage title={entry.label} />}
             </RequireModule>
           );
 

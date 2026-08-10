@@ -83,8 +83,10 @@ api.interceptors.response.use(
  * it is replaced with a generic line.
  */
 export function toApiError(error: unknown): ApiError {
-  if (isApiError(error)) return error;
-
+  // Checked before isApiError, and not after: an AxiosError carries `code`,
+  // `message` and `status` of its own, so it satisfies the ApiError shape and
+  // would be passed straight through - handing the UI "Request failed with
+  // status code 401" instead of what the server actually said.
   if (error instanceof AxiosError) {
     const status = error.response?.status ?? null;
 
@@ -118,6 +120,10 @@ export function toApiError(error: unknown): ApiError {
     return { status, code: ERROR_CODES.INTERNAL_ERROR, message: 'Request failed.' };
   }
 
+  // Already normalised - this is a rejection that passed through the response
+  // interceptor and is being read again by a component.
+  if (isApiError(error)) return error;
+
   return {
     status: null,
     code: ERROR_CODES.INTERNAL_ERROR,
@@ -129,6 +135,10 @@ function isApiError(value: unknown): value is ApiError {
   return (
     typeof value === 'object' &&
     value !== null &&
+    // An AxiosError has all three of these, so the shape alone cannot tell the
+    // two apart. Excluding it here keeps that true no matter what order the
+    // checks above end up in.
+    !(value instanceof AxiosError) &&
     'code' in value &&
     'message' in value &&
     'status' in value

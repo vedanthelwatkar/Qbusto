@@ -4,22 +4,15 @@
  * Mirrors backend/src/utils/response.js and the SuccessResponse / ErrorResponse
  * schemas in shared/openapi.json. Payloads always sit under `data`; anything a
  * client needs about the request itself sits under `meta`.
+ *
+ * `Pagination` and `ResponseMeta` are the spec's own, re-exported rather than
+ * restated - the spec now describes the pagination block that list endpoints put
+ * in `meta`.
  */
 
-export interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-}
+import type { Pagination, ResponseMeta } from '@/api/generated/cinemaOrderingAPI.schemas';
 
-export interface ResponseMeta {
-  timestamp: string;
-  requestId?: string;
-  pagination?: Pagination;
-}
+export type { Pagination, ResponseMeta };
 
 export interface SuccessResponse<T> {
   success: true;

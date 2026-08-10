@@ -52,6 +52,7 @@ export default function LoginPage() {
       // runs on the next render. Doing both would race two redirects.
       await signIn(values);
     } catch (caught) {
+      console.log('🚀 ~ handleSubmit ~ caught:', caught);
       setError(toApiError(caught).message);
     } finally {
       setSubmitting(false);

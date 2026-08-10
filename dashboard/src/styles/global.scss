@@ -136,6 +136,23 @@ body {
   margin-bottom: 16px;
 }
 
+// Filter row above a table. Wraps rather than scrolling, so a narrow screen
+// stacks the controls instead of hiding them.
+.filters {
+  margin-bottom: 16px;
+}
+
+// A table cell that is a link to the row's detail view: antd's link button
+// carries button padding, which would misalign it with the other columns.
+.table-link {
+  padding: 0;
+  height: auto;
+}
+
+.details-drawer__section {
+  margin-top: 24px;
+}
+
 .app-loader {
   display: flex;
   align-items: center;

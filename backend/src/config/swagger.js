@@ -68,6 +68,22 @@ const definition = {
         properties: {
           timestamp: { type: 'string', format: 'date-time' },
           requestId: { type: 'string', format: 'uuid' },
+          // Present on list endpoints only - paginated() in src/utils/response.js
+          // merges it into meta, and success() does not.
+          pagination: { $ref: '#/components/schemas/Pagination' },
+        },
+      },
+      Pagination: {
+        type: 'object',
+        description: 'Present in `meta` on paginated list responses.',
+        properties: {
+          page: { type: 'integer', example: 1 },
+          limit: { type: 'integer', example: 20 },
+          // Total matching rows, ignoring pagination.
+          total: { type: 'integer', example: 137 },
+          totalPages: { type: 'integer', example: 7 },
+          hasNextPage: { type: 'boolean', example: true },
+          hasPreviousPage: { type: 'boolean', example: false },
         },
       },
       SuccessResponse: {

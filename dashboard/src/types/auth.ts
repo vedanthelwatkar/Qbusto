@@ -1,60 +1,35 @@
 /**
- * Authentication and permission shapes.
+ * Authentication and permission types.
  *
- * MODULE_NAMES and ROLES mirror the CHECK constraints in the frozen schema (see
- * backend/src/constants.js). They exist here so navigation can be built from a
- * known list - the grants themselves always come from the server.
+ * The shapes themselves are not written here - they are re-exported from the
+ * orval output, which is generated from shared/openapi.json, which the backend
+ * writes. Anything declared by the spec must come through that chain or the two
+ * sides can drift silently.
+ *
+ * What is left here is what the spec does not describe: the action names the UI
+ * uses to talk about a permission row.
  */
 
-export const MODULE_NAMES = [
-  'Dashboard',
-  'Orders',
-  'Products',
-  'Categories',
-  'Pricing',
-  'Banners',
-  'Users',
-  'Reports',
-  'POS Integrations',
-  'Settings',
-] as const;
+import {
+  UserPermissionModuleName,
+  UserRole,
+  type PostApiAuthLoginBody,
+  type User,
+  type UserPermission,
+  type UserPermissionInput,
+} from '@/api/generated/cinemaOrderingAPI.schemas';
 
-export type ModuleName = (typeof MODULE_NAMES)[number];
+export type { User, UserPermission, UserPermissionInput };
 
-export type Role = 'owner' | 'chain_admin' | 'cinema_admin' | 'kitchen_staff' | 'cinema_accountant';
+export type ModuleName = UserPermissionModuleName;
+export type Role = UserRole;
 
+/** Every module the backend authorises against, in the order the UI shows them. */
+export const MODULE_NAMES = Object.values(UserPermissionModuleName);
+
+export const ROLES = Object.values(UserRole);
+
+/** The three flags on a user_permissions row, named as the UI talks about them. */
 export type PermissionAction = 'read' | 'edit' | 'delete';
 
-export interface UserPermission {
-  moduleName: ModuleName;
-  canRead: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
-
-export interface User {
-  id: number;
-  chainId: number;
-  cinemaId: number | null;
-  role: Role;
-  username: string;
-  firstName: string | null;
-  lastName: string | null;
-  mobile: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  /** Only present on endpoints that load the user with permissions, such as /api/auth/me. */
-  permissions?: UserPermission[];
-}
-
-export interface LoginCredentials {
-  username: string;
-  password: string;
-}
-
-export interface LoginResult {
-  token: string;
-  expiresIn: string;
-  user: User;
-}
+export type LoginCredentials = PostApiAuthLoginBody;

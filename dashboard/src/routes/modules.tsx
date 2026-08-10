@@ -33,14 +33,56 @@ export interface NavModule {
 }
 
 export const NAV_MODULES: NavModule[] = [
-  { path: '/', label: 'Dashboard', module: 'Dashboard', icon: <DashboardOutlined />, implemented: true },
-  { path: '/orders', label: 'Orders', module: 'Orders', icon: <ShoppingCartOutlined />, implemented: false },
-  { path: '/categories', label: 'Categories', module: 'Categories', icon: <TagsOutlined />, implemented: false },
-  { path: '/products', label: 'Products', module: 'Products', icon: <AppstoreOutlined />, implemented: false },
-  { path: '/pricing', label: 'Pricing', module: 'Pricing', icon: <DollarOutlined />, implemented: false },
-  { path: '/banners', label: 'Banners', module: 'Banners', icon: <PictureOutlined />, implemented: false },
-  { path: '/users', label: 'Users', module: 'Users', icon: <TeamOutlined />, implemented: false },
-  { path: '/reports', label: 'Reports', module: 'Reports', icon: <BarChartOutlined />, implemented: false },
+  {
+    path: '/',
+    label: 'Dashboard',
+    module: 'Dashboard',
+    icon: <DashboardOutlined />,
+    implemented: true,
+  },
+  {
+    path: '/orders',
+    label: 'Orders',
+    module: 'Orders',
+    icon: <ShoppingCartOutlined />,
+    implemented: false,
+  },
+  {
+    path: '/categories',
+    label: 'Categories',
+    module: 'Categories',
+    icon: <TagsOutlined />,
+    implemented: false,
+  },
+  {
+    path: '/products',
+    label: 'Products',
+    module: 'Products',
+    icon: <AppstoreOutlined />,
+    implemented: false,
+  },
+  {
+    path: '/pricing',
+    label: 'Pricing',
+    module: 'Pricing',
+    icon: <DollarOutlined />,
+    implemented: false,
+  },
+  {
+    path: '/banners',
+    label: 'Banners',
+    module: 'Banners',
+    icon: <PictureOutlined />,
+    implemented: false,
+  },
+  { path: '/users', label: 'Users', module: 'Users', icon: <TeamOutlined />, implemented: true },
+  {
+    path: '/reports',
+    label: 'Reports',
+    module: 'Reports',
+    icon: <BarChartOutlined />,
+    implemented: false,
+  },
   {
     path: '/pos-integrations',
     label: 'POS Integrations',
@@ -48,5 +90,11 @@ export const NAV_MODULES: NavModule[] = [
     icon: <ApiOutlined />,
     implemented: false,
   },
-  { path: '/settings', label: 'Settings', module: 'Settings', icon: <SettingOutlined />, implemented: false },
+  {
+    path: '/settings',
+    label: 'Settings',
+    module: 'Settings',
+    icon: <SettingOutlined />,
+    implemented: false,
+  },
 ];

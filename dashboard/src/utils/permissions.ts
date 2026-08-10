@@ -11,9 +11,12 @@
  * owner would see an empty sidebar.
  */
 
-import type { ModuleName, PermissionAction, User, UserPermission } from '@/types/auth';
+import type { ModuleName, PermissionAction, Role, User, UserPermission } from '@/types/auth';
 
-const ACTION_ATTRIBUTE: Record<PermissionAction, keyof Pick<UserPermission, 'canRead' | 'canEdit' | 'canDelete'>> = {
+const ACTION_ATTRIBUTE: Record<
+  PermissionAction,
+  keyof Pick<UserPermission, 'canRead' | 'canEdit' | 'canDelete'>
+> = {
   read: 'canRead',
   edit: 'canEdit',
   delete: 'canDelete',
@@ -34,8 +37,8 @@ export function hasPermission(
   );
 }
 
-/** Human-readable role label for the header and user menu. */
-export const ROLE_LABELS: Record<User['role'], string> = {
+/** Human-readable role label for the header, the user menu and the table. */
+export const ROLE_LABELS: Record<Role, string> = {
   owner: 'Owner',
   chain_admin: 'Chain admin',
   cinema_admin: 'Cinema admin',
@@ -43,10 +46,19 @@ export const ROLE_LABELS: Record<User['role'], string> = {
   cinema_accountant: 'Accountant',
 };
 
+/**
+ * The label for a role that the generated types treat as optional, because the
+ * spec does not mark any User field required. Every user the API returns has
+ * one; this only keeps the display honest if one ever does not.
+ */
+export function roleLabel(role: Role | undefined): string {
+  return role ? ROLE_LABELS[role] : 'Unknown role';
+}
+
 export function displayName(user: User | null): string {
   if (!user) return '';
 
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
 
-  return fullName || user.username;
+  return fullName || user.username || '';
 }
