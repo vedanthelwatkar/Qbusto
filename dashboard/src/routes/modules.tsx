@@ -52,14 +52,14 @@ export const NAV_MODULES: NavModule[] = [
     label: 'Categories',
     module: 'Categories',
     icon: <TagsOutlined />,
-    implemented: false,
+    implemented: true,
   },
   {
     path: '/products',
     label: 'Products',
     module: 'Products',
     icon: <AppstoreOutlined />,
-    implemented: false,
+    implemented: true,
   },
   {
     path: '/pricing',

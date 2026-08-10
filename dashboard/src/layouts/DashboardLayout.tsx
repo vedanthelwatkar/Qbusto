@@ -43,7 +43,8 @@ export default function DashboardLayout() {
           open={navDrawerOpen}
           onClose={() => setNavDrawerOpen(false)}
           closable={false}
-          styles={{ body: { padding: 0, background: '#001529' } }}
+          classNames={{ body: 'sidebar--drawer' }}
+          styles={{ body: { padding: 0 } }}
         >
           <SidebarNav onNavigate={() => setNavDrawerOpen(false)} />
         </Drawer>

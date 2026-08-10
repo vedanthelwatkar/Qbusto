@@ -10,10 +10,12 @@
 import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
+import CategoriesPage from '@/pages/CategoriesPage';
 import ComingSoonPage from '@/pages/ComingSoonPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import ProductsPage from '@/pages/ProductsPage';
 import UsersPage from '@/pages/UsersPage';
 import ProtectedRoute, { RequireModule } from '@/routes/ProtectedRoute';
 import { NAV_MODULES } from '@/routes/modules';
@@ -26,6 +28,8 @@ import { NAV_MODULES } from '@/routes/modules';
 const PAGES: Record<string, ReactNode> = {
   '/': <DashboardPage />,
   '/users': <UsersPage />,
+  '/categories': <CategoriesPage />,
+  '/products': <ProductsPage />,
 };
 
 export default function AppRoutes() {

@@ -31,9 +31,9 @@ import PermissionsEditor from '@/components/users/PermissionsEditor';
 import { toApiError } from '@/services/api';
 import * as usersService from '@/services/users.service';
 import { useAuthStore } from '@/stores/auth.store';
-import { ERROR_CODES } from '@/types/api';
 import { ROLES, type Role, type User, type UserPermissionInput } from '@/types/auth';
 import { ROLE_LABELS } from '@/utils/permissions';
+import { fieldErrorsFrom } from '@/utils/validation';
 
 interface FormValues {
   username: string;
@@ -53,20 +53,6 @@ interface UserFormModalProps {
   user?: User;
   onClose: () => void;
   onSaved: () => void;
-}
-
-/** Backend validation detail, as produced by backend/src/middleware/validate.js. */
-interface ValidationDetail {
-  source: string;
-  field: string;
-  message: string;
-}
-
-function isValidationDetails(details: unknown): details is ValidationDetail[] {
-  return (
-    Array.isArray(details) &&
-    details.every((entry) => typeof entry === 'object' && entry !== null && 'field' in entry)
-  );
 }
 
 export default function UserFormModal({ user, onClose, onSaved }: UserFormModalProps) {
@@ -205,13 +191,7 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
 
       // A 400 names the fields it rejected, so put those messages where the
       // user is looking instead of only at the top of the form.
-      if (apiError.code === ERROR_CODES.VALIDATION_ERROR && isValidationDetails(apiError.details)) {
-        form.setFields(
-          apiError.details
-            .filter((detail) => detail.source === 'body')
-            .map((detail) => ({ name: detail.field, errors: [detail.message] }))
-        );
-      }
+      form.setFields(fieldErrorsFrom<FormValues>(apiError));
 
       setError(apiError.message);
       setSubmitting(false);

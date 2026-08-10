@@ -28,7 +28,7 @@ export default function DashboardPage() {
       <PageHeader
         title={`Welcome back, ${displayName(user)}`}
         description="Cinema food ordering management"
-        extra={user ? <Tag color="blue">{roleLabel(user.role)}</Tag> : undefined}
+        extra={user ? <Tag color="processing">{roleLabel(user.role)}</Tag> : undefined}
       />
 
       <Row gutter={[16, 16]}>

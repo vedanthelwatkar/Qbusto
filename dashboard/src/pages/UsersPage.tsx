@@ -168,7 +168,9 @@ export default function UsersPage() {
       key: 'role',
       sorter: true,
       render: (_, user) => (
-        <Tag color={user.role === 'owner' ? 'gold' : 'blue'}>{roleLabel(user.role)}</Tag>
+        // Status words rather than fixed colour names, so the tags follow the
+        // theme's semantic tokens instead of antd's stock palette.
+        <Tag color={user.role === 'owner' ? 'warning' : 'processing'}>{roleLabel(user.role)}</Tag>
       ),
     },
     {
@@ -184,7 +186,7 @@ export default function UsersPage() {
       key: 'isActive',
       sorter: true,
       render: (_, user) =>
-        user.isActive === false ? <Tag>Inactive</Tag> : <Tag color="green">Active</Tag>,
+        user.isActive === false ? <Tag>Inactive</Tag> : <Tag color="success">Active</Tag>,
     },
     {
       title: 'Created',

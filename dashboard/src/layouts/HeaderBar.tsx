@@ -54,7 +54,7 @@ export default function HeaderBar({ onToggleNav, onChangePassword }: HeaderBarPr
       />
 
       <Space size="middle" align="center">
-        {user ? <Tag color="blue">{roleLabel(user.role)}</Tag> : null}
+        {user ? <Tag color="processing">{roleLabel(user.role)}</Tag> : null}
 
         <Dropdown
           menu={{ items, onClick: handleMenuClick }}

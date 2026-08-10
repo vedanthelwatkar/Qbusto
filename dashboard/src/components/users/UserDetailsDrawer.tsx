@@ -99,7 +99,7 @@ export default function UserDetailsDrawer({ userId, onClose }: UserDetailsDrawer
             <Descriptions.Item label="Username">{user.username}</Descriptions.Item>
             <Descriptions.Item label="Role">{roleLabel(user.role)}</Descriptions.Item>
             <Descriptions.Item label="Status">
-              {user.isActive === false ? <Tag>Inactive</Tag> : <Tag color="green">Active</Tag>}
+              {user.isActive === false ? <Tag>Inactive</Tag> : <Tag color="success">Active</Tag>}
             </Descriptions.Item>
             <Descriptions.Item label="Mobile">
               {user.mobile ?? <Text type="secondary">Not set</Text>}

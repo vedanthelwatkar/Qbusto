@@ -1,7 +1,25 @@
 // Layout glue only. Anything antd already styles is left to antd; these rules
 // cover the shell, the login screen and a couple of spacing primitives.
+//
+// The palette below mirrors PALETTE in src/theme.ts, which is the source of
+// truth. It has to be repeated as literals rather than imported: antd derives
+// its hover and background shades by computing on the base colours, so it needs
+// real values at config time and cannot be handed a CSS variable. Change a
+// colour in theme.ts and change it here; nowhere else should carry a hex.
 
-$sider-bg: #001529;
+:root {
+  --qb-primary-50: #fff4e9;
+  --qb-primary-100: #ffe2c8;
+  --qb-primary-500: #ff8c23;
+  --qb-primary-600: #e67e20;
+  --qb-ink: #0d0d0d;
+  --qb-text: #1a1a1a;
+  --qb-muted: #6b7280;
+  --qb-border: #e5e7eb;
+  --qb-page-bg: #f5f6f8;
+  --qb-surface: #ffffff;
+}
+
 $content-padding: 24px;
 
 html,
@@ -23,7 +41,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 10;
-    border-bottom: 1px solid rgba(5, 5, 5, 0.06);
+    border-bottom: 1px solid var(--qb-border);
   }
 
   &__content {
@@ -61,14 +79,20 @@ body {
 }
 
 .sidebar {
+  // The drawer that replaces the Sider below the lg breakpoint gets the same
+  // ink background, so the two presentations read as one component.
+  &--drawer {
+    background: var(--qb-ink);
+  }
+
   &__brand {
     display: flex;
     align-items: center;
     gap: 10px;
     height: 56px;
     padding-inline: 20px;
-    color: #fff;
-    background: $sider-bg;
+    color: var(--qb-surface);
+    background: var(--qb-ink);
   }
 
   &__mark {
@@ -78,7 +102,8 @@ body {
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: #1668dc;
+    background: var(--qb-primary-500);
+    color: var(--qb-surface);
     font-weight: 700;
   }
 
@@ -95,12 +120,15 @@ body {
   justify-content: center;
   min-height: 100vh;
   padding: 16px;
-  background: #f5f6f8;
+  // A wash of the lightest brand tint over the page grey, so the sign-in screen
+  // is recognisably QBusto before any of the app has loaded.
+  background: linear-gradient(160deg, var(--qb-primary-50) 0%, var(--qb-page-bg) 55%);
 
   &__card {
     width: 100%;
     max-width: 380px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    border-top: 3px solid var(--qb-primary-500);
+    box-shadow: 0 4px 24px rgba(13, 13, 13, 0.08);
   }
 
   &__heading {
@@ -151,6 +179,20 @@ body {
 
 .details-drawer__section {
   margin-top: 24px;
+}
+
+// Free text in a drawer: the last paragraph's default bottom margin would push
+// the description row taller than the ones around it.
+.details-drawer__text {
+  margin-bottom: 0;
+  white-space: pre-wrap;
+}
+
+// Description cells hold up to 4000 characters. Capped so one long entry cannot
+// set the height of every row; the full text is in the cell's tooltip.
+.table-cell--clamped {
+  display: inline-block;
+  max-width: 320px;
 }
 
 .app-loader {
