@@ -10,8 +10,13 @@
 const express = require('express');
 
 const authRoutes = require('./auth.routes');
+const availabilityRoutes = require('./availability.routes');
+const bannerRoutes = require('./banner.routes');
+const categoryRoutes = require('./category.routes');
 const chainRoutes = require('./chain.routes');
 const cinemaRoutes = require('./cinema.routes');
+const pricingRoutes = require('./pricing.routes');
+const productRoutes = require('./product.routes');
 const screenRoutes = require('./screen.routes');
 const userRoutes = require('./user.routes');
 const { success } = require('../utils/response');
@@ -37,5 +42,10 @@ router.use('/users', userRoutes);
 router.use('/chains', chainRoutes);
 router.use('/cinemas', cinemaRoutes);
 router.use('/screens', screenRoutes);
+router.use('/categories', categoryRoutes);
+router.use('/products', productRoutes);
+router.use('/product-availability-hours', availabilityRoutes);
+router.use('/product-pricing', pricingRoutes);
+router.use('/banners', bannerRoutes);
 
 module.exports = router;
