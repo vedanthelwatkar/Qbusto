@@ -56,6 +56,11 @@ const definition = {
     },
     { name: 'Product Pricing', description: 'Per-cinema, per-day product prices and discounts' },
     { name: 'Banners', description: 'Promotional images shown for a cinema' },
+    { name: 'Orders', description: 'Customer orders, their items and their lifecycle' },
+    {
+      name: 'Order Statuses',
+      description: 'The seeded order and payment lifecycle master tables',
+    },
   ],
   components: {
     securitySchemes: {
@@ -314,7 +319,10 @@ const definition = {
       ProductPricing: {
         type: 'object',
         description:
-          'Decimal columns are returned as strings to preserve exact scale. ' +
+          'Monetary columns are DECIMAL(10,2) in the database and arrive as JSON ' +
+          'numbers: the SQL Server driver hands Sequelize a JS number and the ' +
+          'service passes it through, so 250.00 is serialised as 250. Format for ' +
+          'display rather than assuming two decimal places on the wire. ' +
           'Discount amounts are only meaningful when discountType is set.',
         properties: {
           id: { type: 'integer', example: 22 },
@@ -327,7 +335,7 @@ const definition = {
             example: 0,
             description: '0 = every day, 1 = Monday ... 7 = Sunday.',
           },
-          basePrice: { type: 'string', example: '250.00' },
+          basePrice: { type: 'number', format: 'double', example: 250 },
           discountType: {
             type: 'string',
             enum: ['P', 'F'],
@@ -335,11 +343,11 @@ const definition = {
             example: 'P',
             description: 'P = percentage, F = flat amount.',
           },
-          discountValue: { type: 'string', nullable: true, example: '10.00' },
-          discountOnQr: { type: 'string', nullable: true },
-          discountOnKiosk: { type: 'string', nullable: true },
-          discountOnSeatQr: { type: 'string', nullable: true },
-          discountOnCounter: { type: 'string', nullable: true },
+          discountValue: { type: 'number', format: 'double', nullable: true, example: 10 },
+          discountOnQr: { type: 'number', format: 'double', nullable: true },
+          discountOnKiosk: { type: 'number', format: 'double', nullable: true },
+          discountOnSeatQr: { type: 'number', format: 'double', nullable: true },
+          discountOnCounter: { type: 'number', format: 'double', nullable: true },
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
@@ -368,6 +376,202 @@ const definition = {
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
+      },
+      OrderStatus: {
+        type: 'object',
+        description:
+          'A row from order_statuses or payment_statuses. Address these by `code`; ' +
+          'the numeric `id` is database detail and no endpoint accepts one.',
+        properties: {
+          id: { type: 'integer', example: 3 },
+          code: { type: 'string', example: 'preparing' },
+          name: { type: 'string', example: 'Preparing' },
+          description: {
+            type: 'string',
+            nullable: true,
+            example: 'Kitchen is preparing the order.',
+          },
+          isActive: { type: 'boolean', example: true },
+        },
+      },
+      OrderItem: {
+        type: 'object',
+        description:
+          'An immutable snapshot taken when the order was placed. productName, ' +
+          'unitPrice and discount are frozen: renaming or repricing the product ' +
+          'later does not change what the customer was charged. Money is returned ' +
+          'as a JSON number - the SQL Server driver hands DECIMAL back as a ' +
+          'number, and this contract states what the API actually sends.',
+        properties: {
+          id: { type: 'integer', example: 54 },
+          orderId: { type: 'integer', example: 30 },
+          productId: { type: 'integer', example: 17 },
+          productName: {
+            type: 'string',
+            example: 'Salted Popcorn',
+            description: "The product's name at the time of the order.",
+          },
+          posItemId: {
+            type: 'string',
+            nullable: true,
+            description: 'Set by the POS integration phase. Null otherwise.',
+          },
+          quantity: { type: 'integer', example: 2 },
+          unitPrice: { type: 'number', format: 'double', example: 250 },
+          discount: {
+            type: 'number',
+            format: 'double',
+            example: 50,
+            description: 'Total discount for the line, not per unit.',
+          },
+          total: {
+            type: 'number',
+            format: 'double',
+            example: 450,
+            description: 'quantity x unitPrice - discount.',
+          },
+        },
+      },
+      OrderStatusLog: {
+        type: 'object',
+        description:
+          'One entry in an order status or payment status audit trail. ' +
+          'Append-only: it has a createdAt and no updatedAt.',
+        properties: {
+          id: { type: 'integer', example: 71 },
+          orderId: { type: 'integer', example: 30 },
+          previousStatusId: {
+            type: 'integer',
+            nullable: true,
+            description: 'Null on the opening entry, where the order came from no status.',
+          },
+          previousStatus: { type: 'string', nullable: true, example: 'confirmed' },
+          newStatusId: { type: 'integer', example: 3 },
+          newStatus: { type: 'string', example: 'preparing' },
+          changedByUserId: { type: 'integer', nullable: true, example: 7 },
+          reason: { type: 'string', nullable: true, example: 'Customer changed their mind' },
+          razorpayPaymentId: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Payment logs only, and always null in this phase - the staff-operated ' +
+              'payment endpoint takes no gateway identifiers.',
+          },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      Order: {
+        type: 'object',
+        description:
+          'An order as it appears in a list. Money is returned as a JSON number - ' +
+          'the SQL Server driver hands DECIMAL back as a number, and this contract ' +
+          'states what the API actually sends. `status` and `paymentStatus` are ' +
+          'status codes; the numeric id columns beside them are database detail.',
+        properties: {
+          id: { type: 'integer', example: 30 },
+          cinemaId: { type: 'integer', example: 3 },
+          screenId: { type: 'integer', nullable: true, example: 8 },
+          seatNumber: { type: 'string', nullable: true, example: 'H12' },
+          statusId: { type: 'integer', example: 3 },
+          status: {
+            type: 'string',
+            enum: ['initiated', 'confirmed', 'preparing', 'ready', 'delivered', 'rejected'],
+            example: 'preparing',
+          },
+          statusDetail: { $ref: '#/components/schemas/OrderStatus' },
+          paymentStatusId: { type: 'integer', example: 1 },
+          paymentStatus: {
+            type: 'string',
+            enum: ['pending', 'paid', 'failed', 'refunded'],
+            example: 'pending',
+          },
+          paymentStatusDetail: { $ref: '#/components/schemas/OrderStatus' },
+          source: {
+            type: 'string',
+            enum: ['qr', 'seat_qr', 'kiosk', 'counter'],
+            nullable: true,
+            example: 'seat_qr',
+          },
+          customerMobile: { type: 'string', nullable: true, example: '9876543210' },
+          customerEmail: { type: 'string', nullable: true },
+          filmTitle: { type: 'string', nullable: true, example: 'Dune: Part Two' },
+          showTime: { type: 'string', format: 'date-time', nullable: true },
+          subtotal: {
+            type: 'number',
+            format: 'double',
+            example: 500,
+            description: 'Sum of quantity x unitPrice across the items. Calculated server-side.',
+          },
+          discount: { type: 'number', format: 'double', example: 50 },
+          total: {
+            type: 'number',
+            format: 'double',
+            example: 450,
+            description: 'subtotal - discount.',
+          },
+          smsStatus: {
+            type: 'string',
+            enum: ['pending', 'success', 'failed'],
+            nullable: true,
+            description: 'Null means the channel was not applicable or not enabled.',
+          },
+          whatsappStatus: {
+            type: 'string',
+            enum: ['pending', 'success', 'failed'],
+            nullable: true,
+          },
+          razorpayOrderId: {
+            type: 'string',
+            nullable: true,
+            description: 'Written by the Razorpay integration phase. Null otherwise.',
+          },
+          razorpayPaymentId: { type: 'string', nullable: true },
+          notes: { type: 'string', nullable: true },
+          deliveredAt: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Stamped when the order moves to `delivered`.',
+          },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          cinema: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              code: { type: 'string' },
+              name: { type: 'string' },
+            },
+          },
+          screen: {
+            type: 'object',
+            nullable: true,
+            properties: { id: { type: 'integer' }, name: { type: 'string' } },
+          },
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/OrderItem' },
+          },
+        },
+      },
+      OrderDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/Order' },
+          {
+            type: 'object',
+            description: 'Adds both audit trails, oldest entry first.',
+            properties: {
+              statusLogs: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/OrderStatusLog' },
+              },
+              paymentStatusLogs: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/OrderStatusLog' },
+              },
+            },
+          },
+        ],
       },
       LoginResult: {
         type: 'object',

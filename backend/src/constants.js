@@ -52,6 +52,50 @@ const ACTION_ATTRIBUTE = Object.freeze({
   [ACTIONS.DELETE]: 'canDelete',
 });
 
+/**
+ * order_statuses.code, mirroring the rows seeded by
+ * seeders/20260809010000-seed-order-statuses.
+ *
+ * These are the application-level identifiers for an order's lifecycle. The
+ * numeric ids are database detail and are never written into application logic:
+ * the service resolves a code to an id at the point of use. Duplicated here for
+ * the same reason MODULES is - a typo should be a startup/validation failure,
+ * not a query that silently matches nothing.
+ */
+const ORDER_STATUSES = Object.freeze({
+  INITIATED: 'initiated',
+  CONFIRMED: 'confirmed',
+  PREPARING: 'preparing',
+  READY: 'ready',
+  DELIVERED: 'delivered',
+  REJECTED: 'rejected',
+});
+
+const ORDER_STATUS_CODES = Object.freeze(Object.values(ORDER_STATUSES));
+
+/**
+ * payment_statuses.code, mirroring
+ * seeders/20260809010100-seed-payment-statuses.
+ */
+const PAYMENT_STATUSES = Object.freeze({
+  PENDING: 'pending',
+  PAID: 'paid',
+  FAILED: 'failed',
+  REFUNDED: 'refunded',
+});
+
+const PAYMENT_STATUS_CODES = Object.freeze(Object.values(PAYMENT_STATUSES));
+
+/** orders.source - CK_orders_source */
+const ORDER_SOURCES = Object.freeze({
+  QR: 'qr',
+  SEAT_QR: 'seat_qr',
+  KIOSK: 'kiosk',
+  COUNTER: 'counter',
+});
+
+const ORDER_SOURCE_NAMES = Object.freeze(Object.values(ORDER_SOURCES));
+
 /** Machine-readable error codes returned in error responses. */
 const ERROR_CODES = Object.freeze({
   VALIDATION_ERROR: 'VALIDATION_ERROR',
@@ -80,6 +124,12 @@ module.exports = {
   ACTIONS,
   ACTION_NAMES,
   ACTION_ATTRIBUTE,
+  ORDER_STATUSES,
+  ORDER_STATUS_CODES,
+  PAYMENT_STATUSES,
+  PAYMENT_STATUS_CODES,
+  ORDER_SOURCES,
+  ORDER_SOURCE_NAMES,
   ERROR_CODES,
   PAGINATION,
 };

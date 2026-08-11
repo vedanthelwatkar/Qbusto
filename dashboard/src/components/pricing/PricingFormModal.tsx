@@ -34,15 +34,6 @@ import { fieldErrorsFrom } from '@/utils/validation';
 
 const { Text } = Typography;
 
-/**
- * The form works in numbers. The spec types the decimal columns as strings, but
- * the server actually sends numbers - see components/pricing/money - so both
- * are accepted here rather than trusting the generated type.
- */
-function toNumber(value: string | number | null | undefined): number | null {
-  return value === null || value === undefined || value === '' ? null : Number(value);
-}
-
 interface FormValues {
   cinemaId?: number;
   productId?: number;
@@ -113,13 +104,15 @@ export default function PricingFormModal({
         if (!active) return;
 
         form.setFieldsValue({
-          basePrice: toNumber(full.basePrice) ?? 0,
+          // The decimal columns arrive as numbers, which is what the form
+          // works in, so they are set straight through.
+          basePrice: full.basePrice ?? 0,
           discountType: full.discountType,
-          discountValue: toNumber(full.discountValue),
-          discountOnQr: toNumber(full.discountOnQr),
-          discountOnKiosk: toNumber(full.discountOnKiosk),
-          discountOnSeatQr: toNumber(full.discountOnSeatQr),
-          discountOnCounter: toNumber(full.discountOnCounter),
+          discountValue: full.discountValue ?? null,
+          discountOnQr: full.discountOnQr ?? null,
+          discountOnKiosk: full.discountOnKiosk ?? null,
+          discountOnSeatQr: full.discountOnSeatQr ?? null,
+          discountOnCounter: full.discountOnCounter ?? null,
           isActive: full.isActive !== false,
         });
 

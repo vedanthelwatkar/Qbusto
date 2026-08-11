@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gen:spec": "node scripts/generate-openapi.js",
+    "seed:dev": "node scripts/seed-dev-data.js",
     "verify-schema": "node scripts/verify-schema.js",
     "healthcheck": "node scripts/healthcheck.js"
   },

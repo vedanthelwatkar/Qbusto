@@ -232,7 +232,7 @@ export const ProductPricingDiscountType = {
 } as const;
 
 /**
- * Decimal columns are returned as strings to preserve exact scale. Discount amounts are only meaningful when discountType is set.
+ * Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Discount amounts are only meaningful when discountType is set.
  */
 export interface ProductPricing {
   id?: number;
@@ -244,22 +244,22 @@ export interface ProductPricing {
      * @maximum 7
      */
   dayOfWeek?: number;
-  basePrice?: string;
+  basePrice?: number;
   /**
      * P = percentage, F = flat amount.
      * @nullable
      */
   discountType?: ProductPricingDiscountType;
   /** @nullable */
-  discountValue?: string | null;
+  discountValue?: number | null;
   /** @nullable */
-  discountOnQr?: string | null;
+  discountOnQr?: number | null;
   /** @nullable */
-  discountOnKiosk?: string | null;
+  discountOnKiosk?: number | null;
   /** @nullable */
-  discountOnSeatQr?: string | null;
+  discountOnSeatQr?: number | null;
   /** @nullable */
-  discountOnCounter?: string | null;
+  discountOnCounter?: number | null;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -292,6 +292,206 @@ export interface Banner {
   createdAt?: string;
   updatedAt?: string;
 }
+
+/**
+ * A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.
+ */
+export interface OrderStatus {
+  id?: number;
+  code?: string;
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  isActive?: boolean;
+}
+
+/**
+ * An immutable snapshot taken when the order was placed. productName, unitPrice and discount are frozen: renaming or repricing the product later does not change what the customer was charged. Money is returned as a JSON number - the SQL Server driver hands DECIMAL back as a number, and this contract states what the API actually sends.
+ */
+export interface OrderItem {
+  id?: number;
+  orderId?: number;
+  productId?: number;
+  /** The product's name at the time of the order. */
+  productName?: string;
+  /**
+     * Set by the POS integration phase. Null otherwise.
+     * @nullable
+     */
+  posItemId?: string | null;
+  quantity?: number;
+  unitPrice?: number;
+  /** Total discount for the line, not per unit. */
+  discount?: number;
+  /** quantity x unitPrice - discount. */
+  total?: number;
+}
+
+/**
+ * One entry in an order status or payment status audit trail. Append-only: it has a createdAt and no updatedAt.
+ */
+export interface OrderStatusLog {
+  id?: number;
+  orderId?: number;
+  /**
+     * Null on the opening entry, where the order came from no status.
+     * @nullable
+     */
+  previousStatusId?: number | null;
+  /** @nullable */
+  previousStatus?: string | null;
+  newStatusId?: number;
+  newStatus?: string;
+  /** @nullable */
+  changedByUserId?: number | null;
+  /** @nullable */
+  reason?: string | null;
+  /**
+     * Payment logs only, and always null in this phase - the staff-operated payment endpoint takes no gateway identifiers.
+     * @nullable
+     */
+  razorpayPaymentId?: string | null;
+  createdAt?: string;
+}
+
+export type OrderStatusProperty = typeof OrderStatusProperty[keyof typeof OrderStatusProperty];
+
+
+export const OrderStatusProperty = {
+  initiated: 'initiated',
+  confirmed: 'confirmed',
+  preparing: 'preparing',
+  ready: 'ready',
+  delivered: 'delivered',
+  rejected: 'rejected',
+} as const;
+
+export type OrderPaymentStatus = typeof OrderPaymentStatus[keyof typeof OrderPaymentStatus];
+
+
+export const OrderPaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+} as const;
+
+/**
+ * @nullable
+ */
+export type OrderSource = typeof OrderSource[keyof typeof OrderSource] | null;
+
+
+export const OrderSource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
+
+/**
+ * Null means the channel was not applicable or not enabled.
+ * @nullable
+ */
+export type OrderSmsStatus = typeof OrderSmsStatus[keyof typeof OrderSmsStatus] | null;
+
+
+export const OrderSmsStatus = {
+  pending: 'pending',
+  success: 'success',
+  failed: 'failed',
+} as const;
+
+/**
+ * @nullable
+ */
+export type OrderWhatsappStatus = typeof OrderWhatsappStatus[keyof typeof OrderWhatsappStatus] | null;
+
+
+export const OrderWhatsappStatus = {
+  pending: 'pending',
+  success: 'success',
+  failed: 'failed',
+} as const;
+
+export type OrderCinema = {
+  id?: number;
+  code?: string;
+  name?: string;
+};
+
+/**
+ * @nullable
+ */
+export type OrderScreen = {
+  id?: number;
+  name?: string;
+} | null;
+
+/**
+ * An order as it appears in a list. Money is returned as a JSON number - the SQL Server driver hands DECIMAL back as a number, and this contract states what the API actually sends. `status` and `paymentStatus` are status codes; the numeric id columns beside them are database detail.
+ */
+export interface Order {
+  id?: number;
+  cinemaId?: number;
+  /** @nullable */
+  screenId?: number | null;
+  /** @nullable */
+  seatNumber?: string | null;
+  statusId?: number;
+  status?: OrderStatusProperty;
+  statusDetail?: OrderStatus;
+  paymentStatusId?: number;
+  paymentStatus?: OrderPaymentStatus;
+  paymentStatusDetail?: OrderStatus;
+  /** @nullable */
+  source?: OrderSource;
+  /** @nullable */
+  customerMobile?: string | null;
+  /** @nullable */
+  customerEmail?: string | null;
+  /** @nullable */
+  filmTitle?: string | null;
+  /** @nullable */
+  showTime?: string | null;
+  /** Sum of quantity x unitPrice across the items. Calculated server-side. */
+  subtotal?: number;
+  discount?: number;
+  /** subtotal - discount. */
+  total?: number;
+  /**
+     * Null means the channel was not applicable or not enabled.
+     * @nullable
+     */
+  smsStatus?: OrderSmsStatus;
+  /** @nullable */
+  whatsappStatus?: OrderWhatsappStatus;
+  /**
+     * Written by the Razorpay integration phase. Null otherwise.
+     * @nullable
+     */
+  razorpayOrderId?: string | null;
+  /** @nullable */
+  razorpayPaymentId?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /**
+     * Stamped when the order moves to `delivered`.
+     * @nullable
+     */
+  deliveredAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  cinema?: OrderCinema;
+  /** @nullable */
+  screen?: OrderScreen;
+  items?: OrderItem[];
+}
+
+export type OrderDetail = Order & {
+  statusLogs?: OrderStatusLog[];
+  paymentStatusLogs?: OrderStatusLog[];
+};
 
 export interface LoginResult {
   /** Signed JWT. Send as `Authorization: Bearer`. */
@@ -871,6 +1071,244 @@ export type PutApiProductPricingId200 = SuccessResponse & {
 
 export type DeleteApiProductPricingId200 = SuccessResponse & {
   data?: ProductPricing;
+};
+
+export type GetApiOrderStatusesParams = {
+isActive?: boolean;
+};
+
+export type GetApiOrderStatuses200 = SuccessResponse & {
+  data?: OrderStatus[];
+};
+
+export type GetApiPaymentStatusesParams = {
+isActive?: boolean;
+};
+
+export type GetApiPaymentStatuses200 = SuccessResponse & {
+  data?: OrderStatus[];
+};
+
+export type GetApiOrdersParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+sort?: GetApiOrdersSort;
+order?: GetApiOrdersOrder;
+/**
+ * @maxLength 200
+ */
+search?: string;
+cinemaId?: number;
+screenId?: number;
+/**
+ * Order status code.
+ */
+status?: GetApiOrdersStatus;
+/**
+ * Payment status code.
+ */
+paymentStatus?: GetApiOrdersPaymentStatus;
+source?: GetApiOrdersSource;
+/**
+ * Lower bound on `createdAt`, inclusive.
+ */
+createdFrom?: string;
+/**
+ * Upper bound on `createdAt`, inclusive. Must be later than createdFrom.
+ */
+createdTo?: string;
+};
+
+export type GetApiOrdersSort = typeof GetApiOrdersSort[keyof typeof GetApiOrdersSort];
+
+
+export const GetApiOrdersSort = {
+  id: 'id',
+  cinemaId: 'cinemaId',
+  total: 'total',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deliveredAt: 'deliveredAt',
+} as const;
+
+export type GetApiOrdersOrder = typeof GetApiOrdersOrder[keyof typeof GetApiOrdersOrder];
+
+
+export const GetApiOrdersOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type GetApiOrdersStatus = typeof GetApiOrdersStatus[keyof typeof GetApiOrdersStatus];
+
+
+export const GetApiOrdersStatus = {
+  initiated: 'initiated',
+  confirmed: 'confirmed',
+  preparing: 'preparing',
+  ready: 'ready',
+  delivered: 'delivered',
+  rejected: 'rejected',
+} as const;
+
+export type GetApiOrdersPaymentStatus = typeof GetApiOrdersPaymentStatus[keyof typeof GetApiOrdersPaymentStatus];
+
+
+export const GetApiOrdersPaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+} as const;
+
+export type GetApiOrdersSource = typeof GetApiOrdersSource[keyof typeof GetApiOrdersSource];
+
+
+export const GetApiOrdersSource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
+
+export type GetApiOrders200 = SuccessResponse & {
+  data?: Order[];
+};
+
+/**
+ * Selects which channel discount column in product_pricing applies. Null falls back to the row's discountValue.
+ * @nullable
+ */
+export type PostApiOrdersBodySource = typeof PostApiOrdersBodySource[keyof typeof PostApiOrdersBodySource] | null;
+
+
+export const PostApiOrdersBodySource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
+
+export type PostApiOrdersBodyItemsItem = {
+  productId: number;
+  /**
+     * @minimum 1
+     * @maximum 999
+     */
+  quantity: number;
+};
+
+export type PostApiOrdersBody = {
+  cinemaId: number;
+  /**
+     * Must belong to the cinema. Null for counter and kiosk orders.
+     * @nullable
+     */
+  screenId?: number | null;
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  seatNumber?: string | null;
+  /**
+     * Selects which channel discount column in product_pricing applies. Null falls back to the row's discountValue.
+     * @nullable
+     */
+  source?: PostApiOrdersBodySource;
+  /**
+     * @maxLength 15
+     * @nullable
+     */
+  customerMobile?: string | null;
+  /**
+     * @maxLength 200
+     * @nullable
+     */
+  customerEmail?: string | null;
+  /**
+     * Display snapshot. Not resolved against a POS in this phase.
+     * @maxLength 200
+     * @nullable
+     */
+  filmTitle?: string | null;
+  /** @nullable */
+  showTime?: string | null;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  notes?: string | null;
+  /**
+     * One entry per product. A product may not appear twice.
+     * @minItems 1
+     * @maxItems 50
+     */
+  items: PostApiOrdersBodyItemsItem[];
+};
+
+export type PostApiOrders201 = SuccessResponse & {
+  data?: OrderDetail;
+};
+
+export type GetApiOrdersId200 = SuccessResponse & {
+  data?: OrderDetail;
+};
+
+export type PutApiOrdersIdStatusBodyStatus = typeof PutApiOrdersIdStatusBodyStatus[keyof typeof PutApiOrdersIdStatusBodyStatus];
+
+
+export const PutApiOrdersIdStatusBodyStatus = {
+  initiated: 'initiated',
+  confirmed: 'confirmed',
+  preparing: 'preparing',
+  ready: 'ready',
+  delivered: 'delivered',
+  rejected: 'rejected',
+} as const;
+
+export type PutApiOrdersIdStatusBody = {
+  status: PutApiOrdersIdStatusBodyStatus;
+  /**
+     * Free text, stored on the log entry.
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
+};
+
+export type PutApiOrdersIdStatus200 = SuccessResponse & {
+  data?: OrderDetail;
+};
+
+export type PutApiOrdersIdPaymentStatusBodyPaymentStatus = typeof PutApiOrdersIdPaymentStatusBodyPaymentStatus[keyof typeof PutApiOrdersIdPaymentStatusBodyPaymentStatus];
+
+
+export const PutApiOrdersIdPaymentStatusBodyPaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+} as const;
+
+export type PutApiOrdersIdPaymentStatusBody = {
+  paymentStatus: PutApiOrdersIdPaymentStatusBodyPaymentStatus;
+  /**
+     * Free text, stored on the log entry.
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
+};
+
+export type PutApiOrdersIdPaymentStatus200 = SuccessResponse & {
+  data?: OrderDetail;
 };
 
 export type GetHealth200Data = {

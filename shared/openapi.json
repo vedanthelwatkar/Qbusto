@@ -63,6 +63,14 @@
     {
       "name": "Banners",
       "description": "Promotional images shown for a cinema"
+    },
+    {
+      "name": "Orders",
+      "description": "Customer orders, their items and their lifecycle"
+    },
+    {
+      "name": "Order Statuses",
+      "description": "The seeded order and payment lifecycle master tables"
     }
   ],
   "components": {
@@ -590,7 +598,7 @@
       },
       "ProductPricing": {
         "type": "object",
-        "description": "Decimal columns are returned as strings to preserve exact scale. Discount amounts are only meaningful when discountType is set.",
+        "description": "Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Discount amounts are only meaningful when discountType is set.",
         "properties": {
           "id": {
             "type": "integer",
@@ -612,8 +620,9 @@
             "description": "0 = every day, 1 = Monday ... 7 = Sunday."
           },
           "basePrice": {
-            "type": "string",
-            "example": "250.00"
+            "type": "number",
+            "format": "double",
+            "example": 250
           },
           "discountType": {
             "type": "string",
@@ -626,24 +635,29 @@
             "description": "P = percentage, F = flat amount."
           },
           "discountValue": {
-            "type": "string",
+            "type": "number",
+            "format": "double",
             "nullable": true,
-            "example": "10.00"
+            "example": 10
           },
           "discountOnQr": {
-            "type": "string",
+            "type": "number",
+            "format": "double",
             "nullable": true
           },
           "discountOnKiosk": {
-            "type": "string",
+            "type": "number",
+            "format": "double",
             "nullable": true
           },
           "discountOnSeatQr": {
-            "type": "string",
+            "type": "number",
+            "format": "double",
             "nullable": true
           },
           "discountOnCounter": {
-            "type": "string",
+            "type": "number",
+            "format": "double",
             "nullable": true
           },
           "isActive": {
@@ -712,6 +726,343 @@
             "format": "date-time"
           }
         }
+      },
+      "OrderStatus": {
+        "type": "object",
+        "description": "A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "code": {
+            "type": "string",
+            "example": "preparing"
+          },
+          "name": {
+            "type": "string",
+            "example": "Preparing"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Kitchen is preparing the order."
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "OrderItem": {
+        "type": "object",
+        "description": "An immutable snapshot taken when the order was placed. productName, unitPrice and discount are frozen: renaming or repricing the product later does not change what the customer was charged. Money is returned as a JSON number - the SQL Server driver hands DECIMAL back as a number, and this contract states what the API actually sends.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 54
+          },
+          "orderId": {
+            "type": "integer",
+            "example": 30
+          },
+          "productId": {
+            "type": "integer",
+            "example": 17
+          },
+          "productName": {
+            "type": "string",
+            "example": "Salted Popcorn",
+            "description": "The product's name at the time of the order."
+          },
+          "posItemId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set by the POS integration phase. Null otherwise."
+          },
+          "quantity": {
+            "type": "integer",
+            "example": 2
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double",
+            "example": 250
+          },
+          "discount": {
+            "type": "number",
+            "format": "double",
+            "example": 50,
+            "description": "Total discount for the line, not per unit."
+          },
+          "total": {
+            "type": "number",
+            "format": "double",
+            "example": 450,
+            "description": "quantity x unitPrice - discount."
+          }
+        }
+      },
+      "OrderStatusLog": {
+        "type": "object",
+        "description": "One entry in an order status or payment status audit trail. Append-only: it has a createdAt and no updatedAt.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 71
+          },
+          "orderId": {
+            "type": "integer",
+            "example": 30
+          },
+          "previousStatusId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Null on the opening entry, where the order came from no status."
+          },
+          "previousStatus": {
+            "type": "string",
+            "nullable": true,
+            "example": "confirmed"
+          },
+          "newStatusId": {
+            "type": "integer",
+            "example": 3
+          },
+          "newStatus": {
+            "type": "string",
+            "example": "preparing"
+          },
+          "changedByUserId": {
+            "type": "integer",
+            "nullable": true,
+            "example": 7
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "example": "Customer changed their mind"
+          },
+          "razorpayPaymentId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Payment logs only, and always null in this phase - the staff-operated payment endpoint takes no gateway identifiers."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "description": "An order as it appears in a list. Money is returned as a JSON number - the SQL Server driver hands DECIMAL back as a number, and this contract states what the API actually sends. `status` and `paymentStatus` are status codes; the numeric id columns beside them are database detail.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 30
+          },
+          "cinemaId": {
+            "type": "integer",
+            "example": 3
+          },
+          "screenId": {
+            "type": "integer",
+            "nullable": true,
+            "example": 8
+          },
+          "seatNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "H12"
+          },
+          "statusId": {
+            "type": "integer",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "initiated",
+              "confirmed",
+              "preparing",
+              "ready",
+              "delivered",
+              "rejected"
+            ],
+            "example": "preparing"
+          },
+          "statusDetail": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "paymentStatusId": {
+            "type": "integer",
+            "example": 1
+          },
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "failed",
+              "refunded"
+            ],
+            "example": "pending"
+          },
+          "paymentStatusDetail": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "qr",
+              "seat_qr",
+              "kiosk",
+              "counter"
+            ],
+            "nullable": true,
+            "example": "seat_qr"
+          },
+          "customerMobile": {
+            "type": "string",
+            "nullable": true,
+            "example": "9876543210"
+          },
+          "customerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "filmTitle": {
+            "type": "string",
+            "nullable": true,
+            "example": "Dune: Part Two"
+          },
+          "showTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "subtotal": {
+            "type": "number",
+            "format": "double",
+            "example": 500,
+            "description": "Sum of quantity x unitPrice across the items. Calculated server-side."
+          },
+          "discount": {
+            "type": "number",
+            "format": "double",
+            "example": 50
+          },
+          "total": {
+            "type": "number",
+            "format": "double",
+            "example": 450,
+            "description": "subtotal - discount."
+          },
+          "smsStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "failed"
+            ],
+            "nullable": true,
+            "description": "Null means the channel was not applicable or not enabled."
+          },
+          "whatsappStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "failed"
+            ],
+            "nullable": true
+          },
+          "razorpayOrderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Written by the Razorpay integration phase. Null otherwise."
+          },
+          "razorpayPaymentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Stamped when the order moves to `delivered`."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cinema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "screen": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            }
+          }
+        }
+      },
+      "OrderDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Order"
+          },
+          {
+            "type": "object",
+            "description": "Adds both audit trails, oldest entry first.",
+            "properties": {
+              "statusLogs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderStatusLog"
+                }
+              },
+              "paymentStatusLogs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderStatusLog"
+                }
+              }
+            }
+          }
+        ]
       },
       "LoginResult": {
         "type": "object",
@@ -2673,6 +3024,695 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/order-statuses": {
+      "get": {
+        "tags": [
+          "Order Statuses"
+        ],
+        "summary": "List order lifecycle statuses",
+        "description": "The `order_statuses` master table. Six seeded rows, returned whole rather than paginated. Application logic addresses these by `code`; the numeric `id` is database detail and should not be sent back in filters or request bodies. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every order status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/OrderStatus"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/payment-statuses": {
+      "get": {
+        "tags": [
+          "Order Statuses"
+        ],
+        "summary": "List payment lifecycle statuses",
+        "description": "The `payment_statuses` master table. Four seeded rows, returned whole rather than paginated. Addressed by `code`, like order statuses. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "isActive",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every payment status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/OrderStatus"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/orders": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "List orders",
+        "description": "Paginated, newest first by default. Non-owners see only orders placed at cinemas in their own chain. `status` and `paymentStatus` are filtered by status **code**, never by numeric id. `search` matches customer mobile, customer email, seat number, film title, or the order id exactly. Each row carries its cinema, screen, both statuses and its items. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string",
+              "default": "createdAt",
+              "enum": [
+                "id",
+                "cinemaId",
+                "total",
+                "createdAt",
+                "updatedAt",
+                "deliveredAt"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "screenId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "description": "Order status code.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "initiated",
+                "confirmed",
+                "preparing",
+                "ready",
+                "delivered",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "paymentStatus",
+            "description": "Payment status code.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "paid",
+                "failed",
+                "refunded"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "qr",
+                "seat_qr",
+                "kiosk",
+                "counter"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdFrom",
+            "description": "Lower bound on `createdAt`, inclusive.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdTo",
+            "description": "Upper bound on `createdAt`, inclusive. Must be later than createdFrom.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Order"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Place an order",
+        "description": "The request names products and quantities; every price, discount and total is calculated by the server from `product_pricing` and any amount sent in the body is discarded. Each product must be carried at the cinema, active, inside its date range and inside one of its availability windows, and must have an active price there.\n\nThe order, its item snapshots and the opening entry in both audit trails are written in one transaction. A new order always starts at status `initiated` with payment status `pending` - neither can be set by the request. Requires the Orders module edit permission.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cinemaId",
+                  "items"
+                ],
+                "properties": {
+                  "cinemaId": {
+                    "type": "integer"
+                  },
+                  "screenId": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "Must belong to the cinema. Null for counter and kiosk orders."
+                  },
+                  "seatNumber": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "qr",
+                      "seat_qr",
+                      "kiosk",
+                      "counter"
+                    ],
+                    "nullable": true,
+                    "description": "Selects which channel discount column in product_pricing applies. Null falls back to the row's discountValue.\n"
+                  },
+                  "customerMobile": {
+                    "type": "string",
+                    "maxLength": 15,
+                    "nullable": true
+                  },
+                  "customerEmail": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 200,
+                    "nullable": true
+                  },
+                  "filmTitle": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "nullable": true,
+                    "description": "Display snapshot. Not resolved against a POS in this phase."
+                  },
+                  "showTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "description": "One entry per product. A product may not appear twice.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "productId": {
+                          "type": "integer"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 999
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OrderDetail"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed, or the same product was listed twice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The cinema, screen or one of the products does not exist, or is in another chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The cinema or screen is deactivated, or a product is deactivated, not carried at the cinema, outside its availability, or has no active price there\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{id}": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Get one order in full",
+        "description": "Returns the order with its items, its cinema and screen, both status master rows, and both audit trails (`statusLogs`, `paymentStatusLogs`) in chronological order. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OrderDetail"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/status": {
+      "put": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Move an order to a new status",
+        "description": "Transitions follow a fixed graph and arbitrary jumps are refused: `initiated` to `confirmed` to `preparing` to `ready` to `delivered`, with `rejected` reachable from any of those. `delivered` and `rejected` are terminal.\n\nThe order update and the `order_status_logs` entry are written in one transaction. Asking for the status the order is already in is a no-op: it returns 200 and writes no log entry. Moving to `delivered` stamps `deliveredAt`. Requires the Orders module edit permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "initiated",
+                      "confirmed",
+                      "preparing",
+                      "ready",
+                      "delivered",
+                      "rejected"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true,
+                    "description": "Free text, stored on the log entry."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order, after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OrderDetail"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The order cannot move from its current status to the requested one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/payment-status": {
+      "put": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Move an order's payment to a new status",
+        "description": "The staff-operated payment path: cash taken at the counter, a refund granted, a failed attempt written off. Transitions are `pending` to `paid` or `failed`, `failed` back to `pending` or on to `paid`, and `paid` to `refunded`, which is terminal.\n\nThe order update and the `payment_status_logs` entry are written in one transaction. Asking for the status the payment is already in is a no-op. This endpoint takes no gateway identifiers and does not touch the `razorpay_*` columns - gateway-driven payment confirmation belongs to the Razorpay integration phase. Requires the Orders module edit permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "paymentStatus"
+                ],
+                "properties": {
+                  "paymentStatus": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "paid",
+                      "failed",
+                      "refunded"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true,
+                    "description": "Free text, stored on the log entry."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order, after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OrderDetail"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The payment cannot move from its current status to the requested one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

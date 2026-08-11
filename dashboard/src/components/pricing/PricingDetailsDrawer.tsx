@@ -69,7 +69,7 @@ export default function PricingDetailsDrawer({
       ? '-'
       : (productNames?.get(pricing.productId) ?? `#${pricing.productId}`);
 
-  const amount = (value: string | null | undefined) =>
+  const amount = (value: number | null | undefined) =>
     formatDiscount(value, pricing?.discountType ?? null);
 
   return (
