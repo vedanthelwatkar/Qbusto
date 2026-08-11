@@ -11,6 +11,7 @@
 import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
+import BannersPage from '@/pages/BannersPage';
 import CategoriesPage from '@/pages/CategoriesPage';
 import ChainsPage from '@/pages/ChainsPage';
 import CinemasPage from '@/pages/CinemasPage';
@@ -18,6 +19,7 @@ import ComingSoonPage from '@/pages/ComingSoonPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import PricingPage from '@/pages/PricingPage';
 import ProductsPage from '@/pages/ProductsPage';
 import ScreensPage from '@/pages/ScreensPage';
 import UsersPage from '@/pages/UsersPage';
@@ -34,6 +36,8 @@ const PAGES: Record<string, ReactNode> = {
   '/users': <UsersPage />,
   '/categories': <CategoriesPage />,
   '/products': <ProductsPage />,
+  '/pricing': <PricingPage />,
+  '/banners': <BannersPage />,
   '/settings/chains': <ChainsPage />,
   '/settings/cinemas': <CinemasPage />,
   '/settings/screens': <ScreensPage />,

@@ -82,14 +82,14 @@ export const NAV_MODULES: NavModule[] = [
     label: 'Pricing',
     module: 'Pricing',
     icon: <DollarOutlined />,
-    implemented: false,
+    implemented: true,
   },
   {
     path: '/banners',
     label: 'Banners',
     module: 'Banners',
     icon: <PictureOutlined />,
-    implemented: false,
+    implemented: true,
   },
   { path: '/users', label: 'Users', module: 'Users', icon: <TeamOutlined />, implemented: true },
   {

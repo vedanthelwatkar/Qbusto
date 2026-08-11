@@ -39,7 +39,7 @@ export const PALETTE = {
     success: '#52C41A',
     warning: '#FAAD14',
     error: '#FF4D4F',
-    info: '#5B6472',
+    info: '#638aca',
   },
 } as const;
 
