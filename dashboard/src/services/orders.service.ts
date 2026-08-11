@@ -48,7 +48,7 @@ export async function getOrder(id: number): Promise<OrderDetail> {
 
 export async function updateOrderStatus(
   id: number,
-  status: PutApiOrdersIdStatusBodyStatus,
+  status: PutApiOrdersIdStatusBodyStatus
 ): Promise<Order> {
   const { data } = await ordersApi.putApiOrdersIdStatus(id, { status });
   if (!data) throw MALFORMED;
@@ -57,7 +57,7 @@ export async function updateOrderStatus(
 
 export async function updatePaymentStatus(
   id: number,
-  paymentStatus: PutApiOrdersIdPaymentStatusBodyPaymentStatus,
+  paymentStatus: PutApiOrdersIdPaymentStatusBodyPaymentStatus
 ): Promise<Order> {
   const { data } = await ordersApi.putApiOrdersIdPaymentStatus(id, { paymentStatus });
   if (!data) throw MALFORMED;

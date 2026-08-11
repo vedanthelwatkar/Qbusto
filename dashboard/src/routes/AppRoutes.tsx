@@ -19,6 +19,7 @@ import ComingSoonPage from '@/pages/ComingSoonPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import OrdersPage from '@/pages/OrdersPage';
 import PricingPage from '@/pages/PricingPage';
 import ProductsPage from '@/pages/ProductsPage';
 import ScreensPage from '@/pages/ScreensPage';
@@ -34,6 +35,7 @@ import { NAV_ROUTES } from '@/routes/modules';
 const PAGES: Record<string, ReactNode> = {
   '/': <DashboardPage />,
   '/users': <UsersPage />,
+  '/orders': <OrdersPage />,
   '/categories': <CategoriesPage />,
   '/products': <ProductsPage />,
   '/pricing': <PricingPage />,

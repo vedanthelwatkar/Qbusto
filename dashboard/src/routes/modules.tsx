@@ -61,7 +61,7 @@ export const NAV_MODULES: NavModule[] = [
     label: 'Orders',
     module: 'Orders',
     icon: <ShoppingCartOutlined />,
-    implemented: false,
+    implemented: true,
   },
   {
     path: '/categories',
