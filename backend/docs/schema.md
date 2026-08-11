@@ -190,6 +190,18 @@ Unique constraint: `(cinema_id, product_id)`.
 
 `available_from` and `available_until` control date-range availability such as festival offers. `is_active` remains the primary enable or disable flag.
 
+`sequence` is the display order within a cinema and is deliberately not unique, matching the legacy `DAE_ItemCinemaPrice.Sequence`.
+
+This table is the parent of `product_availability_hours`, so a window is always scoped to one product at one cinema. It is exposed at `/api/cinema-products` and guarded by the `Products` permission module - the frozen module list has none of its own, and availability hours are guarded the same way.
+
+Rules enforced by the application, not the database:
+
+- the cinema and the product must belong to the same chain (the `CinemaProduct` `beforeSave` hook, plus an explicit service check that produces the better error)
+- a new link cannot be created under a deactivated cinema or a deactivated product
+- `available_until` must be later than `available_from` when both are set
+
+Deactivating a link does not cascade to its availability hours - the windows remain readable and editable.
+
 ---
 
 ## product_availability_hours

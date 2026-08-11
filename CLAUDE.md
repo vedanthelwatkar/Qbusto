@@ -19,8 +19,17 @@ Chain
  └── Categories
       └── Products
            └── Cinema Product
-                ├── Pricing
                 └── Availability Hours
+```
+
+Pricing is deliberately *not* under Cinema Product. `product_pricing` is keyed on
+`(cinema_id, product_id, day_of_week)` directly, so the two are parallel
+representations of "product at a cinema" rather than nested:
+
+```text
+Cinema + Product
+ ├── Cinema Product  → Availability Hours
+ └── Pricing         (per day)
 ```
 
 The backend is the source of truth for authorization, validation, tenant isolation and business rules.
@@ -360,6 +369,16 @@ end_time
 `day_of_week = 0` means every day.
 
 The API uses `cinemaProductId`, not only `productId`, because availability is cinema-specific.
+
+Resolve it through `/api/cinema-products`:
+
+```text
+GET /api/cinema-products?cinemaId=<id>&productId=<id>
+```
+
+`(cinema_id, product_id)` is unique, so that returns one row or none. None means the
+cinema does not carry the product yet - create the link with `POST /api/cinema-products`
+before adding windows. Do not assume every cinema carries every product.
 
 Current backend rule:
 ```text

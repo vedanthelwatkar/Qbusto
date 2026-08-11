@@ -129,12 +129,46 @@ Healthcheck passed.
 
 ---
 
+## API contract
+
+The OpenAPI document is generated from the JSDoc `@openapi` blocks on the route files, and the dashboard's API client is generated from that document. Neither is written by hand.
+
+```bash
+cd backend   && npm run gen:spec   # route JSDoc -> shared/openapi.json
+cd dashboard && npm run gen:api    # shared/openapi.json -> src/api/generated/
+```
+
+Run both after adding or changing an endpoint. `gen:spec` prints the number of paths it wrote, which is the quickest confirmation that a new route was picked up; if a route is missing from the count, its `@openapi` block is malformed rather than absent from the router.
+
+`dashboard/src/api/generated/` is never edited directly. When the generated contract is wrong, the fix belongs in the route documentation.
+
+### Resource map
+
+Business endpoints live under `/api`. Note the ownership chain in the catalog:
+
+```
+/api/chains -> /api/cinemas -> /api/screens
+
+/api/categories -> /api/products
+                     -> /api/cinema-products        (product carried at a cinema)
+                          -> /api/product-availability-hours   (when it is orderable there)
+
+/api/product-pricing   (keyed on cinema + product + day, not on cinema-products)
+/api/banners
+/api/users
+```
+
+`/api/cinema-products` is what makes availability addressable: a window is attached to a `cinemaProductId`, and that id is resolved by listing `/api/cinema-products?cinemaId=&productId=`, which returns one row or none because the pair is unique.
+
+---
+
 ## Choosing between them
 
 | Situation | Command |
 | --------- | ------- |
 | Just edited a model or an association | `npm run verify-schema` |
 | Just ran `make migrate` | `npm run verify-schema` |
+| Just added or changed a route | `npm run gen:spec` then `gen:api` |
 | Just deployed to staging or production | `npm run healthcheck` |
 | App fails to start and you want the cause | `npm run healthcheck` |
 | Fresh clone, setting up locally | `make setup` (runs both) |

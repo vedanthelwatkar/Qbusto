@@ -85,11 +85,36 @@ The client-requested channel columns now live directly on `product_pricing` as:
 - `discount_on_seat_qr`
 - `discount_on_counter`
 
+### Cinema products
+
+`cinema_products` is the link that says a cinema carries a product. It is a first-class resource, exposed at `/api/cinema-products`, because availability hours hang off its `id` rather than off a product directly.
+
+The legacy system kept this link and its pricing together in `DAE_ItemCinemaPrice`. QBusto splits the two:
+
+- the link, its display order and its date-range availability live in `cinema_products`
+- per-day prices are normalized into `product_pricing`
+
+That is why a `cinema_products` row carries no price columns.
+
+The chain of ownership is:
+
+```
+Product
+  -> CinemaProduct   (product carried at one cinema)
+       -> ProductAvailabilityHour   (when it is orderable there)
+```
+
+A client turns a (cinema, product) pair into the `cinemaProductId` that availability needs by filtering the list endpoint on both ids. `(cinema_id, product_id)` is unique, so that filter returns one row or none.
+
+`sequence` is the display order within a cinema. It is not unique - the legacy `DAE_ItemCinemaPrice.Sequence` was unconstrained and duplicates are ordinary.
+
 ### Product date ranges
 
 `cinema_products.available_from` and `cinema_products.available_until` allow a cinema-specific product to be enabled only for a date range, such as a festival offer.
 
 `cinema_products.is_active` remains the main enable or disable flag.
+
+Where both bounds are set, the API requires `available_until` to be later than `available_from`. The database carries no CHECK for this, and the legacy table had only a `ToDate`, so the rule is enforced in the service layer.
 
 ### Product availability hours
 

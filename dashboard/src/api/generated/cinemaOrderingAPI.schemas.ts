@@ -179,6 +179,30 @@ export interface Product {
   updatedAt?: string;
 }
 
+/**
+ * The link saying a cinema carries a product. Availability windows hang off its id.
+ */
+export interface CinemaProduct {
+  id?: number;
+  cinemaId?: number;
+  productId?: number;
+  /** Display order within the cinema. Not unique. */
+  sequence?: number;
+  /**
+     * Start of a date-range offer. Null means no lower bound.
+     * @nullable
+     */
+  availableFrom?: string | null;
+  /**
+     * End of a date-range offer. Null means no upper bound.
+     * @nullable
+     */
+  availableUntil?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ProductAvailabilityHour {
   id?: number;
   /** The cinema/product link this window applies to. */
@@ -870,6 +894,95 @@ export type GetVersion200Data = {
 
 export type GetVersion200 = SuccessResponse & {
   data?: GetVersion200Data;
+};
+
+export type GetApiCinemaProductsParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+sort?: GetApiCinemaProductsSort;
+order?: GetApiCinemaProductsOrder;
+cinemaId?: number;
+productId?: number;
+isActive?: boolean;
+};
+
+export type GetApiCinemaProductsSort = typeof GetApiCinemaProductsSort[keyof typeof GetApiCinemaProductsSort];
+
+
+export const GetApiCinemaProductsSort = {
+  id: 'id',
+  cinemaId: 'cinemaId',
+  productId: 'productId',
+  sequence: 'sequence',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+} as const;
+
+export type GetApiCinemaProductsOrder = typeof GetApiCinemaProductsOrder[keyof typeof GetApiCinemaProductsOrder];
+
+
+export const GetApiCinemaProductsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type GetApiCinemaProducts200 = SuccessResponse & {
+  data?: CinemaProduct[];
+};
+
+export type PostApiCinemaProductsBody = {
+  cinemaId: number;
+  productId: number;
+  /**
+     * Display order within the cinema. Not unique.
+     * @minimum 0
+     */
+  sequence?: number;
+  /**
+     * Start of a date-range offer. Null means no lower bound.
+     * @nullable
+     */
+  availableFrom?: string | null;
+  /**
+     * End of a date-range offer. Null means no upper bound.
+     * @nullable
+     */
+  availableUntil?: string | null;
+  isActive?: boolean;
+};
+
+export type PostApiCinemaProducts201 = SuccessResponse & {
+  data?: CinemaProduct;
+};
+
+export type GetApiCinemaProductsId200 = SuccessResponse & {
+  data?: CinemaProduct;
+};
+
+export type PutApiCinemaProductsIdBody = {
+  /** @minimum 0 */
+  sequence?: number;
+  /** @nullable */
+  availableFrom?: string | null;
+  /** @nullable */
+  availableUntil?: string | null;
+  isActive?: boolean;
+};
+
+export type PutApiCinemaProductsId200 = SuccessResponse & {
+  data?: CinemaProduct;
+};
+
+export type DeleteApiCinemaProductsId200 = SuccessResponse & {
+  data?: CinemaProduct;
 };
 
 export type GetApiCinemasParams = {

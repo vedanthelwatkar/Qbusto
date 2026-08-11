@@ -47,6 +47,10 @@ const definition = {
     { name: 'Categories', description: 'Chain-scoped product categories' },
     { name: 'Products', description: 'Chain-scoped products and add-ons' },
     {
+      name: 'Cinema Products',
+      description: 'Which products a cinema carries - the parent of availability hours',
+    },
+    {
       name: 'Product Availability Hours',
       description: 'When a product is orderable at a cinema',
     },
@@ -250,6 +254,36 @@ const definition = {
           taxSlabCode: { type: 'string', nullable: true, example: 'GST5' },
           isAddon: { type: 'boolean', example: false },
           addonParentId: { type: 'integer', nullable: true, example: null },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      CinemaProduct: {
+        type: 'object',
+        description:
+          'The link saying a cinema carries a product. Availability windows hang off its id.',
+        properties: {
+          id: { type: 'integer', example: 12 },
+          cinemaId: { type: 'integer', example: 3 },
+          productId: { type: 'integer', example: 17 },
+          sequence: {
+            type: 'integer',
+            example: 0,
+            description: 'Display order within the cinema. Not unique.',
+          },
+          availableFrom: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Start of a date-range offer. Null means no lower bound.',
+          },
+          availableUntil: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'End of a date-range offer. Null means no upper bound.',
+          },
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
