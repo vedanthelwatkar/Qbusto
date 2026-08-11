@@ -12,8 +12,12 @@ import type {
   GetApiOrdersParams,
   Order,
   OrderStatus,
-  PaymentStatus,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
+
+// Payment statuses share the same master-status shape as order statuses; the
+// generated spec has no distinct `PaymentStatus` type (GetApiPaymentStatuses200
+// returns `OrderStatus[]` too), so this is an alias rather than a duplicate type.
+type PaymentStatus = OrderStatus;
 import { toApiError } from '@/services/api';
 import * as ordersService from '@/services/orders.service';
 import type { Pagination } from '@/types/api';
