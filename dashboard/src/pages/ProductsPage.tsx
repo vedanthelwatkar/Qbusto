@@ -34,6 +34,7 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { GetApiProductsParams, Product } from '@/api/generated/cinemaOrderingAPI.schemas';
 import PageHeader from '@/components/PageHeader';
 import CategorySelect from '@/components/categories/CategorySelect';
+import ProductAvailabilityDrawer from '@/components/products/ProductAvailabilityDrawer';
 import ProductDetailsDrawer from '@/components/products/ProductDetailsDrawer';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { toApiError } from '@/services/api';
@@ -79,12 +80,23 @@ export default function ProductsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [detailsId, setDetailsId] = useState<number | undefined>();
 
+  /**
+   * The product whose availability is being viewed. The whole row rather than
+   * an id: the drawer names the product and narrows its cinema list to the
+   * product's chain, and both are already on the row.
+   */
+  const [availabilityProduct, setAvailabilityProduct] = useState<Product | undefined>();
+
   /** Category names by id, filled in as pages of products are shown. */
   const [categoryNames, setCategoryNames] = useState<Map<number, string>>(new Map());
 
   /** Ids already asked for, so a failed or in-flight lookup is not repeated. */
   const requestedCategories = useRef(new Set<number>());
 
+  // Read is what the route already required to get here, so it is only checked
+  // again for the availability drawer - its own reads are authorised as
+  // Products too, and a user who cannot read them should not be offered them.
+  const canRead = hasPermission(actor, 'Products', 'read');
   const canEdit = hasPermission(actor, 'Products', 'edit');
   const canDelete = hasPermission(actor, 'Products', 'delete');
 
@@ -216,7 +228,7 @@ export default function ProductsPage() {
       title: '',
       key: 'actions',
       align: 'right',
-      width: 200,
+      width: 320,
       render: (_, product) => {
         const alreadyInactive = product.isActive === false;
 
@@ -225,6 +237,12 @@ export default function ProductsPage() {
             <Button size="small" onClick={() => setDetailsId(product.id)}>
               View
             </Button>
+
+            {canRead ? (
+              <Button size="small" onClick={() => setAvailabilityProduct(product)}>
+                Availability
+              </Button>
+            ) : null}
 
             {canEdit ? (
               <Button size="small" onClick={() => openEdit(product)}>
@@ -363,7 +381,7 @@ export default function ProductsPage() {
           dataSource={products}
           loading={loading}
           onChange={handleTableChange}
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1120 }}
           locale={{
             emptyText: error ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Could not load products" />
@@ -400,6 +418,16 @@ export default function ProductsPage() {
           productId={detailsId}
           categoryNames={categoryNames}
           onClose={() => setDetailsId(undefined)}
+        />
+      ) : null}
+
+      {/* Availability lives in the product workflow rather than the sidebar:
+          a window belongs to this product at one cinema, so there is nothing
+          to show until a product has been picked. */}
+      {availabilityProduct ? (
+        <ProductAvailabilityDrawer
+          product={availabilityProduct}
+          onClose={() => setAvailabilityProduct(undefined)}
         />
       ) : null}
     </Space>
