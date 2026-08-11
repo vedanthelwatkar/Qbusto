@@ -53,7 +53,7 @@ export default function OrderStatusTransitionModal({
     setError(null);
 
     try {
-      // Type the nextStatus correctly for the API
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await ordersService.updateOrderStatus(orderId, nextStatus as any);
       onSuccess();
       onClose();

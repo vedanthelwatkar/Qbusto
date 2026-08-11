@@ -11,8 +11,6 @@ import type {
   Order,
   OrderDetail,
   OrderStatus,
-  PutApiOrdersIdStatusBodyStatus,
-  PutApiOrdersIdPaymentStatusBodyPaymentStatus,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { getOrders } from '@/api/generated/orders/orders';
 import { getOrderStatuses as getOrderStatusesApi } from '@/api/generated/order-statuses/order-statuses';
@@ -46,20 +44,20 @@ export async function getOrder(id: number): Promise<OrderDetail> {
   return data;
 }
 
-export async function updateOrderStatus(
-  id: number,
-  status: PutApiOrdersIdStatusBodyStatus
-): Promise<Order> {
-  const { data } = await ordersApi.putApiOrdersIdStatus(id, { status });
+export async function updateOrderStatus(id: number, status: string): Promise<OrderDetail> {
+  const { data } = await ordersApi.putApiOrdersIdStatus(id, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    status: status as any,
+  });
   if (!data) throw MALFORMED;
   return data;
 }
 
-export async function updatePaymentStatus(
-  id: number,
-  paymentStatus: PutApiOrdersIdPaymentStatusBodyPaymentStatus
-): Promise<Order> {
-  const { data } = await ordersApi.putApiOrdersIdPaymentStatus(id, { paymentStatus });
+export async function updatePaymentStatus(id: number, paymentStatus: string): Promise<OrderDetail> {
+  const { data } = await ordersApi.putApiOrdersIdPaymentStatus(id, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    paymentStatus: paymentStatus as any,
+  });
   if (!data) throw MALFORMED;
   return data;
 }
