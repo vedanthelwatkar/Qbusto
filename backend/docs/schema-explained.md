@@ -138,6 +138,8 @@ The day convention is:
 
 Overnight windows are allowed conceptually. The schema does not block them with a `start_time < end_time` check, because that would prevent cases like 22:00 to 01:00. Any overlap validation is handled by application logic.
 
+**The API is stricter than the schema here.** `/api/product-availability-hours` requires `startTime` to be earlier than `endTime`, so a 22:00 to 01:00 window is currently rejected with a 400 even though the table could store it. Representing one would mean splitting it into 22:00-23:59:59 and 00:00-01:00, or relaxing the validator. Do not describe overnight windows as supported until that is decided.
+
 ### How availability is evaluated
 
 A cinema product is considered available only when all of these are true:

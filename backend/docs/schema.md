@@ -229,6 +229,14 @@ Non-unique index `IX_product_availability_hours_lookup` on `(cinema_product_id, 
 
 Multiple windows per product and day are allowed. Overlapping windows for the same product and day should be prevented by application validation.
 
+The API applies both of those application rules, and one the schema does not require:
+
+- overlaps are rejected with a 409, treating `day_of_week = 0` as clashing with every other day
+- touching windows (09:00-12:00 and 12:00-15:00) are not overlaps and are accepted
+- **`startTime` must be earlier than `endTime`**, so an overnight window such as 22:00 to 02:00 is currently rejected with a 400 despite the column permitting it
+
+DELETE on this table is a hard delete - there is no `is_active` column.
+
 Day convention:
 
 0 = all days

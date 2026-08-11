@@ -225,8 +225,16 @@ Product availability hours are different: they have no `is_active` column, so DE
 Current lifecycle decision:
 - Deactivating a chain does not cascade to cinemas.
 - Deactivating a cinema does not cascade to screens.
+- Deactivating a cinema product does not cascade to its availability hours.
 - Existing children remain readable/editable.
 - Creating new children under a deactivated parent is rejected where the backend currently enforces it.
+
+Enforced today by:
+- screens, against a deactivated cinema
+- cinema products, against a deactivated cinema *or* a deactivated product
+
+Both return `409`, not `400`: the ids are well-formed and the rows exist, so what
+fails is their relationship to stored state.
 
 Do not invent cascading behavior.
 
@@ -326,6 +334,7 @@ Completed:
 - Banners
 
 Remaining:
+- Cinema Products (backend exists, no UI yet)
 - Product Availability Hours
 - Orders
 - Reports
@@ -334,6 +343,9 @@ Remaining:
 - File/media handling
 
 Chains, Cinemas and Screens live under Settings because the frozen permission-module constraint has no separate modules for them.
+
+Cinema Products has no sidebar module either. Like Availability Hours it belongs inside
+the Products workflow, and it uses the same `Products` permission module.
 
 ## Product Availability Hours
 

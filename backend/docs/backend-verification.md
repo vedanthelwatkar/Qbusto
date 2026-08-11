@@ -147,6 +147,8 @@ Run both after adding or changing an endpoint. `gen:spec` prints the number of p
 Business endpoints live under `/api`. Note the ownership chain in the catalog:
 
 ```
+/api/auth/login, /logout, /me, /change-password
+
 /api/chains -> /api/cinemas -> /api/screens
 
 /api/categories -> /api/products
@@ -157,6 +159,8 @@ Business endpoints live under `/api`. Note the ownership chain in the catalog:
 /api/banners
 /api/users
 ```
+
+Not yet built: orders, reports, POS integrations and settings, though their tables exist.
 
 `/api/cinema-products` is what makes availability addressable: a window is attached to a `cinemaProductId`, and that id is resolved by listing `/api/cinema-products?cinemaId=&productId=`, which returns one row or none because the pair is unique.
 
