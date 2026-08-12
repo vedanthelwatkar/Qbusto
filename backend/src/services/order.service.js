@@ -32,13 +32,8 @@ const { Op } = require('sequelize');
 
 const { models, sequelize } = require('../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
-const {
-  ROLES,
-  ORDER_STATUSES,
-  PAYMENT_STATUSES,
-  ORDER_SOURCES,
-  PAGINATION,
-} = require('../constants');
+const { ROLES, ORDER_STATUSES, PAYMENT_STATUSES, PAGINATION } = require('../constants');
+const pricingService = require('./pricing.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -119,36 +114,16 @@ const PAYMENT_TRANSITIONS = Object.freeze({
   [PAYMENT_STATUSES.REFUNDED]: [],
 });
 
-/** orders.source -> the product_pricing column holding that channel's discount. */
-const SOURCE_DISCOUNT_COLUMN = Object.freeze({
-  [ORDER_SOURCES.QR]: 'discountOnQr',
-  [ORDER_SOURCES.SEAT_QR]: 'discountOnSeatQr',
-  [ORDER_SOURCES.KIOSK]: 'discountOnKiosk',
-  [ORDER_SOURCES.COUNTER]: 'discountOnCounter',
-});
-
-/** product_pricing.day_of_week / product_availability_hours.day_of_week */
-const EVERY_DAY = 0;
-
-// ---------------------------------------------------------------------------
-// Money
-//
-// Every amount is computed in integer paise and only rendered back to a decimal
-// string at the end. Doing it in rupees would mean floating point: 0.1 + 0.2 is
-// not 0.3, and a percentage discount on an odd price compounds the error across
-// a multi-line order until subtotal - discount no longer equals total, which
-// the CHECK constraints would then reject with nothing useful to say.
-// ---------------------------------------------------------------------------
-
-/** '250.00' | 250 -> 25000. */
-function toPaise(value) {
-  return Math.round(Number(value) * 100);
-}
-
-/** 25000 -> '250.00', the exact string a DECIMAL(10,2) column wants. */
-function toDecimalString(paise) {
-  return (paise / 100).toFixed(2);
-}
+/** Destructure shared pricing utilities from pricing.service */
+const {
+  toPaise,
+  toDecimalString,
+  isoDayOfWeek: isoDayOfWeekUtil,
+  unavailableReason: unavailableReasonUtil,
+  selectPricing: selectPricingUtil,
+  unitDiscountPaise: unitDiscountPaiseUtil,
+  EVERY_DAY,
+} = pricingService;
 
 // ---------------------------------------------------------------------------
 // Serialisation
@@ -288,138 +263,12 @@ async function resolveStatusId(kind, code, transaction) {
   return status.id;
 }
 
-// ---------------------------------------------------------------------------
-// Availability and pricing
-// ---------------------------------------------------------------------------
-
-/**
- * The ISO day number for a date: 1 = Monday ... 7 = Sunday.
- *
- * `Date.getDay()` returns 0 for Sunday, which collides with the schema's
- * "0 = every day", so it is remapped rather than used directly.
- */
-function isoDayOfWeek(date) {
-  const day = date.getDay();
-  return day === 0 ? 7 : day;
-}
-
-/** A Date as the 'HH:MM:SS' string a TIME column is compared against. */
-function timeOfDay(date) {
-  const pad = (part) => String(part).padStart(2, '0');
-
-  return [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join(':');
-}
-
-/**
- * Render whatever the driver hands back for a TIME column as 'HH:MM:SS'.
- *
- * Mirrors availability.service.formatTime: a TIME arrives as a Date pinned to
- * 1970-01-01 with the time in UTC, so the UTC accessors are the correct ones.
- */
-function formatStoredTime(value) {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return value;
-
-  const pad = (part) => String(part).padStart(2, '0');
-
-  return [pad(value.getUTCHours()), pad(value.getUTCMinutes()), pad(value.getUTCSeconds())].join(
-    ':'
-  );
-}
-
-/**
- * Whether a cinema product is orderable at `now`, per docs/schema.md.
- *
- * The rule has five parts and the last two are the subtle ones: hours *restrict*
- * availability, so a product with no windows at all is available all day, while
- * a product with windows is available only inside one of them. Reading "no rows"
- * as "never available" would silently close every product that has not had a
- * schedule entered.
- *
- * @returns {string|null} A reason it is unavailable, or null when it is.
- */
-function unavailableReason(cinemaProduct, now) {
-  if (!cinemaProduct.isActive) {
-    return 'is not currently carried at this cinema';
-  }
-
-  if (cinemaProduct.availableFrom && now < new Date(cinemaProduct.availableFrom)) {
-    return 'is not available at this cinema yet';
-  }
-
-  if (cinemaProduct.availableUntil && now > new Date(cinemaProduct.availableUntil)) {
-    return 'is no longer available at this cinema';
-  }
-
-  const hours = cinemaProduct.availabilityHours || [];
-
-  // Rule 5: no windows means no time-of-day restriction.
-  if (hours.length === 0) return null;
-
-  const day = isoDayOfWeek(now);
-  const time = timeOfDay(now);
-
-  const open = hours.some((hour) => {
-    if (hour.dayOfWeek !== EVERY_DAY && hour.dayOfWeek !== day) return false;
-
-    const start = formatStoredTime(hour.startTime);
-    const end = formatStoredTime(hour.endTime);
-
-    // Half-open: a window ending at 17:00:00 is closed at 17:00:00, so two
-    // touching windows never both claim the same instant.
-    return start <= time && time < end;
-  });
-
-  return open ? null : 'is not available at this time of day';
-}
-
-/**
- * The price row that applies to a product at a cinema on a given day.
- *
- * A day-specific row wins over the every-day row, which is the whole point of
- * having both: day 0 is the standing price and day N overrides it. Inactive
- * rows are excluded by the caller's query.
- */
-function selectPricing(pricings, day) {
-  return (
-    pricings.find((pricing) => pricing.dayOfWeek === day) ||
-    pricings.find((pricing) => pricing.dayOfWeek === EVERY_DAY) ||
-    null
-  );
-}
-
-/**
- * The per-unit discount in paise for one price row on one channel.
- *
- * `discount_type` governs every amount on the row: 'P' makes them percentages
- * of the base price, 'F' makes them flat rupee amounts. Without a type the
- * amounts are meaningless - the ProductPricing hook refuses to store them at
- * all - so no type means no discount.
- *
- * The channel column matching the order's source is preferred, falling back to
- * `discount_value` as the row's general discount. A null channel column means
- * "nothing specific to this channel", not "no discount", so the fallback is on
- * null rather than on the source being absent.
- *
- * Clamped to the unit price: a flat discount larger than the item, or a
- * percentage above 100, would otherwise produce a negative line total and
- * violate CK_order_items_total.
- */
-function unitDiscountPaise(pricing, source, unitPricePaise) {
-  if (!pricing.discountType) return 0;
-
-  const column = source ? SOURCE_DISCOUNT_COLUMN[source] : undefined;
-  const channelValue = column ? pricing[column] : null;
-  const raw =
-    channelValue !== null && channelValue !== undefined ? channelValue : pricing.discountValue;
-
-  if (raw === null || raw === undefined) return 0;
-
-  const discount =
-    pricing.discountType === 'P' ? Math.round((unitPricePaise * Number(raw)) / 100) : toPaise(raw);
-
-  return Math.min(Math.max(discount, 0), unitPricePaise);
-}
+// Pricing utilities are imported from pricing.service (single source of truth)
+// Aliases for local use to maintain compatibility with existing code
+const isoDayOfWeek = isoDayOfWeekUtil;
+const unavailableReason = unavailableReasonUtil;
+const selectPricing = selectPricingUtil;
+const unitDiscountPaise = unitDiscountPaiseUtil;
 
 // ---------------------------------------------------------------------------
 // Reads

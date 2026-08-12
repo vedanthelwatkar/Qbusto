@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
       Order.hasMany(models.PosTransaction, { foreignKey: 'orderId', as: 'posTransactions' });
 
       Order.hasOne(models.OrderPosContext, { foreignKey: 'orderId', as: 'posContext' });
+      Order.hasOne(models.IdempotencyKey, { foreignKey: 'orderId', as: 'idempotencyKey' });
     }
   }
 

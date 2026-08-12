@@ -55,20 +55,51 @@ const ORDER_SOURCES = {
 
 ### Razorpay Payment Flow (THE ONLY FLOW)
 
-1. **POST /api/consumer/orders** → Backend creates order + Razorpay order, returns:
+1. **POST /api/consumer/orders** → Backend creates local order (idempotent by Idempotency-Key header), returns:
    - orderId
+   - items
+   - subtotal, discount, total (in rupees)
+   - NO Razorpay data yet
+
+2. **POST /api/consumer/orders/{orderId}/payment-init** → Backend creates Razorpay order (idempotent), returns:
    - razorpayOrderId
    - razorpayKeyId (public)
    - amount (in paise, calculated server-side)
    - currency
 
-2. **Frontend opens Razorpay.checkout()** with the above values
+3. **Frontend opens Razorpay.checkout()** with razorpayOrderId + razorpayKeyId + amount
 
-3. **POST /api/consumer/orders/{orderId}/payment-verify** → Backend verifies signature, updates order state
+4. **POST /api/consumer/orders/{orderId}/payment-verify** → Backend verifies signature (idempotent), updates order state
 
-**No other payment endpoints.** No separate `/payment-init`. No `/payment` wrapper.
+**No other payment endpoints.** No single-call order+payment endpoint. No `/payment` wrapper.
 
 **Security:** Backend signature verification is mandatory. Frontend callback alone NEVER changes order state.
+
+**Idempotency:**
+- POST /api/consumer/orders: Idempotent via Idempotency-Key header (UUID)
+- POST /api/consumer/orders/{orderId}/payment-init: Idempotent via pessimistic lock + razorpayOrderId check
+- POST /api/consumer/orders/{orderId}/payment-verify: Idempotent via paymentStatus check
+
+### Idempotency & Concurrency Strategy (Non-Negotiable)
+
+**Local Order Creation Idempotency (CRITICAL):**
+- ✅ **Idempotency-Key header (UUID v4) required** on POST /api/consumer/orders
+- ✅ **Frontend generates UUID when entering checkout form** (once per checkout session)
+- ✅ **Same key returns same orderId** (no duplicate orders on network retry)
+- ✅ **Must persist key ↔ orderId association** in database or cache
+- ✅ **Prevents duplicate orders** if network fails after backend commits but before response reaches frontend
+
+**Payment Initialization Concurrency (CRITICAL):**
+- ✅ **Pessimistic row locking** on order load (SELECT ... FOR UPDATE or equivalent)
+- ✅ **Check razorpayOrderId before API call** (if already set, return existing)
+- ✅ **Compare-and-set fallback** (UPDATE only if NULL, check rows affected)
+- ✅ **Idempotent retry**: Same orderId always returns same razorpayOrderId (or winner's if lost race)
+- ✅ **Honest about Razorpay orphans**: True simultaneous requests (exact millisecond) may create 2 Razorpay orders, but only 1 local order and only 1 can be verified/paid → acceptable
+
+**Payment Verification Idempotency (CRITICAL):**
+- ✅ **Check paymentStatus before verification** (if already "paid", return success)
+- ✅ **No duplicate payment_status_logs** (only one log entry per order)
+- ✅ **Idempotent retry**: Same signature always returns success without duplicate updates
 
 ### Money Handling
 - ✅ **Backend calculates all prices server-side** (paise arithmetic, not floating-point).
@@ -191,36 +222,150 @@ Three entry scenarios with exact parameter requirements documented in `consumer/
    - Auth: None
 
 7. **POST /api/consumer/orders** (CRITICAL)
-   - Create order + Razorpay order in single transaction
+   - Create local order only (DB transaction)
+   - IDEMPOTENT by Idempotency-Key header (UUID)
    - Validate cinema, products, availability, pricing
    - Calculate amounts server-side (paise arithmetic)
-   - Call Razorpay API to create order
-   - Return: orderId, razorpayOrderId, razorpayKeyId, amount, currency, items
+   - Create order + items + logs (all in transaction)
+   - Return: orderId, items, subtotal, discount, total
+   - Does NOT create Razorpay order (separate step)
    - Auth: None
+   - Requires: Idempotency-Key header (UUID v4)
    - See `consumer/README.md` section 10.7 for full spec
 
-8. **POST /api/consumer/orders/{orderId}/payment-verify** (CRITICAL)
+8. **POST /api/consumer/orders/{orderId}/payment-init** (CRITICAL - NEW)
+   - Initialize payment for existing local order
+   - IDEMPOTENT: safe to retry (returns same razorpayOrderId)
+   - Concurrency-minimized: uses pessimistic lock + compare-and-set
+   - Load order, verify paymentStatus=pending
+   - If razorpayOrderId already set: return it (idempotent)
+   - Else: create Razorpay order via API, try to store razorpayOrderId
+   - If store succeeds: return razorpayOrderId
+   - If store fails (lost race): reload and return winner's razorpayOrderId
+   - Return: razorpayOrderId, razorpayKeyId, amount (paise)
+   - Auth: None
+   - Rare edge case: true simultaneous requests may create 2 Razorpay orders, but only 1 is used (acceptable)
+   - See `consumer/README.md` section 10.7bis for full spec
+
+9. **POST /api/consumer/orders/{orderId}/payment-verify** (CRITICAL)
    - Verify Razorpay payment signature
+   - IDEMPOTENT: safe to retry
    - Update order paymentStatus = "paid" if signature valid
    - Return: Updated order with paymentStatus: paid
    - Auth: None
    - See `consumer/README.md` section 10.8 for full spec
 
 **Implementation Notes:**
-- Create new file: `backend/src/routes/consumer.routes.js`
-- Create new controller: `backend/src/controllers/consumer.controller.js` (or split per resource)
-- Create new validators if needed: `backend/src/validators/consumer.validators.js`
+
+**Three-Phase Order + Payment Flow:**
+- Phase 1 (POST /api/consumer/orders): Create local order in DB transaction. Return orderId + totals. NO Razorpay call. IDEMPOTENT via Idempotency-Key header.
+- Phase 2 (POST /api/consumer/orders/{orderId}/payment-init): Create Razorpay order. Store razorpayOrderId. IDEMPOTENT via razorpayOrderId check + pessimistic lock.
+- Phase 3 (POST /api/consumer/orders/{orderId}/payment-verify): Verify signature. Mark order paid. IDEMPOTENT via paymentStatus check.
+
+**Idempotency Strategy (LOCAL ORDERS - CRITICAL):**
+- POST /api/consumer/orders: Idempotent via Idempotency-Key header (UUID v4)
+  - Frontend generates UUID when entering checkout form
+  - Same UUID on retry returns existing orderId (no duplicate orders)
+  - Must persist idempotency key ↔ orderId association in database or cache
+  - Prevents duplicate order creation if network fails after backend commits but before response reaches frontend
+
+**Idempotency Strategy (PAYMENT INITIALIZATION):**
+- payment-init: Idempotent via razorpayOrderId NULL check + pessimistic database lock
+  - If razorpayOrderId already set, return it (no duplicate Razorpay order)
+  - If NULL: Lock order row, check again, then create Razorpay order if still NULL
+  - Compare-and-set fallback: If another concurrent request wins, return their razorpayOrderId
+  - Rare edge case (true simultaneous requests at exact millisecond): May create 2 Razorpay orders, but only 1 is used → acceptable
+
+**Idempotency Strategy (PAYMENT VERIFICATION):**
+- payment-verify: Idempotent via paymentStatus check
+  - If already "paid", return success (no duplicate payment_status_log)
+  - Prevents double-crediting if frontend retries after network failure
+
+**Prevents duplicate charges** if frontend retries after network failures
+
+**File Structure:**
+- Create new file: `backend/src/routes/consumer.routes.js` (no authenticate middleware)
+- Create new controller: `backend/src/controllers/consumer.controller.js`
+- Create new validators: `backend/src/validators/consumer.validators.js`
 - Reuse existing services (Cinema, Product, ProductPricing, Order) where possible
-- Razorpay integration: Fetch PaymentGatewayConfig per cinema, call Razorpay API
-- All money calculations in paise (integers), validate with CHECK constraints
-- No JWT authentication on these endpoints
+- Extract money helpers as shared utilities if needed
+
+**Razorpay Integration:**
+- Fetch PaymentGatewayConfig by cinema (cinema-specific credentials)
+- Use RAZORPAY_KEY_SECRET environment variable as fallback (Phase 1)
+- Document that production will need decryption utility for gateway_secret_encrypted
+- Call Razorpay API only in payment-init endpoint (not in order creation)
+- Store razorpayOrderId on order row immediately after Razorpay success
+- Use HMAC-SHA256 for signature verification (server-side only, never trust frontend)
+
+**Money & Calculations:**
+- All amounts in paise (integers), never floating-point
+- Reuse selectPricing() + unitDiscountPaise() from order.service
+- Backend recalculates total from stored order (not from frontend)
+
+**Error Handling:**
+- 404: Resource not found (idempotent)
+- 409: Order in wrong state or unavailable (conflict)
+- 503: Razorpay API unavailable (retryable)
+- 403: Signature verification failed (not retryable, user error)
+
+**No JWT authentication on these endpoints.**
 
 **Testing Strategy (Phase 2):**
-- Validate cinema selection
-- Validate product availability (date, time, cinema_product link, pricing)
-- Verify Razorpay order creation with correct amount
-- Verify payment signature verification (valid + invalid signatures)
-- Test edge cases: product deactivated mid-order, pricing updated, screen offline
+
+**Endpoint Tests (POST /api/consumer/orders) - IDEMPOTENCY CRITICAL:**
+- Valid order creation returns orderId + items + totals
+- Idempotency-Key header is required (400 if missing)
+- First request with UUID: Creates order, returns orderId
+- Second request with same UUID: Returns same orderId (no new order created) ✅ CRITICAL
+- Third request with same UUID: Returns same orderId ✅ CRITICAL
+- Request with different UUID: Creates new order, returns different orderId
+- Cinema validation (inactive cinema rejected with 409)
+- Product validation (inactive/unlinked/unavailable product rejected)
+- Pricing validation (no pricing for today rejected)
+- Availability validation (outside time window rejected)
+- Duplicate products in items rejected (400)
+- Quantity limits enforced (max 50 total)
+- Order created in DB with correct amounts (in paise)
+- Idempotency key persisted and associated with orderId in database
+
+**Payment-Init Tests (POST /api/consumer/orders/{orderId}/payment-init) - CONCURRENCY CRITICAL:**
+- First call creates Razorpay order, returns razorpayOrderId
+- Second call with same orderId returns same razorpayOrderId (idempotent) ✅ CRITICAL
+- Third call returns same razorpayOrderId (idempotent) ✅ CRITICAL
+- Order in wrong state (not pending) rejected with 409
+- Invalid orderId returns 404
+- Razorpay API failure returns 503 (retryable)
+- razorpayOrderId stored correctly on order row
+- Concurrent requests to same orderId (2+ simultaneous): Both receive razorpayOrderId (may be same or different depending on race, but consistent) ✅ CRITICAL
+- Pessimistic lock prevents multiple Razorpay calls in normal cases
+- Edge case (true simultaneous at exact millisecond): May create 2 Razorpay orders, but both return same razorpayOrderId to frontend
+
+**Payment-Verify Tests (POST /api/consumer/orders/{orderId}/payment-verify):**
+- Valid signature verifies successfully, marks order paid
+- Invalid/tampered signature rejected with 403
+- Order in wrong state (not pending) rejected with 409
+- First verification updates paymentStatus to paid
+- Second call with same data returns success (idempotent, no duplicate log)
+- razorpayPaymentId stored in payment_status_logs
+- Invalid orderId returns 404
+- razorpayOrderId NULL returns error
+
+**Concurrency & Retry Tests (CRITICAL):**
+- Concurrent order creation (different Idempotency-Keys): Both succeed, different orderIds ✅ CRITICAL
+- Concurrent order creation (same Idempotency-Key): Both return same orderId, only 1 order in DB ✅ CRITICAL
+- Concurrent payment-init calls (same orderId): Both receive razorpayOrderId, only 1 used ✅ CRITICAL
+- Concurrent payment-verify calls (same orderId): Both return success, only one payment_status_log ✅ CRITICAL
+- Network failure during order creation + retry with same key: Returns existing orderId ✅ CRITICAL
+- Network failure during payment-init + retry: Returns existing razorpayOrderId ✅ CRITICAL
+- Network failure during payment-verify + retry: Returns existing paid status ✅ CRITICAL
+- Multiple retries with exponential backoff: All succeed idempotently
+- Race condition test: Verify Razorpay orphan order is acceptable (won't charge without local order verification)
+
+**Edge Cases:**
+- Product deactivated after order created (order still valid, reflects pricing at creation time)
+- Pricing changed after order created (order total unchanged)
+- Order timeout/expiry scenarios
 
 **Acceptance Criteria:**
 - All endpoints documented in Swagger/OpenAPI
@@ -234,27 +379,55 @@ Three entry scenarios with exact parameter requirements documented in `consumer/
 
 **Status:** NOT STARTED
 
-**Goal:** Verify Razorpay flow and payment state transitions are correct and secure.
+**Goal:** Verify Razorpay flow, idempotency, and payment state transitions are correct and secure.
 
 **Test Checklist:**
+
+**Order Creation (Phase 1):**
+- [ ] Order created with correct subtotal, discount, total (in paise)
+- [ ] Order status initialized as "initiated"
+- [ ] Payment status initialized as "pending"
+- [ ] razorpayOrderId is NULL (not created yet)
+- [ ] order_status_logs entry created
+- [ ] payment_status_logs entry created
+
+**Payment Initialization (Idempotent):**
 - [ ] Razorpay order created with correct amount (in paise)
 - [ ] Razorpay order ID stored on order row
+- [ ] First call creates Razorpay order
+- [ ] Second call returns same razorpayOrderId (idempotent)
+- [ ] Razorpay API failure returns 503, order remains with razorpayOrderId=NULL
+- [ ] Retry after failure succeeds
+
+**Payment Verification (Idempotent):**
 - [ ] Valid Razorpay signature verifies successfully
 - [ ] Invalid/tampered signature rejected (403)
 - [ ] Order state transitions: pending → paid (only after verification)
-- [ ] Duplicate payment attempts rejected or handled gracefully
-- [ ] Payment after order timeout handled
-- [ ] Razorpay API failure returns 500, customer can retry
-- [ ] Order remains in "pending" if verification fails
+- [ ] First verification creates payment_status_logs entry
+- [ ] Second call returns success without duplicate log (idempotent)
+- [ ] Order remains in "pending" if verification fails (400/403 responses)
 - [ ] No money leaves customer account unless backend verification succeeds
-- [ ] PaymentGatewayConfig fetched correctly (per-cinema or global)
-- [ ] Razorpay secret never logged or exposed
+
+**Razorpay Secret Handling:**
+- [ ] RAZORPAY_KEY_SECRET read from environment (Phase 1 approach)
+- [ ] PaymentGatewayConfig fetched by cinema (if used for future decryption)
+- [ ] Razorpay secret NEVER logged or exposed in responses
+- [ ] HMAC-SHA256 verification uses server-side secret only
+
+**Concurrent & Retry Scenarios:**
+- [ ] Concurrent payment-init: First succeeds, second sees razorpayOrderId and returns it
+- [ ] Concurrent payment-verify: First marks paid, second sees paid status and returns success
+- [ ] Network failure scenarios: Retries are idempotent (no duplicates)
 
 **Real Database Testing Required:**
-- Use temporary test orders with unique IDs
-- Verify database state changes (order_status_logs, payment_status_logs rows created)
-- Clean up all test data
-- Confirm database is clean before shipping
+- Create temporary test orders with unique cinema/product combinations
+- Verify database state at each step:
+  - After order creation: order + order_items + status_logs
+  - After payment-init: razorpayOrderId stored
+  - After payment-verify: payment_status_logs with razorpayPaymentId, paymentStatus=paid
+- Test with Razorpay sandbox credentials
+- Clean up all test data and verify database is clean
+- Verify no orphan Razorpay orders left behind
 
 ---
 

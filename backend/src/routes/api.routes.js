@@ -16,6 +16,7 @@ const categoryRoutes = require('./category.routes');
 const chainRoutes = require('./chain.routes');
 const cinemaRoutes = require('./cinema.routes');
 const cinemaProductRoutes = require('./cinemaproduct.routes');
+const consumerRoutes = require('./consumer.routes');
 const orderRoutes = require('./order.routes');
 const { orderStatusRouter, paymentStatusRouter } = require('./orderstatus.routes');
 const pricingRoutes = require('./pricing.routes');
@@ -40,6 +41,10 @@ const router = express.Router();
  */
 router.get('/', (req, res) => success(res, { message: 'QBusto API' }));
 
+// Consumer API routes - PUBLIC, unauthenticated
+router.use('/consumer', consumerRoutes);
+
+// Staff API routes - authenticated and authorized
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/chains', chainRoutes);

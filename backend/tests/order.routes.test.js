@@ -26,6 +26,7 @@ jest.mock('../src/config/database', () => {
     PaymentStatus: { findOne: jest.fn(), findAll: jest.fn() },
     OrderStatusLog: { create: jest.fn() },
     PaymentStatusLog: { create: jest.fn() },
+    IdempotencyKey: { findOne: jest.fn(), create: jest.fn() },
   };
 
   return {
