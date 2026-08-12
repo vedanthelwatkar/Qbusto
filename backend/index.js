@@ -4,7 +4,7 @@ const app = require('./src/app');
 const logger = require('./src/config/logger');
 const env = require('./src/config/env');
 
-const PORT = env.PORT || 3000;
+const PORT = env.port;
 
 const server = app().listen(PORT, () => {
   logger.info(`Server started on port ${PORT}`);

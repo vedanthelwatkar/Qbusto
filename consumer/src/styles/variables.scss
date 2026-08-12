@@ -1,0 +1,76 @@
+/**
+ * CSS custom properties for theming and responsive design.
+ * Mobile-first; values can be overridden in media queries.
+ */
+
+:root {
+  /* Colors */
+  --color-primary: #e74c3c;
+  --color-primary-light: rgba(231, 76, 60, 0.1);
+  --color-primary-dark: #c0392b;
+
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f8f9fa;
+
+  --color-text-primary: #2c3e50;
+  --color-text-secondary: #7f8c8d;
+  --color-text-light: #95a5a6;
+
+  --color-border: #e0e0e0;
+  --color-border-dark: #cccccc;
+
+  --color-success: #27ae60;
+  --color-error: #e74c3c;
+  --color-warning: #f39c12;
+
+  /* Typography */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --font-size-h1: 28px;
+  --font-size-h2: 24px;
+  --font-size-h3: 20px;
+  --font-size-body: 16px;
+  --font-size-small: 14px;
+  --font-size-xs: 12px;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Touch targets */
+  --touch-target-min: 48px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 300ms ease;
+
+  /* Z-index scale */
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-modal: 300;
+}
+
+/* Tablet and up */
+@media (min-width: 768px) {
+  :root {
+    --font-size-h1: 32px;
+    --font-size-h2: 28px;
+    --font-size-h3: 24px;
+    --font-size-body: 16px;
+
+    --space-lg: 20px;
+    --space-xl: 28px;
+    --space-2xl: 40px;
+  }
+}
+
+/* Breakpoints (mobile-first naming) */
+:root {
+  --breakpoint-mobile: 360px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+}
