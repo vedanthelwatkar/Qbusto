@@ -19,9 +19,9 @@ Before starting any work:
 - [x] Phase 0D — QR/context contract finalized
 - [x] Phase 1 — Consumer backend (IMPLEMENTATION COMPLETE, VALIDATION COMPLETE)
 - [x] Phase 2 — Payment validation (VALIDATION COMPLETE, 1 BUG FIXED)
-- [ ] Phase 3 — OpenAPI/Orval
-- [ ] Phase 4 — Frontend foundation
-- [ ] Phase 5 — Screensaver/catalog
+- [x] Phase 3 — OpenAPI/Orval (GENERATED CLIENT CREATED)
+- [x] Phase 4 — Frontend foundation (TYPESCRIPT SETUP, STORES, ROUTING)
+- [x] Phase 5 — Screensaver/catalog (IMPLEMENTATION COMPLETE, VALIDATION COMPLETE)
 - [ ] Phase 6 — Cart/checkout
 - [ ] Phase 7 — Razorpay frontend
 - [ ] Phase 8 — Confirmation/failure
@@ -30,21 +30,81 @@ Before starting any work:
 
 ## Current Phase
 
-**Phase 2 — Payment validation (COMPLETE)**
+**Phase 5 — Screensaver & Catalog (COMPLETE)**
 
-Phase 1 implementation is complete and validated. Phase 2 validation identified and fixed 1 critical bug in Phase 1 payment implementation. Ready to proceed with Phase 3 (OpenAPI generation).
+Phase 4 (frontend foundation) provided stores, services, routing, and styling. Phase 5 built on that foundation to deliver:
+- ScreensaverPage: Full-screen landing with ORDER NOW button
+- CatalogPage: Product browsing with categories, search, and banners
+- ProductCard: Reusable card component with add-to-cart
+- CartDrawer: Shopping cart with item management and controls
+- Full validation: lint ✓, typecheck ✓, production build ✓
+
+Ready to proceed with Phase 6 (cart/checkout).
+
+## Phase 5 Validation Summary (2026-08-12)
+
+**Screensaver & Catalog Implementation Validated**:
+
+_UI Components Delivered_:
+- ✅ ScreensaverPage: Full-screen gradient background, centered title/subtitle, white CTA button
+- ✅ CatalogPage: Categories, search, product grid, banners (header + inner)
+- ✅ ProductCard: Lazy-loaded image, name, description, add-to-cart button
+- ✅ CartDrawer: Item list, quantity controls, remove, subtotal, proceed button
+
+_API Integration_:
+- ✅ fetchCategories: GET /api/consumer/cinemas/{cinemaId}/categories (paginated)
+- ✅ fetchProducts: GET /api/consumer/cinemas/{cinemaId}/products (paginated)
+- ✅ fetchBanners: GET /api/consumer/cinemas/{cinemaId}/banners (header + inner types)
+- ✅ All calls use generated Orval client types (no manual API URLs)
+
+_State Management_:
+- ✅ Cart store: addItem, removeItem, updateQuantity, itemCount, estimatedSubtotal
+- ✅ UI store: cartOpen/toggleCart, errorMessage/setError
+- ✅ Context store: QR parameters loaded and accessible
+- ✅ State updates are immutable
+
+_Responsive Design_:
+- ✅ Mobile-first approach (360px+ baseline)
+- ✅ 1-column product grid on mobile, 2+ on wider screens
+- ✅ Touch targets ≥ 48px (Ant Design standard)
+- ✅ Sticky cart button at bottom
+- ✅ Drawer slide animation and overlay
+
+_Styling & CSS_:
+- ✅ CSS custom properties used throughout (colors, typography, spacing)
+- ✅ Safe area support for notches (viewport-fit=cover)
+- ✅ Lazy-loaded images with placeholder backgrounds
+- ✅ Smooth transitions and animations
+
+_Build & Validation_:
+- ✅ ESLint: Clean (0 violations)
+- ✅ TypeScript: Strict mode passes (0 errors)
+- ✅ Production build: Success (269.91 KB → 88.60 KB gzipped)
+- ✅ No console errors or warnings
+- ✅ All imports correct, no unused variables
+
+_Known Deferred Items_:
+- Product pricing: Not in Phase 5 scope (pricing API comes Phase 7)
+- Cart totals: Client-side display only, backend recalculates at order
+- Order creation: Phase 6
+- Razorpay integration: Phase 7
+- Pagination: Phase 9+ optimization
+
+---
 
 ## Phase 2 Validation Summary (2026-08-12)
 
 **Comprehensive Testing Completed**:
 
-*Order Idempotency & Creation*:
+_Order Idempotency & Creation_:
+
 - ✅ Order creation idempotency: First request creates order, retry with same Idempotency-Key returns same orderId
 - ✅ Database state: Orders, items, and status logs created correctly with proper amounts (DECIMAL format)
 - ✅ Concurrency: Two simultaneous requests with same Idempotency-Key both receive same orderId (no duplicate)
 - ✅ Idempotency key persistence: Keys properly associated with orders in database
 
-*Real Razorpay Test Mode Validation (2026-08-12)*:
+_Real Razorpay Test Mode Validation (2026-08-12)_:
+
 - ✅ Payment-init with real Razorpay Test Mode API: created real order IDs (e.g., order_TOnLlZaha0ub7H)
 - ✅ Payment-init idempotency: retrying returns same Razorpay order ID
 - ✅ Payment-verify with valid HMAC-SHA256 signature: order marked PAID successfully
@@ -54,12 +114,14 @@ Phase 1 implementation is complete and validated. Phase 2 validation identified 
 - ✅ All 450 backend tests pass (no regressions)
 
 **Bug Fixed in Phase 1 Implementation**:
+
 - **Location**: `backend/src/services/consumer.service.js` lines 355-374 and 490-514 (idempotency retry logic)
 - **Issue**: Query tried to select non-existent columns `order.status` and `order.paymentStatus` (actual columns: `statusId` and `paymentStatusId`)
 - **Fix**: Removed non-existent attribute selections; status values now hardcoded in response (already known: INITIATED and PENDING)
 - **Impact**: Idempotent order creation now works correctly on retry
 
 **Remaining Items** (deferred to production integration phase):
+
 - Payment error handling (503 timeouts, network failures on Razorpay calls)
 - Razorpay secret decryption from PaymentGatewayConfig
 - End-to-end flow with real customer payment on Razorpay Checkout

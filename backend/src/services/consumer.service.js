@@ -90,46 +90,55 @@ async function getCategories(
 
   if (!cinema) throw new NotFoundError('Cinema');
 
-  // Categories that have at least one available product at this cinema
-  const { rows: categories, count } = await models.Category.findAndCountAll({
-    include: [
-      {
-        association: 'products',
-        attributes: [],
-        through: { attributes: [] },
-        required: true,
-        include: [
-          {
-            association: 'cinemaProducts',
-            attributes: [],
-            where: { cinemaId, isActive: true },
-            required: true,
-          },
-          {
-            association: 'pricings',
-            attributes: [],
-            where: {
-              cinemaId,
-              dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(new Date())] },
-              isActive: true,
-            },
-            required: true,
-          },
-        ],
-      },
-    ],
+  // Get total count first
+  const countResult = await sequelize.query(
+    `
+    SELECT COUNT(DISTINCT c.id) as total
+    FROM categories c
+    INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
+    INNER JOIN cinema_products cp ON cp.product_id = p.id AND cp.cinema_id = ? AND cp.is_active = 1
+    INNER JOIN product_pricing pp ON pp.product_id = p.id AND pp.cinema_id = ?
+      AND pp.day_of_week IN (?, ?) AND pp.is_active = 1
+    `,
+    {
+      replacements: [cinemaId, cinemaId, EVERY_DAY, isoDayOfWeek(new Date())],
+      type: sequelize.QueryTypes.SELECT,
+    }
+  );
+
+  const total = countResult[0]?.total || 0;
+
+  // Get distinct category ids with SQL Server pagination (OFFSET...FETCH)
+  const categoryIds = await sequelize.query(
+    `
+    SELECT DISTINCT c.id, c.name
+    FROM categories c
+    INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
+    INNER JOIN cinema_products cp ON cp.product_id = p.id AND cp.cinema_id = ? AND cp.is_active = 1
+    INNER JOIN product_pricing pp ON pp.product_id = p.id AND pp.cinema_id = ?
+      AND pp.day_of_week IN (?, ?) AND pp.is_active = 1
+    ORDER BY c.name ASC
+    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    `,
+    {
+      replacements: [cinemaId, cinemaId, EVERY_DAY, isoDayOfWeek(new Date()), (page - 1) * limit, limit],
+      type: sequelize.QueryTypes.SELECT,
+    }
+  );
+
+  const ids = categoryIds.map((row) => row.id);
+
+  // Fetch full category data
+  const categories = await models.Category.findAll({
+    where: { id: { [Op.in]: ids.length > 0 ? ids : [0] } },
     attributes: ['id', 'name', 'imageUrl', 'description'],
-    subQuery: false,
-    raw: true,
-    limit,
-    offset: (page - 1) * limit,
     order: [['name', 'ASC']],
-    distinct: true,
+    raw: true,
   });
 
   return {
     categories,
-    total: count,
+    total,
   };
 }
 
@@ -302,19 +311,16 @@ async function getBanners(cinemaId, type = null) {
 
   if (!cinema) throw new NotFoundError('Cinema');
 
+  const today = new Date();
+
   const where = {
     cinemaId,
     isActive: true,
+    // startDate must be NULL or <= today
+    startDate: { [Op.or]: [{ [Op.is]: null }, { [Op.lte]: today }] },
+    // endDate must be NULL or >= today
+    endDate: { [Op.or]: [{ [Op.is]: null }, { [Op.gte]: today }] },
   };
-
-  // Date filtering: startDate NULL or <= today AND endDate NULL or >= today
-  where[Op.and] = [
-    sequelize.where(sequelize.col('startDate'), Op.or, [
-      { [Op.is]: null },
-      { [Op.lte]: new Date() },
-    ]),
-    sequelize.where(sequelize.col('endDate'), Op.or, [{ [Op.is]: null }, { [Op.gte]: new Date() }]),
-  ];
 
   if (type) {
     where.type = type;

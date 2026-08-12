@@ -2,29 +2,22 @@ import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useContextStore } from '@/stores/context.store';
 import { parseUrlParams } from '@/utils/parseUrlParams';
+import ScreensaverPage from '@/pages/ScreensaverPage';
+import CatalogPage from '@/pages/CatalogPage';
 
 /**
- * Phase 4 minimal placeholder pages (no implementation, just route shells).
- * Phase 5+ will implement actual page functionality.
+ * Placeholder pages for Phase 6+ (not implemented in Phase 5).
  */
-function ScreensaverPage() {
-  return <div className="page-screensaver">Screensaver - Phase 5</div>;
-}
-
-function CatalogPage() {
-  return <div className="page-catalog">Catalog - Phase 5</div>;
-}
-
 function CheckoutPage() {
-  return <div className="page-checkout">Checkout - Phase 6</div>;
+  return <div className="page-placeholder">Checkout - Phase 6</div>;
 }
 
 function PaymentPage() {
-  return <div className="page-payment">Payment - Phase 7</div>;
+  return <div className="page-placeholder">Payment - Phase 7</div>;
 }
 
 function ConfirmationPage() {
-  return <div className="page-confirmation">Confirmation - Phase 8</div>;
+  return <div className="page-placeholder">Confirmation - Phase 8</div>;
 }
 
 /**
@@ -40,12 +33,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const setContext = useContextStore((state) => state.setContext);
+  const loadFromLocalStorage = useContextStore((state) => state.loadFromLocalStorage);
 
-  // On app load, parse QR parameters and initialize context
+  // On app load, parse QR parameters; if none, load from localStorage
   useEffect(() => {
     const qrContext = parseUrlParams();
-    setContext(qrContext);
-  }, [setContext]);
+    // If URL params provide context (especially cinemaId), use them
+    if (Object.values(qrContext).some((v) => v !== null && v !== undefined)) {
+      setContext(qrContext);
+    } else {
+      // Otherwise, load from localStorage (if available)
+      loadFromLocalStorage();
+    }
+  }, [setContext, loadFromLocalStorage]);
 
   return (
     <Router>

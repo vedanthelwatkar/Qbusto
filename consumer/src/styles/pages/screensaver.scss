@@ -1,0 +1,63 @@
+.screensaver {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: white;
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.screensaver-content {
+  max-width: 400px;
+  width: 100%;
+}
+
+.screensaver-title {
+  font-size: var(--font-size-h1);
+  margin-bottom: var(--space-md);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.screensaver-subtitle {
+  font-size: var(--font-size-body);
+  margin-bottom: var(--space-2xl);
+  opacity: 0.9;
+  font-weight: 300;
+}
+
+.screensaver-cta {
+  display: inline-block;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: var(--space-lg) var(--space-2xl);
+  background-color: white;
+  color: var(--color-primary);
+  border: none;
+  border-radius: 8px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+}
+
+@media (min-width: 768px) {
+  .screensaver-title {
+    font-size: var(--font-size-h1);
+  }
+
+  .screensaver-cta {
+    font-size: 18px;
+  }
+}

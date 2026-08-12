@@ -1,9 +1,10 @@
 /**
  * Thin wrapper around Orval-generated consumer API client.
  * Reuses generated types; does not duplicate request/response shapes.
+ * Uses generated getConsumerCatalog() functions, never manually calls customInstance.
  */
 
-import { customInstance } from '@/api/axios-instance';
+import { getConsumerCatalog } from '@/api/generated/consumer-catalog/consumer-catalog';
 import type { Category, Product, Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 
 export interface CategoriesResponse {
@@ -34,6 +35,8 @@ export interface BannersResponse {
   data: Banner[];
 }
 
+const catalogClient = getConsumerCatalog();
+
 /**
  * Fetch categories for a cinema (paginated).
  */
@@ -41,12 +44,14 @@ export async function fetchCategories(
   cinemaId: number,
   { limit = 50, page = 1 } = {}
 ): Promise<CategoriesResponse> {
-  const response = await customInstance<CategoriesResponse>({
-    url: `/api/consumer/cinemas/${cinemaId}/categories`,
-    method: 'GET',
-    params: { limit, page },
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdCategories(cinemaId, {
+    limit,
+    page,
   });
-  return response.data;
+  return {
+    data: response.data.data || [],
+    meta: response.data.meta,
+  };
 }
 
 /**
@@ -66,12 +71,16 @@ export async function fetchProducts(
     page?: number;
   } = {}
 ): Promise<ProductsResponse> {
-  const response = await customInstance<ProductsResponse>({
-    url: `/api/consumer/cinemas/${cinemaId}/products`,
-    method: 'GET',
-    params: { categoryId, search, limit, page },
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdProducts(cinemaId, {
+    categoryId,
+    search,
+    limit,
+    page,
   });
-  return response.data;
+  return {
+    data: response.data.data || [],
+    meta: response.data.meta,
+  };
 }
 
 /**
@@ -81,11 +90,8 @@ export async function fetchProductDetail(
   cinemaId: number,
   productId: number
 ): Promise<Product> {
-  const response = await customInstance<{ data: Product }>({
-    url: `/api/consumer/cinemas/${cinemaId}/products/${productId}`,
-    method: 'GET',
-  });
-  return response.data.data;
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdProductsId(cinemaId, productId);
+  return response.data.data || {};
 }
 
 /**
@@ -95,10 +101,10 @@ export async function fetchBanners(
   cinemaId: number,
   { type }: { type?: 'H' | 'I' } = {}
 ): Promise<BannersResponse> {
-  const response = await customInstance<BannersResponse>({
-    url: `/api/consumer/cinemas/${cinemaId}/banners`,
-    method: 'GET',
-    params: type ? { type } : {},
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdBanners(cinemaId, {
+    ...(type && { type }),
   });
-  return response.data;
+  return {
+    data: response.data.data || [],
+  };
 }
