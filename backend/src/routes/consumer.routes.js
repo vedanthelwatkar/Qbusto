@@ -29,6 +29,15 @@ const router = express.Router();
  *     responses:
  *       200:
  *         description: Cinema found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Cinema'
  *       404:
  *         description: Cinema not found
  */
@@ -52,6 +61,15 @@ router.get('/cinemas/:id', consumerController.getCinema);
  *     responses:
  *       200:
  *         description: Screen found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Screen'
  *       404:
  *         description: Screen not found or doesn't belong to cinema
  */
@@ -77,6 +95,22 @@ router.get('/cinemas/:cinemaId/screens/:id', consumerController.getScreen);
  *     responses:
  *       200:
  *         description: Categories list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Category'
+ *                     meta:
+ *                       type: object
+ *                       properties:
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       404:
  *         description: Cinema not found
  */
@@ -108,6 +142,22 @@ router.get('/cinemas/:cinemaId/categories', consumerController.getCategories);
  *     responses:
  *       200:
  *         description: Products list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *                     meta:
+ *                       type: object
+ *                       properties:
+ *                         pagination:
+ *                           $ref: '#/components/schemas/Pagination'
  *       404:
  *         description: Cinema not found
  */
@@ -131,6 +181,15 @@ router.get('/cinemas/:cinemaId/products', consumerController.getProducts);
  *     responses:
  *       200:
  *         description: Product found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Product'
  *       404:
  *         description: Product not found
  */
@@ -154,6 +213,17 @@ router.get('/cinemas/:cinemaId/products/:id', consumerController.getProductDetai
  *     responses:
  *       200:
  *         description: Banners list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Banner'
  *       404:
  *         description: Cinema not found
  */
@@ -221,6 +291,60 @@ router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
  *     responses:
  *       201:
  *         description: Order created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         orderId:
+ *                           type: integer
+ *                         status:
+ *                           type: string
+ *                           enum: [initiated]
+ *                         paymentStatus:
+ *                           type: string
+ *                           enum: [pending]
+ *                         subtotal:
+ *                           type: number
+ *                           format: decimal
+ *                         discount:
+ *                           type: number
+ *                           format: decimal
+ *                         total:
+ *                           type: number
+ *                           format: decimal
+ *                         currency:
+ *                           type: string
+ *                           example: INR
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               productId:
+ *                                 type: integer
+ *                               productName:
+ *                                 type: string
+ *                               quantity:
+ *                                 type: integer
+ *                               unitPrice:
+ *                                 type: number
+ *                               lineTotal:
+ *                                 type: number
+ *                         customerMobile:
+ *                           type: string
+ *                           nullable: true
+ *                         customerEmail:
+ *                           type: string
+ *                           nullable: true
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
  *       400:
  *         description: Validation failed
  *       409:
@@ -248,6 +372,30 @@ router.post('/orders', consumerController.createOrder);
  *     responses:
  *       200:
  *         description: Payment initialized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         orderId:
+ *                           type: integer
+ *                         razorpayOrderId:
+ *                           type: string
+ *                           description: Razorpay order ID
+ *                         razorpayKeyId:
+ *                           type: string
+ *                           description: Razorpay public key
+ *                         amount:
+ *                           type: integer
+ *                           description: Amount in paise
+ *                         currency:
+ *                           type: string
+ *                           example: INR
  *       404:
  *         description: Order not found
  *       409:
@@ -283,6 +431,21 @@ router.post('/orders/:orderId/payment-init', consumerController.paymentInit);
  *     responses:
  *       200:
  *         description: Payment verified
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         orderId:
+ *                           type: integer
+ *                         paymentStatus:
+ *                           type: string
+ *                           enum: [paid]
  *       400:
  *         description: Invalid signature or missing Razorpay order
  *       404:

@@ -1,7 +1,8 @@
 // QBusto V1 Database Schema
 // Source of truth: backend/docs/schema.md
 // Import at: https://dbdiagram.io
-// 24 active V1 tables - source_discounts, price_change_logs, user_login_logs are NOT included (deferred)
+// 25 active V1 tables (including idempotency_keys from Phase 1 consumer API)
+// NOT included (deferred): source_discounts, price_change_logs, user_login_logs
 
 // Core foreign keys use ON DELETE NO ACTION and ON UPDATE NO ACTION unless stated otherwise.
 // Tenant consistency for cinema-scoped rows is enforced in application code, not by DB constraints.
@@ -383,6 +384,18 @@ Table payment_gateway_config [note: 'SQL Server filtered unique index: one activ
   updated_at                 datetime2     [not null]
 }
 
+Table idempotency_keys [note: 'Maps Idempotency-Key header (UUID) to order for consumer API POST /api/consumer/orders. Unique constraint on key column prevents duplicate orders on network retries.'] {
+  id                 int           [pk, increment]
+  key                varchar(36)   [not null, unique, note: 'UUID v4 from Idempotency-Key header']
+  order_id           int           [not null]
+  created_at         datetime2     [not null]
+  updated_at         datetime2     [not null]
+
+  indexes {
+    (key) [unique, name: 'IX_idempotency_keys_key']
+  }
+}
+
 // Relationships
 Ref: cinemas.chain_id > chains.id
 Ref: screens.cinema_id > cinemas.id
@@ -418,6 +431,8 @@ Ref: payment_status_logs.order_id > orders.id
 Ref: payment_status_logs.previous_status_id > payment_statuses.id
 Ref: payment_status_logs.new_status_id > payment_statuses.id
 Ref: payment_status_logs.changed_by_user_id > users.id
+
+Ref: idempotency_keys.order_id > orders.id
 
 Ref: user_permissions.created_by > users.id
 Ref: user_permissions.updated_by > users.id

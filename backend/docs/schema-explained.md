@@ -192,6 +192,20 @@ No notification master table is created for these states, because they are small
 
 Order and payment status values still live in their master tables. The application should resolve statuses using stable status codes (for example, confirmed and paid) instead of hardcoding numeric IDs. The database continues to reference the master tables through foreign keys.
 
+### Order creation idempotency (Phase 1 consumer API)
+
+The consumer API (`POST /api/consumer/orders`) supports idempotent order creation via the `Idempotency-Key` header (UUID v4).
+
+The `idempotency_keys` table maps each idempotency key to the order it created:
+
+- `key` (UUID string, unique): The value from the `Idempotency-Key` request header
+- `order_id`: Foreign key to the created order
+- `created_at`, `updated_at`: Timestamps
+
+The unique constraint on `key` prevents the database from accepting a duplicate key even if two requests arrive simultaneously, making the endpoint safely retry-able. If the frontend retries with the same key after a network failure, the backend returns the original order without creating a duplicate.
+
+The consumer API requires the `Idempotency-Key` header on every order creation request. Missing the header returns a 400 validation error.
+
 ---
 
 ## 5. POS integration layer
@@ -358,4 +372,5 @@ Other deferred ideas, such as price change logs and login audit logs, are not re
 - Payment gateway config is per cinema, stored in its own table, and encrypted at rest
 - The payment gateway encryption key is outside the database
 - POS credentials remain separate from payment gateway credentials
+- **Consumer API idempotency (Phase 1)**: `idempotency_keys` table maps UUID header values to order IDs, enabling safe retry of order creation
 - `source_discounts` stays deferred

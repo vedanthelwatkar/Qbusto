@@ -361,8 +361,6 @@ async function createOrder(payload, idempotencyKey) {
         ],
         attributes: [
           'id',
-          'status',
-          'paymentStatus',
           'subtotal',
           'discount',
           'total',
@@ -503,8 +501,6 @@ async function createOrder(payload, idempotencyKey) {
             ],
             attributes: [
               'id',
-              'status',
-              'paymentStatus',
               'subtotal',
               'discount',
               'total',

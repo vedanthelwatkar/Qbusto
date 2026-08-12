@@ -1,3 +1,4 @@
+/* eslint-disable-next-line no-undef */
 module.exports = {
   api: {
     input: "../shared/openapi.json",
@@ -7,7 +8,7 @@ module.exports = {
       client: "axios",
       override: {
         mutator: {
-          path: "./src/api/axios-instance.js",
+          path: "./src/api/axios-instance.ts",
           name: "customInstance",
         },
       },
