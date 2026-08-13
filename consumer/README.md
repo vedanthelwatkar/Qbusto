@@ -142,6 +142,8 @@ Bottom:
 
 ### Visual Philosophy
 
+- **Light-themed throughout**: Light surfaces on every screen, including the
+  screensaver. No dark-mode variant and no dark hero sections.
 - **Modern, not corporate**: Avoid dashboard / enterprise look
 - **Food-focused**: High-quality product images, appetizing presentation
 - **Catchy and clean**: Minimal clutter, clear typography
@@ -187,8 +189,9 @@ Bottom:
 - Carousel or single banner, fetched from backend
 
 **Category Navigation:**
-- Horizontal scroll or tab navigation
-- "All Products" + dynamic categories
+- Vertical rail pinned to the **left** of the product list at every breakpoint
+- Rail and product list are two **independent scroll regions**
+- "All items" + dynamic categories, each with its category image
 - Click → filter product grid
 
 **Product Grid:**
@@ -198,9 +201,16 @@ Bottom:
 - Click product card → product details (TBD: inline expansion or modal)
 
 **Inner Banner:**
-- Between category nav and product grid
 - Type = I (inner) banner
+- Rendered as the **background of the whole product listing pane**, not as a
+  block between sections. Product cards are opaque surfaces on top of it, so
+  text contrast never depends on the artwork.
 - Promotional tie-in
+
+**Product imagery:**
+- Product and category art is almost always transparent PNG. Image plates stay
+  transparent and use `object-fit: contain` — never a grey box or a cropped
+  `cover` fill.
 
 **Bottom:**
 - Sticky cart button (shows count and total)
@@ -229,28 +239,54 @@ Bottom:
 
 ### Screen 5: Checkout / Customer Information
 
-**Fields (exact set TBD based on backend):**
-
-Currently required by backend order API:
+**Backend contract** — the API itself only requires `cinemaId`, `source` and
+`items`; every other field is nullable and coerced to `null` server-side:
 - `cinemaId` (required)
-- `screenId` (optional, null for counter/kiosk)
-- `customerMobile` (optional, but likely required for order pickup)
-- `customerEmail` (optional)
-- `filmTitle` (optional, display snapshot)
-- `showTime` (optional)
-- `seatNumber` (optional)
-- `notes` (optional, free text)
-- `source` (set by app: "qr", "seat_qr", "kiosk", or "counter")
+- `source` (required; set by app: "qr", "seat_qr", "kiosk", or "counter")
+- `items` (required, min 1)
+- `screenId`, `customerMobile`, `customerEmail`, `filmTitle`, `showTime`,
+  `seatNumber`, `notes` — all optional/nullable
 
-**QR Prefill (TBD):**
+**UI-required fields** — the consumer app deliberately enforces more than the
+API does, because an order that cannot be delivered to a seat is not useful.
+These are a *frontend* business rule; the backend remains permissive:
+
+| Field | Maps to | Rule | Message |
+|-------|---------|------|---------|
+| WhatsApp No. | `customerMobile` | exactly 10 digits | "WhatsApp Number is required" / "Enter a valid 10-digit WhatsApp number" |
+| Row No. | `seatNumber` (first half) | 1–2 letters | "Row number is required" / "Enter a valid row, for example A" |
+| Seat No. | `seatNumber` (second half) | 1–3 digits | "Seat number is required" / "Enter a valid seat number, for example 5" |
+| Show Time | `showTime` | a datetime that exists on the calendar, year 2000–2100 | "Please select valid show time." |
+
+Row and Seat are captured separately and joined into the single API
+`seatNumber` string (e.g. `A` + `5` → `"A5"`, uppercased). `seatNumber` from a
+QR code is split back into the two controls on prefill.
+
+`customerEmail`, `screenId` and `filmTitle` stay optional and are labelled as
+such. `notes` is **not collected** by the consumer UI.
+
+**showTime format:** the API carries an absolute ISO instant
+(`2026-08-11T19:30:00Z`), but a `datetime-local` control only accepts and emits
+local wall-clock (`2026-08-11T19:30`). `src/utils/showTime.ts` converts both
+ways and preserves the instant — the value is rendered in the device's local
+timezone and converted back to UTC on submit. Never pass an ISO instant
+straight into the control: it is silently rejected and the show time is lost.
+
+Validation rejects values that do not exist on the calendar (`2026-02-30`,
+`2026-02-29`, month 13, hour 25) and implausible years (`0202`), but
+deliberately **accepts a show time in the past** — customers legitimately order
+during a screening that has already started.
+
+**QR Prefill:**
 - If QR params include `cinemaId`, `screenId`, `seatNumber`, `showTime` → prefill
 - User can override if needed
 
 **Form Strategy:**
-- Keep minimal: only show truly required fields
 - Use appropriate input types (tel for mobile, email for email)
-- Validate on blur, show errors clearly
-- Submit button: "Review Order" or skip directly to payment
+- Block submission while invalid; show errors inline beneath each field
+- Required controls carry `aria-required`, and `aria-invalid` +
+  `aria-describedby` when errored
+- Submit button: "Place Order" → creates the order, then payment
 
 ### Screen 6: Order Summary
 
@@ -741,7 +777,8 @@ Under rare edge case (true simultaneous requests at exact same millisecond):
 6. Construct verification string: `{razorpayOrderId}|{razorpayPaymentId}`
 7. Compute HMAC-SHA256(verification string, RAZORPAY_KEY_SECRET)
 8. Compare computed signature to provided signature
-9. If signatures do NOT match → return 403 (tampered/invalid payment)
+9. If signatures do NOT match → return **400** as a validation error whose
+   `error.details` identifies the offending field (tampered/invalid payment)
 10. If signatures match → update order (paymentStatus: paid) + insert payment_status_log with razorpayPaymentId in one transaction
 
 **Response (200 on successful verification)**:
@@ -768,7 +805,25 @@ Under rare edge case (true simultaneous requests at exact same millisecond):
 - This prevents double-crediting if frontend retries after a network failure
 
 **Error Handling**:
-- 403: Signature verification failed (possible tampering or invalid payment)
+- **400: Signature verification failed** (possible tampering or invalid payment).
+  The service raises a validation error, so the response body is:
+
+  ```json
+  {
+    "success": false,
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "Invalid payment signature",
+      "details": [
+        { "field": "razorpaySignature", "message": "Signature verification failed" }
+      ]
+    }
+  }
+  ```
+
+  A 400 is also returned when the order has no `razorpayOrderId`, so status
+  alone does not identify a signature failure — clients must look at
+  `error.details` for `field: "razorpaySignature"`.
 - 404: Order not found
 - 409: Order payment status is not "pending" (already paid, rejected, or cannot be paid from current state)
 - 500: Database error
@@ -1083,7 +1138,7 @@ Content-Type: application/json
 6. Construct: `{razorpayOrderId}|{razorpayPaymentId}`
 7. Compute HMAC-SHA256(string, RAZORPAY_KEY_SECRET)
 8. Compare signature
-9. If invalid → return 403 (tampered/invalid)
+9. If invalid → return **400** validation error, `error.details[].field = "razorpaySignature"` (tampered/invalid)
 10. If valid → Update order (paymentStatus: paid) + insert payment_status_log in transaction
 
 **Backend Response** (200 OK):
@@ -1092,7 +1147,10 @@ Content-Type: application/json
 
 **Key Property**: This endpoint is **IDEMPOTENT**. Retry-safe without duplicate payment updates.
 
-**Frontend**: If 200, show success screen. If 403 or error, show retry option.
+**Frontend**: If 200, go to the confirmation screen. Otherwise the recovery
+depends on *why* it failed — see "Payment Failure Handling" below. A rejected
+signature is permanent and must not be retried; anything else is transient and
+re-sends the same credentials.
 
 ---
 
@@ -1144,11 +1202,35 @@ There is:
 
 ### Payment Failure Handling
 
-**If customer cancels Razorpay checkout:** Browser closes modal, no callback. Frontend shows "Payment cancelled. Your order is pending." with retry option.
+**If customer cancels Razorpay checkout:** `modal.ondismiss` fires with no
+payment. Frontend shows a cancellation message and allows a fresh attempt. It
+must not overwrite a `payment.failed` message already received.
 
-**If payment fails at Razorpay:** Razorpay calls error handler. Frontend shows "Payment failed. Retry or contact support."
+**If payment fails at Razorpay:** the `payment.failed` event fires. Frontend
+shows the failure, using Razorpay's customer-facing `error.description` when
+present, and allows a fresh attempt — nothing was verified, so the order is
+still pending.
 
-**If signature verification fails:** Backend returns 403. Frontend shows "Payment could not be verified. Contact support with order #XYZ. Do not retry immediately."
+**If verification fails transiently (network, timeout, 5xx):** the payment may
+already have been taken, so the `razorpayPaymentId` and `razorpaySignature` are
+retained (persisted, so a refresh cannot lose them) and the customer is offered
+"Confirm my payment", which re-calls **payment-verify only** with the identical
+credentials. `payment-init` is never called from this path and Razorpay is never
+reopened. The customer is told not to pay again.
+
+**If the signature itself is rejected** (HTTP **400** with
+`error.details[].field === "razorpaySignature"`): this is permanent — re-sending
+the same credentials is deterministic and can never succeed. No retry is
+offered. The frontend shows a verification-failure screen with the order
+reference for counter staff, tells the customer not to pay again, and offers a
+safe route Home. The cart is left intact, no new order is created and
+`payment-init` is not called. The rejected state is persisted so a refresh
+restores this screen rather than a payment form.
+
+> The frontend identifies this case by `error.details`, not by status alone — a
+> 400 is also returned when the order has no `razorpayOrderId`. HTTP 403 is
+> additionally accepted as a defensive compatibility case; the current backend
+> does not produce it.
 
 **If Razorpay order creation fails:** POST /api/consumer/orders returns 500. Customer retries checkout from cart.
 

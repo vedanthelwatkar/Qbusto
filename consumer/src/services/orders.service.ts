@@ -6,7 +6,7 @@
 import { createOrder, initPayment, verifyPayment } from '@/api/consumer-orders-service';
 import type {
   PostApiConsumerOrdersBody,
-  PostApiConsumerOrders201,
+  PostApiConsumerOrders201Data,
   PostApiConsumerOrdersOrderIdPaymentInit200,
   PostApiConsumerOrdersOrderIdPaymentVerifyBody,
   PostApiConsumerOrdersOrderIdPaymentVerify200,
@@ -23,9 +23,12 @@ import type {
 export async function createOrderIdempotent(
   orderData: PostApiConsumerOrdersBody,
   idempotencyKey: string
-): Promise<PostApiConsumerOrders201> {
+): Promise<PostApiConsumerOrders201Data | undefined> {
   const response = await createOrder(orderData, idempotencyKey);
-  return response.data;
+  // The envelope's `data` is optional in the contract, so it is returned as
+  // possibly-undefined rather than cast away: a 2xx with no body would
+  // otherwise surface as an order object with no orderId.
+  return response.data.data;
 }
 
 /**

@@ -1,63 +1,123 @@
+/* Screensaver / landing. All rules scoped to .screensaver. */
+
 .screensaver {
+  position: relative;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  padding: var(--space-lg);
-  text-align: center;
-}
+  min-height: 100dvh;
+  padding: var(--space-2xl) var(--space-lg);
+  padding-top: max(var(--space-2xl), env(safe-area-inset-top));
+  padding-bottom: max(var(--space-2xl), env(safe-area-inset-bottom));
+  background-color: var(--color-bg-primary);
+  overflow: hidden;
 
-.screensaver-content {
-  max-width: 400px;
-  width: 100%;
-}
-
-.screensaver-title {
-  font-size: var(--font-size-h1);
-  margin-bottom: var(--space-md);
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-.screensaver-subtitle {
-  font-size: var(--font-size-body);
-  margin-bottom: var(--space-2xl);
-  opacity: 0.9;
-  font-weight: 300;
-}
-
-.screensaver-cta {
-  display: inline-block;
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-  padding: var(--space-lg) var(--space-2xl);
-  background-color: white;
-  color: var(--color-primary);
-  border: none;
-  border-radius: 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 150ms ease, box-shadow 150ms ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-
-  &:active {
-    transform: scale(0.98);
+  /* A single soft warm wash — enough to lift the page off flat white. */
+  &::before {
+    content: '';
+    position: absolute;
+    top: -25%;
+    left: 50%;
+    width: min(150vw, 900px);
+    height: min(150vw, 900px);
+    transform: translateX(-50%);
+    background: var(--gradient-hero);
+    pointer-events: none;
   }
 
-  &:hover {
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  &__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
+
+  &__eyebrow {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: var(--space-lg);
+  }
+
+  &__title {
+    font-size: var(--font-size-h1);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-md);
+    text-wrap: balance;
+  }
+
+  &__subtitle {
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-secondary);
+    max-width: 32ch;
+  }
+
+  &__context {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-sm);
+    margin-top: var(--space-xl);
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+  }
+
+  &__cta {
+    margin-top: var(--space-2xl);
+    min-width: 240px;
+  }
+
+  &__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    margin-top: var(--space-2xl);
+    padding: var(--space-lg);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    text-align: left;
+    color: var(--color-text-secondary);
+  }
+
+  &__notice-title {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin-bottom: 2px;
+  }
+
+  &__notice-body {
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-snug);
+    color: var(--color-text-secondary);
   }
 }
 
 @media (min-width: 768px) {
-  .screensaver-title {
-    font-size: var(--font-size-h1);
-  }
-
-  .screensaver-cta {
-    font-size: 18px;
+  .screensaver__content {
+    max-width: 520px;
   }
 }

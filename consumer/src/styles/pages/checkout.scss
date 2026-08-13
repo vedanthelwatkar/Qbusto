@@ -1,0 +1,302 @@
+/* Checkout. All rules scoped to .checkout. */
+
+.checkout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--color-bg-secondary);
+
+  /* Top bar ------------------------------------------------------------ */
+
+  &__topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top));
+    background-color: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--touch-target-min);
+    margin-left: calc(var(--space-sm) * -1);
+    padding: 0 var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-primary);
+    transition: background-color var(--transition-fast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--color-bg-secondary);
+    }
+
+    &:disabled {
+      color: var(--color-text-light);
+    }
+  }
+
+  &__step {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-light);
+  }
+
+  /* Layout -------------------------------------------------------------- */
+
+  &__layout {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-lg);
+    width: 100%;
+    max-width: var(--content-max);
+    margin: 0 auto;
+    padding: var(--space-lg);
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    min-width: 0;
+  }
+
+  &__intro {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  &__title {
+    font-size: var(--font-size-h1);
+  }
+
+  &__lede {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+    max-width: 46ch;
+  }
+
+  /* Form ---------------------------------------------------------------- */
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+
+  &__group {
+    /* fieldset needs its browser defaults cleared before it can be a card. */
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-bg-primary);
+    padding: var(--space-lg);
+    min-width: 0;
+  }
+
+  /* Floating the legend stops it notching the fieldset's top border, so the
+     group reads as a solid card. Following siblings must clear it. */
+  &__group-title {
+    float: left;
+    width: 100%;
+    padding: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+  }
+
+  &__group-hint {
+    clear: both;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-xs);
+  }
+
+  &__fields {
+    clear: both;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    margin-top: var(--space-lg);
+  }
+
+  /* Row + seat pair, show time full width, screen + film pair. */
+  &__fields--pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-md);
+
+    .field:nth-child(3) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* Actions ------------------------------------------------------------- */
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    position: sticky;
+    bottom: 0;
+    padding: var(--space-md) 0;
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+    background: linear-gradient(
+      to top,
+      var(--color-bg-secondary) 70%,
+      var(--color-bg-secondary-fade)
+    );
+  }
+
+  &__secure {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  /* Summary ------------------------------------------------------------- */
+
+  &__aside {
+    min-width: 0;
+    /* Below the form on mobile: the user should read what they are buying
+       after filling details, not before. */
+    order: -1;
+  }
+
+  &__summary {
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+  }
+
+  &__summary-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  &__summary-title {
+    font-size: var(--font-size-h3);
+  }
+
+  &__summary-count {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+  }
+
+  &__lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    padding: var(--space-md) 0;
+  }
+
+  &__line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-sm);
+    font-size: var(--font-size-small);
+  }
+
+  &__line-qty {
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__line-name {
+    color: var(--color-text-primary);
+    min-width: 0;
+  }
+
+  &__line-price {
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-border);
+  }
+
+  &__total-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-secondary);
+  }
+
+  &__total-value {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__total-note {
+    margin-top: var(--space-md);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-light);
+  }
+}
+
+@media (max-width: 400px) {
+  .checkout__fields--pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Desktop: form and summary side by side, with the summary pinned so the
+   totals stay visible while the form is filled in. */
+@media (min-width: 900px) {
+  .checkout__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+    gap: var(--space-xl);
+    padding-top: var(--space-xl);
+  }
+
+  .checkout__aside {
+    order: 0;
+    position: sticky;
+    top: calc(72px + var(--space-lg));
+  }
+
+  .checkout__actions {
+    position: static;
+    align-items: stretch;
+    background: none;
+    padding-bottom: 0;
+  }
+
+  .checkout__secure {
+    justify-content: center;
+  }
+}

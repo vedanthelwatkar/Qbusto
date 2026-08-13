@@ -121,7 +121,14 @@ async function getCategories(
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `,
     {
-      replacements: [cinemaId, cinemaId, EVERY_DAY, isoDayOfWeek(new Date()), (page - 1) * limit, limit],
+      replacements: [
+        cinemaId,
+        cinemaId,
+        EVERY_DAY,
+        isoDayOfWeek(new Date()),
+        (page - 1) * limit,
+        limit,
+      ],
       type: sequelize.QueryTypes.SELECT,
     }
   );
@@ -316,10 +323,14 @@ async function getBanners(cinemaId, type = null) {
   const where = {
     cinemaId,
     isActive: true,
-    // startDate must be NULL or <= today
-    startDate: { [Op.or]: [{ [Op.is]: null }, { [Op.lte]: today }] },
-    // endDate must be NULL or >= today
-    endDate: { [Op.or]: [{ [Op.is]: null }, { [Op.gte]: today }] },
+    [Op.and]: [
+      {
+        [Op.or]: [{ startDate: null }, { startDate: { [Op.lte]: today } }],
+      },
+      {
+        [Op.or]: [{ endDate: null }, { endDate: { [Op.gte]: today } }],
+      },
+    ],
   };
 
   if (type) {

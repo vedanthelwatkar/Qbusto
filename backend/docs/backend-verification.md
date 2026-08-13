@@ -17,7 +17,7 @@ make setup
 
 1. `npm install` - installs backend dependencies
 2. `npx sequelize-cli db:create` - creates the database named by `DB_NAME`
-3. `npx sequelize-cli db:migrate` - applies all 25 migrations
+3. `npx sequelize-cli db:migrate` - applies all 26 migrations
 4. `npx sequelize-cli db:seed:all` - loads the status master data
 5. `npm run verify-schema` - confirms the Sequelize layer is sound
 6. `npm run healthcheck` - confirms the deployment is ready
@@ -89,7 +89,7 @@ Models:
 
 ✓ Associations loaded successfully
 
-Models:       24
+Models:       25
 Associations: 112
 ```
 
@@ -115,7 +115,7 @@ Expected output:
 
 ```
 ✓ Database connected
-✓ Migrations up to date (25 applied)
+✓ Migrations up to date (26 applied)
 ✓ Seed data present
 ✓ Environment variables valid
 ✓ SQL Server version: 17.0.1000.7 (RTM, Standard Developer Edition (64-bit))
@@ -158,9 +158,15 @@ Business endpoints live under `/api`. Note the ownership chain in the catalog:
 /api/product-pricing   (keyed on cinema + product + day, not on cinema-products)
 /api/banners
 /api/users
+
+/api/orders -> /api/order-statuses, /api/payment-statuses
+
+/api/consumer/*        (public, unauthenticated: catalog, order create, payment)
 ```
 
-Not yet built: orders, reports, POS integrations and settings, though their tables exist.
+Not yet built: reports, POS integrations and settings, though their tables exist.
+POS integration is at the architecture stage - see [pos-integration.md](./pos-integration.md)
+and the phase tracker in [../phases.md](../phases.md).
 
 `/api/cinema-products` is what makes availability addressable: a window is attached to a `cinemaProductId`, and that id is resolved by listing `/api/cinema-products?cinemaId=&productId=`, which returns one row or none because the pair is unique.
 

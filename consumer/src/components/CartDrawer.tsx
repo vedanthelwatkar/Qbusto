@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '@/stores/cart.store';
 import { useUIStore } from '@/stores/ui.store';
 import { formatMoney } from '@/utils/formatMoney';
+import { BagIcon, CloseIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons';
 import '../styles/components/cart-drawer.scss';
 
 export default function CartDrawer() {
@@ -14,6 +15,7 @@ export default function CartDrawer() {
   const toggleCart = useUIStore((state) => state.toggleCart);
 
   const subtotal = estimatedSubtotal();
+  const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   const handleCheckout = () => {
     toggleCart();
@@ -22,91 +24,114 @@ export default function CartDrawer() {
 
   return (
     <>
-      {/* Overlay */}
-      {cartOpen && (
-        <div className="cart-overlay" onClick={toggleCart} aria-hidden="true" />
-      )}
+      {cartOpen && <div className="cart-overlay" onClick={toggleCart} aria-hidden="true" />}
 
-      {/* Drawer */}
-      <div className={`cart-drawer ${cartOpen ? 'open' : ''}`}>
-        <div className="cart-header">
-          <h2>Your Cart</h2>
-          <button
-            className="btn-close"
-            onClick={toggleCart}
-            aria-label="Close cart"
-          >
-            ✕
+      {/* The panel stays mounted so it can animate, so it must be hidden from
+          assistive tech and the tab order while closed. */}
+      <aside
+        className={`cart-drawer${cartOpen ? ' is-open' : ''}`}
+        aria-hidden={!cartOpen}
+        aria-label="Your cart"
+      >
+        <div className="cart-drawer__grabber" aria-hidden="true" />
+
+        <header className="cart-drawer__header">
+          <div className="cart-drawer__heading">
+            <h2 className="cart-drawer__title">Your cart</h2>
+            {itemCount > 0 && (
+              <span className="cart-drawer__count">
+                {itemCount === 1 ? '1 item' : `${itemCount} items`}
+              </span>
+            )}
+          </div>
+          <button className="cart-drawer__close" onClick={toggleCart} aria-label="Close cart">
+            <CloseIcon size={20} />
           </button>
-        </div>
+        </header>
 
         {items.length === 0 ? (
-          <div className="cart-empty">
-            <p>Your cart is empty</p>
+          <div className="cart-drawer__empty">
+            <span className="state-panel__icon">
+              <BagIcon size={28} />
+            </span>
+            <p className="cart-drawer__empty-title">Your cart is empty</p>
+            <p className="cart-drawer__empty-body">
+              Add something from the menu and it will show up here.
+            </p>
+            <button className="btn btn--secondary" onClick={toggleCart}>
+              Browse the menu
+            </button>
           </div>
         ) : (
           <>
-            <div className="cart-items">
+            <ul className="cart-drawer__items">
               {items.map((item) => (
-                <div key={item.productId} className="cart-item">
-                  <div className="item-info">
-                    <h3>{item.productName}</h3>
-                    <p className="item-price">
-                      {formatMoney(item.unitPrice)} × {item.quantity}
-                    </p>
+                <li key={item.productId} className="cart-drawer__item">
+                  <div className="cart-drawer__item-top">
+                    <h3 className="cart-drawer__item-name">{item.productName}</h3>
+                    <span className="cart-drawer__item-total">
+                      {formatMoney(item.unitPrice * item.quantity)}
+                    </span>
                   </div>
 
-                  <div className="item-controls">
+                  <p className="cart-drawer__item-unit">
+                    {formatMoney(item.unitPrice)} each
+                  </p>
+
+                  <div className="cart-drawer__item-controls">
+                    <div className="cart-drawer__stepper">
+                      <button
+                        className="cart-drawer__step"
+                        onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                        aria-label={
+                          item.quantity === 1
+                            ? `Remove ${item.productName} from cart`
+                            : `Decrease quantity of ${item.productName}`
+                        }
+                      >
+                        <MinusIcon size={18} />
+                      </button>
+                      <span className="cart-drawer__qty" aria-live="polite">
+                        <span className="sr-only">{item.productName} quantity: </span>
+                        {item.quantity}
+                      </span>
+                      <button
+                        className="cart-drawer__step"
+                        onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                        aria-label={`Increase quantity of ${item.productName}`}
+                      >
+                        <PlusIcon size={18} />
+                      </button>
+                    </div>
+
                     <button
-                      className="btn-qty"
-                      onClick={() =>
-                        updateQuantity(item.productId, item.quantity - 1)
-                      }
-                      aria-label={`Decrease quantity for ${item.productName}`}
-                    >
-                      −
-                    </button>
-                    <span className="qty-display">{item.quantity}</span>
-                    <button
-                      className="btn-qty"
-                      onClick={() =>
-                        updateQuantity(item.productId, item.quantity + 1)
-                      }
-                      aria-label={`Increase quantity for ${item.productName}`}
-                    >
-                      +
-                    </button>
-                    <button
-                      className="btn-remove"
+                      className="cart-drawer__remove"
                       onClick={() => removeItem(item.productId)}
-                      aria-label={`Remove ${item.productName}`}
+                      aria-label={`Remove ${item.productName} from cart`}
                     >
-                      Remove
+                      <TrashIcon size={18} />
                     </button>
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
 
-            <div className="cart-footer">
-              <div className="cart-summary">
-                <div className="summary-row">
-                  <span>Subtotal (estimate)</span>
-                  <span>{formatMoney(subtotal)}</span>
-                </div>
+            <footer className="cart-drawer__footer">
+              <div className="cart-drawer__summary">
+                <span className="cart-drawer__summary-label">Estimated subtotal</span>
+                <span className="cart-drawer__summary-value">{formatMoney(subtotal)}</span>
               </div>
+              <p className="cart-drawer__note">
+                Final pricing is confirmed at checkout.
+              </p>
 
-              <button
-                className="btn-checkout"
-                onClick={handleCheckout}
-                aria-label="Proceed to checkout"
-              >
-                Proceed to Checkout
+              <button className="btn btn--primary btn--block" onClick={handleCheckout}>
+                Proceed to checkout
               </button>
-            </div>
+            </footer>
           </>
         )}
-      </div>
+      </aside>
     </>
   );
 }

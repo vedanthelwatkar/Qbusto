@@ -33,7 +33,9 @@ const corsOptions = {
   },
   credentials: allowCredentials,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+  // Idempotency-Key is required by POST /api/consumer/orders, so it must be
+  // permitted at preflight or the consumer app can never create an order.
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'Idempotency-Key'],
   exposedHeaders: ['X-Request-Id'],
   maxAge: 86400,
 };

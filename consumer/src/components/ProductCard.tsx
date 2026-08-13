@@ -1,5 +1,6 @@
 import { useCartStore } from '@/stores/cart.store';
 import { formatMoney } from '@/utils/formatMoney';
+import { ImageIcon, MinusIcon, PlusIcon } from '@/components/icons';
 import '../styles/components/product-card.scss';
 
 interface ProductCardProps {
@@ -7,8 +8,18 @@ interface ProductCardProps {
   name: string;
   description?: string | null;
   imageUrl?: string | null;
-  price?: number;
+  /** Absent/null when the cinema has no valid pricing row for this product. */
+  price?: number | null;
   weight?: string | null;
+}
+
+/**
+ * A genuine ₹0 product is sellable; a missing, null or non-finite price is not.
+ * Defaulting the latter to 0 would add the item at ₹0 and understate the
+ * estimated subtotal, so the two cases must stay distinct.
+ */
+function hasValidPrice(price: number | null | undefined): price is number {
+  return typeof price === 'number' && Number.isFinite(price) && price >= 0;
 }
 
 export default function ProductCard({
@@ -16,49 +27,103 @@ export default function ProductCard({
   name,
   description,
   imageUrl,
-  price = 0,
+  price,
   weight,
 }: ProductCardProps) {
   const addItem = useCartStore((state) => state.addItem);
+  const updateQuantity = useCartStore((state) => state.updateQuantity);
+  // Selecting the number (not the item object) keeps this re-render-stable.
+  const quantity = useCartStore(
+    (state) => state.items.find((i) => i.productId === id)?.quantity ?? 0
+  );
 
-  const handleAddToCart = () => {
-    addItem(id, name, price);
-  };
+  const inCart = quantity > 0;
+  const priceIsValid = hasValidPrice(price);
 
   return (
-    <div className="product-card">
-      <div className="product-image-container">
+    <article className={`product-card${inCart ? ' product-card--in-cart' : ''}`}>
+      <div className="product-card__media">
         {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={name}
-            className="product-image"
-            loading="lazy"
-          />
+          <img src={imageUrl} alt={name} className="product-card__image" loading="lazy" />
         ) : (
-          <div className="product-image-placeholder">No Image</div>
+          <div className="product-card__placeholder" aria-hidden="true">
+            <ImageIcon size={28} />
+          </div>
+        )}
+
+        {inCart && (
+          <span className="product-card__badge" aria-hidden="true">
+            {quantity}
+          </span>
         )}
       </div>
 
-      <div className="product-info">
-        <h3 className="product-name">{name}</h3>
+      <div className="product-card__body">
+        <h3 className="product-card__name">{name}</h3>
 
-        {description && (
-          <p className="product-description">{description}</p>
-        )}
+        {description && <p className="product-card__description">{description}</p>}
 
-        <div className="product-footer">
-          {weight && <span className="product-weight">{weight}</span>}
-          {price > 0 && <span className="product-price">₹{formatMoney(price)}</span>}
-          <button
-            className="btn-add"
-            onClick={handleAddToCart}
-            aria-label={`Add ${name} to cart`}
-          >
-            Add
-          </button>
+        {weight && <span className="product-card__weight">{weight}</span>}
+
+        <div className="product-card__footer">
+          <span className="product-card__price">
+            {priceIsValid ? (
+              formatMoney(price)
+            ) : (
+              <span className="product-card__price--na">Unavailable</span>
+            )}
+          </span>
+
+          {!priceIsValid ? (
+            <button
+              type="button"
+              className="product-card__add"
+              disabled
+              aria-label={`${name} is unavailable`}
+            >
+              Unavailable
+            </button>
+          ) : inCart ? (
+            <div className="product-card__stepper">
+              <button
+                type="button"
+                className="product-card__step"
+                onClick={() => updateQuantity(id, quantity - 1)}
+                aria-label={
+                  quantity === 1
+                    ? `Remove ${name} from cart`
+                    : `Decrease quantity of ${name}`
+                }
+              >
+                <MinusIcon size={18} />
+              </button>
+
+              <span className="product-card__qty" aria-live="polite">
+                <span className="sr-only">{name} quantity: </span>
+                {quantity}
+              </span>
+
+              <button
+                type="button"
+                className="product-card__step"
+                onClick={() => updateQuantity(id, quantity + 1)}
+                aria-label={`Increase quantity of ${name}`}
+              >
+                <PlusIcon size={18} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="product-card__add"
+              onClick={() => addItem(id, name, price)}
+              aria-label={`Add ${name} to cart`}
+            >
+              Add
+            </button>
+          )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

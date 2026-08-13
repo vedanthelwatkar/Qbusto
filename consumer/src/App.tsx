@@ -4,21 +4,9 @@ import { useContextStore } from '@/stores/context.store';
 import { parseUrlParams } from '@/utils/parseUrlParams';
 import ScreensaverPage from '@/pages/ScreensaverPage';
 import CatalogPage from '@/pages/CatalogPage';
-
-/**
- * Placeholder pages for Phase 6+ (not implemented in Phase 5).
- */
-function CheckoutPage() {
-  return <div className="page-placeholder">Checkout - Phase 6</div>;
-}
-
-function PaymentPage() {
-  return <div className="page-placeholder">Payment - Phase 7</div>;
-}
-
-function ConfirmationPage() {
-  return <div className="page-placeholder">Confirmation - Phase 8</div>;
-}
+import CheckoutPage from '@/pages/CheckoutPage';
+import PaymentPage from '@/pages/PaymentPage';
+import ConfirmationPage from '@/pages/ConfirmationPage';
 
 /**
  * Protected route wrapper: ensures cinemaId is set before allowing navigation.
@@ -38,8 +26,12 @@ export default function App() {
   // On app load, parse QR parameters; if none, load from localStorage
   useEffect(() => {
     const qrContext = parseUrlParams();
-    // If URL params provide context (especially cinemaId), use them
-    if (Object.values(qrContext).some((v) => v !== null && v !== undefined)) {
+    // cinemaId is the only parameter required in every documented QR scenario
+    // (README §9), and setContext replaces the whole context. Accepting a URL
+    // without it — a plain refresh, or a stray param like ?seatNumber=A5 —
+    // would persist a context of nulls, wipe the stored cinemaId and eject the
+    // user. `source` can never signal presence: it always defaults to 'qr'.
+    if (qrContext.cinemaId !== null) {
       setContext(qrContext);
     } else {
       // Otherwise, load from localStorage (if available)
@@ -76,7 +68,7 @@ export default function App() {
           }
         />
         <Route
-          path="/confirmation"
+          path="/confirmation/:orderId"
           element={
             <ProtectedRoute>
               <ConfirmationPage />
