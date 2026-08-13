@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
 
       Screen.hasMany(models.Order, { foreignKey: 'screenId', as: 'orders' });
       Screen.hasMany(models.ScreenPosMapping, { foreignKey: 'screenId', as: 'posMappings' });
+      Screen.hasMany(models.Show, { foreignKey: 'screenId', as: 'shows' });
 
       Screen.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
       Screen.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });

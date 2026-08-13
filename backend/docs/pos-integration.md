@@ -1,8 +1,19 @@
 # POS Integration Architecture
 
-> **Status: PLANNED / NOT STARTED.** Nothing in the "Planned" sections of this
-> document is implemented. Sections marked **Existing** describe code and schema
-> that are in the repository today.
+> **Status: Phase B1 IMPLEMENTED. Phases B2–B10 PLANNED / NOT STARTED.**
+>
+> Sections are labelled so the distinction is unambiguous:
+>
+> | Label | Meaning |
+> | ----- | ------- |
+> | **Existing** | Was in the repository before this work |
+> | **Implemented** | Built and validated in a completed phase |
+> | **Planned** | Designed, not built |
+> | **Blocked** | Cannot be built until external input arrives |
+>
+> Only §4 (the `shows` table) is Implemented. Everything describing adapters,
+> synchronization, the Consumer API and Reports remains Planned or Blocked, and
+> must not be read as existing code.
 >
 > Progress is tracked in [../phases.md](../phases.md). Table definitions that
 > exist today are in [schema.md](./schema.md) and [schema.dbml](./schema.dbml).
@@ -104,9 +115,14 @@ this design changes that.
 
 ---
 
-## 4. Decision: a new table is required
+## 4. Decision: a new table is required — **IMPLEMENTED (Phase B1)**
 
 **Yes.** A new `shows` table is required.
+
+> **Implemented in Phase B1.** Migration `20260813000100-create-shows.js`, model
+> `models/show.js`. The as-built table is documented in
+> [schema.md](./schema.md#shows); the design below is what was built, unchanged.
+> Validated against real SQL Server — see [../phases.md](../phases.md) Phase B1.
 
 **Why.** The dropdown needs to list shows that have no orders yet. Every existing
 representation of a show (`orders.show_time`, `order_pos_context.*`) is created
@@ -119,7 +135,7 @@ can be reused or extended.
 scheduling role to it would make every order-listing query filter on rows that
 represent no sale, and would make show synchronization write to the order table.
 
-### 4.1 Proposed table (NOT CREATED)
+### 4.1 The table (CREATED — Phase B1)
 
 Named `shows`, not `pos_shows`: per CLAUDE.md's modernization principle the
 domain stays provider-neutral, and the POS-ness is carried by
@@ -188,13 +204,13 @@ and Reports can still aggregate sales per show. The Consumer sends a `showId`;
 the backend resolves it and writes the snapshot plus the POS context. `showId`
 is a request field, never a stored column.
 
-### 4.3 Deliberately not proposed
+### 4.3 Deliberately not created
 
 - **A `films` / `movies` table.** The only stated requirement is a display title
   in a dropdown. A film master introduces cross-provider identity matching (the
   same film has different ids in Vista and Showbiz) for no current benefit.
   Reports can group by `external_film_id` within a provider, or by
-  `film_title`. Revisit if a real requirement appears. Open question §12.2.
+  `film_title`. Revisit if a real requirement appears. Open item §12.2.
 - **A `seats` table.** Nothing requires it. Seats stay free text.
 - **`orders.show_id`.** See §4.2.
 - **A `pos_sync_runs` table.** See §6.7 — deferred, not rejected.
@@ -259,7 +275,7 @@ Route → Controller → Service → Model.
 Vista and Showbiz are on-premise POS systems. Neither is assumed to be able to
 call out to QBusto, and the legacy system read sessions live rather than
 receiving pushes. **Assume polling until POS documentation proves a webhook is
-available** (open question §12.3).
+available** (§12.3 — blocked on external input).
 
 ### 6.2 Recommended shape: scheduled poll + manual trigger
 
@@ -277,7 +293,7 @@ Sync **window**: fetch the current day plus the next day, not just ±3h. Wider
 than the query window so the query is always served from complete local data,
 and so Reports accumulate history. Confirm against POS API limits.
 
-**Scheduler mechanism is an open question (§12.4).** No job infrastructure
+**Scheduler selection is deferred to Phase B5 (§12.4).** No job infrastructure
 exists and no dependency may be added. Candidates: an in-process `setInterval`
 behind an env flag (simplest, correct for a single on-premise instance), or a
 `scripts/sync-shows.js` invoked by Windows Task Scheduler (keeps the API process
@@ -326,7 +342,7 @@ add `pos_sync_runs`, or rely on structured winston logging plus
 
 **Recommendation: start with logging + `last_synced_at`,** and add
 `pos_sync_runs` only when operations actually need a queryable history. Open
-question §12.5.
+item §12.5.
 
 ---
 
@@ -441,16 +457,39 @@ API emits ISO with Z; every consumer formats to local for display
 Everything above the adapter deals only in UTC instants. Node's built-in `Intl`
 supports IANA zones, so no dependency is needed for the conversion.
 
-**Where the timezone comes from** is an open question (§12.1):
+### 9.4 DECIDED (2026-08-13): `cinemas.timezone`
 
-1. A single `CINEMA_TIMEZONE=Asia/Kolkata` environment variable. Zero migration,
-   correct for a single-country on-premise deployment, wrong the moment a chain
-   spans timezones.
-2. A `cinemas.timezone` column. Correct long-term, requires a migration against
-   the frozen schema.
+**A `cinemas.timezone` column holding an IANA timezone string (for example
+`Asia/Kolkata`). A global `CINEMA_TIMEZONE` environment variable is rejected as
+the permanent architecture.**
 
-Recommendation: (1) now, with the conversion isolated in one helper so (2) is a
-narrow change later.
+Rationale: QBusto is explicitly multi-tenant, with `Chain → Cinema → Screen`.
+A chain may eventually span timezones, and POS showtimes are cinema-local, so
+the timezone is a property of the cinema and belongs on the cinema row. An
+environment variable would make a per-cinema fact global — the same class of
+mistake as the legacy day-specific pricing columns that QBusto deliberately
+normalized away.
+
+Compatibility with the existing architecture was checked before accepting:
+
+- The schema freeze permits a migration where a task explicitly requires one,
+  and this one is required by §9.2.
+- `cinemas` already carries per-cinema operational settings (`sms_enabled`,
+  `whatsapp_enabled`, `gst_number`, `fssai_number`), so a per-cinema
+  configuration column is consistent, not novel.
+- Nothing in the codebase reads a global timezone today, so there is no
+  environment-variable pattern being contradicted.
+
+No strong reason against it was found.
+
+**Not implemented in B1.** The column is not needed to create or use `shows` —
+`shows.show_time` is already a UTC instant and nothing converts yet. It is
+scheduled for **Phase B5**, where the sync service performs the conversion and
+first reads it. Pulling it into an earlier phase would add an unused column.
+
+Open items recorded with the decision: default value for existing rows,
+nullability, and whether the Dashboard exposes it for editing. These are settled
+in B5.
 
 **Display.** The API returns the ISO instant. Formatting to cinema-local time is
 the client's job, and each client already has a locale. If server-side formatted
@@ -506,35 +545,49 @@ required before this runs for a year in production — deferred, but recorded
 
 ---
 
-## 12. Open questions requiring a decision
+## 12. Decision register
 
-1. **Cinema timezone** — environment variable, or a `cinemas.timezone`
-   migration? (§9.3) Blocks the sync.
-2. **Film master table** — is a denormalized `film_title` sufficient for
-   Reports, or is a `films` table with cross-provider identity needed? (§4.3)
-3. **POS API access** — Vista and Showbiz endpoints, authentication, request and
-   response shapes, rate limits, and test credentials are entirely unknown. No
-   contract may be invented. **Blocks Vista and Showbiz adapters completely.**
-4. **Scheduler mechanism** — in-process interval, OS scheduler, or a new
-   dependency (which is currently disallowed)? (§6.2)
-5. **Persisted sync audit** — logging only, or a `pos_sync_runs` table? (§6.7)
-6. **Consumer contract change** — `consumer/README.md` currently documents
-   `showTime` as prefilled from the seat QR. The new requirement is that Show
-   Time is **never** prefilled and is always chosen from the dropdown. Do
-   existing seat QR codes stop carrying `showTime`, or is the parameter accepted
-   and ignored? This changes the QR contract and the Consumer truth files.
-7. **Empty dropdown vs required field** — Show Time is currently a **required**
-   checkout field. If the POS is down or no show falls in the window, the
-   dropdown is empty and checkout is blocked. Does Show Time become optional
-   when no shows are available, or is a blocked checkout the intended behaviour?
-   This is a product decision, not a technical one.
-8. **Cancelled show with an existing order** — what should happen to an order
-   whose show is later cancelled by the POS?
-9. **Sync frequency and horizon** — 5 minutes / two days are proposals, not
-   validated against real POS limits.
-10. **Unmapped screens** — confirm that a show on an unmapped screen should
-    still appear in the dropdown with no screen name (the recommendation), or
-    be hidden.
+Item numbers are stable. A resolved item keeps its number and gains a decision
+rather than being removed, so references elsewhere stay valid.
+
+| # | Item | Status |
+| - | ---- | ------ |
+| §12.1 | **Cinema timezone** | **DECIDED 2026-08-13** — a `cinemas.timezone` IANA column, *not* a global environment variable. Implemented in Phase B5, where it is first read. See §9.4. |
+| §12.2 | **Film master table** — denormalized `film_title`, or a `films` table with cross-provider identity? | OPEN (§4.3) |
+| §12.3 | **POS API access** — Vista and Showbiz endpoints, authentication, request/response shapes, rate limits, test credentials | **BLOCKED** on external input. Entirely unknown; no contract may be invented. Blocks B3 and B4 completely. |
+| §12.4 | **Scheduler mechanism** — in-process interval, OS scheduler, or a new dependency (currently disallowed)? | **DEFERRED to Phase B5** by decision, after the POS architecture and deployment environment are confirmed (§6.2) |
+| §12.5 | **Persisted sync audit** — logging only, or a `pos_sync_runs` table? | OPEN (§6.7) |
+| §12.6 | **Consumer QR contract** — do existing seat QR codes stop carrying `showTime`, or is it accepted and ignored? | OPEN. Blocks B7. See §12.11. |
+| §12.7 | **Empty dropdown vs required field** — Show Time is required; if the POS is down or no show falls in the window, checkout is blocked. Intended, or does Show Time become optional? | OPEN — **product decision, not technical**. Blocks B7. |
+| §12.8 | **Cancelled show with an existing order** — what happens to an order whose show the POS later cancels? | OPEN |
+| §12.9 | **Sync frequency and horizon** — 5 minutes / two days are proposals | OPEN, unvalidated against real POS limits |
+| §12.10 | **Unmapped screens** — appear with no screen name (recommended), or be hidden? | OPEN |
+
+### 12.11 Consumer Show Time contract
+
+Recorded here as the backend's understanding. The Consumer truth files own the
+UI side and are unchanged by this phase.
+
+- Show Time is **required** at checkout.
+- Show Time is **never prefilled from the QR**. Only Row and Seat may be
+  prefilled from a seat QR.
+- Show Time options come from the backend shows API (Phase B6), never from the
+  POS directly and never hardcoded.
+- The backend filters to **now − 3h … now + 3h, inclusive on both ends**, with
+  `now` computed server-side.
+- The backend sorts chronologically.
+- An empty result is `200` with `[]`, not `404`.
+- The Consumer shows an appropriate empty state when no shows are available.
+
+This supersedes the current `consumer/README.md` statement that `showTime` is
+prefilled from the seat QR. **The Consumer truth files have not yet been
+updated** — that belongs to Phase B7, together with the decision on whether
+existing seat QR codes stop carrying the parameter or it is accepted and
+ignored (§12.6).
+
+Row No. becoming an A–Z dropdown is a Consumer UI concern with no backend
+dependency: Row and Seat continue to be combined by the Consumer into the
+existing `orders.seat_number` value, and no schema change is involved.
 
 ---
 

@@ -17,7 +17,7 @@ make setup
 
 1. `npm install` - installs backend dependencies
 2. `npx sequelize-cli db:create` - creates the database named by `DB_NAME`
-3. `npx sequelize-cli db:migrate` - applies all 26 migrations
+3. `npx sequelize-cli db:migrate` - applies all 27 migrations
 4. `npx sequelize-cli db:seed:all` - loads the status master data
 5. `npm run verify-schema` - confirms the Sequelize layer is sound
 6. `npm run healthcheck` - confirms the deployment is ready
@@ -89,8 +89,8 @@ Models:
 
 ✓ Associations loaded successfully
 
-Models:       25
-Associations: 112
+Models:       26
+Associations: 120
 ```
 
 **When to use it:** after `make migrate`, after adding or editing a model, and after any change to associations. It is the fast check - it catches a typo'd alias or a model that failed to load before you find out through a confusing runtime error.
@@ -115,7 +115,7 @@ Expected output:
 
 ```
 ✓ Database connected
-✓ Migrations up to date (26 applied)
+✓ Migrations up to date (27 applied)
 ✓ Seed data present
 ✓ Environment variables valid
 ✓ SQL Server version: 17.0.1000.7 (RTM, Standard Developer Edition (64-bit))

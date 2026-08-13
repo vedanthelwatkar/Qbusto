@@ -235,6 +235,24 @@ The existing POS credential pattern still uses `pos_integrations.credential_ref`
 
 `pos_integrations.api_url` stores the provider endpoint.
 
+### Shows
+
+`shows` is the catalog of scheduled shows mirrored from the POS. It was added in backend Phase B1; the architecture behind it is in [pos-integration.md](./pos-integration.md).
+
+It exists because every earlier representation of a show is a *consequence of an order*. `orders.film_title`, `orders.show_time` and `order_pos_context.external_session_id` are per-order snapshots created at checkout and immutable afterwards. None of them can answer "what is playing at this cinema in the next three hours", because a show with no orders would not exist anywhere. The consumer Show Time dropdown needs exactly that question answered, so a catalog table is required.
+
+This mirrors, and deliberately corrects, the legacy design. PopExpress had no shows table either: `DAE_Orders` carried `Session_lngSessionId`, `Film_strTitle` and `Session_dtmRealShow` directly on the order row and read live session data from Vista at selection time. QBusto keeps the per-order snapshot, which is correct for history, and adds the catalog half that the legacy schema never had.
+
+The natural key is `(pos_integration_id, external_session_id)`. Synchronization is an upsert on that pair, so the unique index is what prevents duplicates rather than any application-side check-then-write. The same pair is already stored per order on `order_pos_context`, which means an order can be joined back to its show on a unique key without adding a `show_id` column to the frozen `orders` table.
+
+`shows` follows the machine-written conventions rather than the master-data ones:
+
+- No `created_by` / `updated_by`, because the POS sync writes these rows, not a user. This matches `order_pos_context` and `pos_transactions`.
+- No `is_active`. Soft delete is a staff-managed master-data convention, and these rows mirror external state. Lifecycle is `status` (`scheduled` / `cancelled`) plus `last_synced_at`.
+- `screen_id` is nullable, because a show can arrive before its external screen has been mapped. The alternative — refusing or hiding such shows — would silently lose them. The raw `external_screen_id` is kept so the mapping can be resolved later.
+
+`show_time` stores a UTC instant. The POS supplies cinema-local wall clock; converting it is the synchronization service's job (Phase B5), done in one place so the Vista and Showbiz adapters cannot drift apart. Provider adapters return wall clock and never convert.
+
 ### User permissions
 
 User access is controlled by `user_permissions` instead of a module master table or user groups.

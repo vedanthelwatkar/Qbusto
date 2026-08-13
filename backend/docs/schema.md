@@ -1,18 +1,18 @@
 # QBusto Database Schema
 
 > Technical source of truth for the database.
-> Last updated: 2026-08-09
-> Revision: 7 - documented `IX_product_availability_hours_lookup` and the as-implemented audit-FK delete rule.
+> Last updated: 2026-08-13
+> Revision: 8 - added `shows` (Phase B1); corrected the active-table list, which omitted `idempotency_keys`.
 
 ---
 
 ## Active table count
 
-24 active tables.
+26 active tables.
 
 Active tables:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows.
 
 Deferred and not in the active schema:
 
@@ -30,13 +30,14 @@ chains, cinemas, screens, categories, cinema_categories, products, cinema_produc
 
 Tables intentionally not given audit-user fields:
 
-users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions.
+users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions, idempotency_keys, shows.
 
 Reasons:
 
 - `order_status_logs` and `payment_status_logs` already carry `changed_by_user_id`.
 - `order_pos_context` is immutable after creation.
 - `pos_transactions` is an operational audit trail.
+- `shows` rows are machine-written by the POS sync, not authored by a user.
 - `orders` and `order_items` are business/history records where per-row creator/updater FKs add little value.
 - `users` should not be self-referenced with audit fields unless a future requirement explicitly needs it.
 
@@ -515,6 +516,66 @@ WHERE is_active = 1;
 
 ---
 
+## shows
+
+Catalog of scheduled shows mirrored from the POS. Added in Phase B1; see
+[pos-integration.md](./pos-integration.md).
+
+| Column              | Type         | Constraints                              |
+| ------------------- | ------------ | ---------------------------------------- |
+| id                  | int          | PK auto                                  |
+| cinema_id           | int          | FK -> cinemas.id, NOT NULL               |
+| screen_id           | int          | nullable, FK -> screens.id               |
+| pos_integration_id  | int          | FK -> pos_integrations.id, NOT NULL      |
+| external_session_id | varchar(100) | NOT NULL                                 |
+| external_screen_id  | varchar(50)  | nullable                                 |
+| external_film_id    | varchar(50)  | nullable                                 |
+| film_title          | varchar(200) | NOT NULL                                 |
+| show_time           | datetime2    | NOT NULL, UTC instant                    |
+| status              | varchar(20)  | NOT NULL, default `scheduled`            |
+| last_synced_at      | datetime2    | NOT NULL                                 |
+| created_at          | datetime2    | NOT NULL                                 |
+| updated_at          | datetime2    | NOT NULL                                 |
+
+Indexes:
+
+```sql
+CREATE UNIQUE INDEX UQ_shows_external_session
+ON shows(pos_integration_id, external_session_id);
+
+CREATE INDEX IX_shows_cinema_show_time
+ON shows(cinema_id, show_time);
+```
+
+`(pos_integration_id, external_session_id)` is the natural key. POS synchronization is an upsert on this pair, so the unique index is the entire duplicate-prevention mechanism. The same pair is already stored per order on `order_pos_context`, which is how an order is linked back to its show without adding a column to `orders`.
+
+`IX_shows_cinema_show_time` matches the shape of the consumer window query (cinema plus a show-time range).
+
+`screen_id` is nullable on purpose. A show can arrive from the POS before its external screen has been mapped in `screen_pos_mappings`; hiding such a show would silently lose it, so the row is kept with an unresolved screen instead. `external_screen_id` holds the raw value in the meantime.
+
+`status` values are `scheduled` and `cancelled`, enforced by `CK_shows_status`. There is deliberately no `is_active` column: the soft-delete convention applies to staff-managed master data, and these rows mirror external state. Lifecycle is carried by `status` plus `last_synced_at`.
+
+`show_time` stores a UTC instant. The POS supplies cinema-local wall clock; conversion is centralized in the synchronization service (Phase B5) rather than in a provider adapter.
+
+`cinema_id` is denormalized from `pos_integrations` so the window query and tenant scoping do not need a join.
+
+### Tenant-consistency invariants (application-enforced)
+
+`shows` participates in the same class of cross-table tenant rule already documented for `cinema_categories` and `cinema_products` under "Legacy and deferred notes". Two relationships must hold on every insert and update:
+
+1. **`shows.cinema_id` MUST equal the cinema of `shows.pos_integration_id`.** A POS integration belongs to exactly one cinema through `pos_integrations.cinema_id`. Because `shows.cinema_id` is a denormalized copy, the two can disagree unless the writer keeps them in step.
+2. **If `shows.screen_id` is non-null, that screen MUST belong to `shows.cinema_id`** (`screens.cinema_id = shows.cinema_id`).
+
+**The database does not enforce either relationship.** The foreign keys only require that the referenced cinema, screen and integration rows exist; nothing constrains them to the same tenant. `screen_pos_mappings` does not constrain its screen to the integration's cinema either, so a mapping row created against the wrong cinema can resolve to a foreign cinema's screen.
+
+**Application code MUST validate both before inserting or updating a show.** This is the responsibility of the Phase B5 synchronization service — the only component that writes this table. See [../phases.md](../phases.md) Phase B5.
+
+This validation prevents cross-cinema data leakage into the **public, unauthenticated** Consumer shows API. That endpoint (Phase B6) filters on `cinema_id` alone, so a row whose `cinema_id` disagrees with its integration would surface another cinema's show in this cinema's Show Time dropdown, and an order placed against it would carry a foreign cinema's `screen_id`.
+
+**An unmapped screen is not an inconsistency.** `screen_id = null` is valid and expected when the external screen has no row in `screen_pos_mappings` yet. Such a show MUST remain visible, with an unresolved screen; the raw value stays in `external_screen_id` until the mapping exists. Only a *non-null* `screen_id` pointing at another cinema's screen is a violation.
+
+---
+
 ## screen_pos_mappings
 
 | Column             | Type        | Constraints                                  |
@@ -742,6 +803,8 @@ Unique constraints and indexes used in the active schema:
 - `orders(payment_status_id)` non-unique index
 - `order_items(order_id)` non-unique index
 - `pos_transactions(order_id)` non-unique index
+- `shows(pos_integration_id, external_session_id)` unique
+- `shows(cinema_id, show_time)` non-unique index
 
 Checks:
 
@@ -749,6 +812,7 @@ Checks:
 - `banners.type IN ('H','I')`
 - `pos_integrations.provider IN ('vista','showbizz','impact','qbusto')`
 - `pos_transactions.status IN ('pending','success','failed','unknown')`
+- `shows.status IN ('scheduled','cancelled')`
 - `users.role IN ('owner','chain_admin','cinema_admin','kitchen_staff','cinema_accountant')`
 - `user_permissions.module_name IN ('Dashboard','Orders','Products','Categories','Pricing','Banners','Users','Reports','POS Integrations','Settings')`
 - `orders.source IN ('qr','seat_qr','kiosk','counter')`
@@ -789,6 +853,8 @@ A cinema product is currently available only when:
 ## Legacy and deferred notes
 
 The database does not enforce that a cinema's `chain_id` matches the `chain_id` of a `category` or `product` referenced through `cinema_categories` or `cinema_products`. Application code (service layer or Sequelize hooks) MUST validate this before insert/update to prevent cross-tenant data leakage.
+
+The same applies to `shows`: `cinema_id` must match the cinema of `pos_integration_id`, and a non-null `screen_id` must belong to that cinema. See "Tenant-consistency invariants" under [shows](#shows).
 
 - `orders.seat_number` already satisfies SeatNo.
 - `pos_integrations.is_active` already satisfies IS_Intigrated.

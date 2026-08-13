@@ -1,7 +1,8 @@
 // QBusto V1 Database Schema
 // Source of truth: backend/docs/schema.md
 // Import at: https://dbdiagram.io
-// 25 active V1 tables (including idempotency_keys from Phase 1 consumer API)
+// 26 active V1 tables (including idempotency_keys from Phase 1 consumer API
+// and shows from backend Phase B1)
 // NOT included (deferred): source_discounts, price_change_logs, user_login_logs
 
 // Core foreign keys use ON DELETE NO ACTION and ON UPDATE NO ACTION unless stated otherwise.
@@ -308,6 +309,27 @@ Table pos_integrations [note: 'SQL Server filtered unique index: one active row 
   }
 }
 
+Table shows [note: 'Catalog of shows mirrored from the POS. Machine-written by the sync; no audit-user fields. show_time is a UTC instant.'] {
+  id                  int           [pk, increment]
+  cinema_id           int           [not null, note: 'Denormalized from pos_integrations for window queries and tenant scoping.']
+  screen_id           int           [note: 'Nullable. Null until the external screen is mapped in screen_pos_mappings.']
+  pos_integration_id  int           [not null]
+  external_session_id varchar(100)  [not null, note: 'Provider session/show identifier. Half of the natural key.']
+  external_screen_id  varchar(50)   [note: 'As returned by the POS, before mapping.']
+  external_film_id    varchar(50)
+  film_title          varchar(200)  [not null, note: 'Display snapshot. Width matches orders.film_title.']
+  show_time           datetime2     [not null, note: 'UTC instant. POS-local conversion happens in the sync service.']
+  status              varchar(20)   [not null, default: 'scheduled', note: 'Allowed values: scheduled, cancelled. Deliberately not is_active.']
+  last_synced_at      datetime2     [not null, note: 'Last time the POS confirmed this show exists.']
+  created_at          datetime2     [not null]
+  updated_at          datetime2     [not null]
+
+  indexes {
+    (pos_integration_id, external_session_id) [unique, name: 'UQ_shows_external_session']
+    (cinema_id, show_time) [name: 'IX_shows_cinema_show_time']
+  }
+}
+
 Table screen_pos_mappings {
   id                 int         [pk, increment]
   pos_integration_id int         [not null]
@@ -433,6 +455,10 @@ Ref: payment_status_logs.new_status_id > payment_statuses.id
 Ref: payment_status_logs.changed_by_user_id > users.id
 
 Ref: idempotency_keys.order_id > orders.id
+
+Ref: shows.cinema_id > cinemas.id
+Ref: shows.screen_id > screens.id
+Ref: shows.pos_integration_id > pos_integrations.id
 
 Ref: user_permissions.created_by > users.id
 Ref: user_permissions.updated_by > users.id
