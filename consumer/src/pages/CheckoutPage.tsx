@@ -54,8 +54,8 @@ const checkoutSchema = z.object({
       (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
       'Invalid email format'
     ),
-  screenId: z.string().optional(),
-  filmTitle: z.string().optional(),
+  // No screenId/filmTitle here: they are no longer user-editable. Both still
+  // travel on the order, taken from the context store where the QR put them.
 });
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
@@ -104,12 +104,10 @@ export default function CheckoutPage() {
     defaultValues: {
       customerMobile: '',
       customerEmail: '',
-      screenId: screenId ? String(screenId) : '',
       rowNumber: prefilledSeat.row,
       seatNumber: prefilledSeat.seat,
       // QR supplies an absolute ISO instant; the control needs local wall-clock.
       showTime: isoToLocalInput(showTime),
-      filmTitle: filmTitle || '',
     },
   });
 
@@ -141,12 +139,14 @@ export default function CheckoutPage() {
     try {
       const orderData: PostApiConsumerOrdersBody = {
         cinemaId,
-        screenId: data.screenId ? parseInt(data.screenId, 10) : null,
+        // From the context store (QR), no longer from a form field. The order
+        // contract is unchanged; only the manual inputs were removed.
+        screenId,
         seatNumber: `${data.rowNumber.toUpperCase()}${data.seatNumber}`,
         source,
         customerMobile: data.customerMobile,
         customerEmail: data.customerEmail || null,
-        filmTitle: data.filmTitle || null,
+        filmTitle: filmTitle || null,
         showTime: localInputToIso(data.showTime),
         items: cartItems.map((item) => ({
           productId: item.productId,
@@ -344,30 +344,6 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
-                <div className="field">
-                  <label className="field__label" htmlFor="screen">
-                    Screen <span className="field__optional">Optional</span>
-                  </label>
-                  <input
-                    id="screen"
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="e.g. 3"
-                    {...register('screenId')}
-                  />
-                </div>
-
-                <div className="field">
-                  <label className="field__label" htmlFor="film">
-                    Film <span className="field__optional">Optional</span>
-                  </label>
-                  <input
-                    id="film"
-                    type="text"
-                    placeholder="Movie name"
-                    {...register('filmTitle')}
-                  />
-                </div>
               </div>
             </fieldset>
 

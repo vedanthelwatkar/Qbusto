@@ -178,18 +178,28 @@ async function getProducts(
     where.name = { [Op.like]: `%${search}%` };
   }
 
-  const { rows: products, count } = await models.Product.findAndCountAll({
+  // One clock for the whole request. Reading it twice could straddle midnight
+  // and select a price row for one day while judging availability against
+  // another.
+  const now = new Date();
+
+  // availableFrom/availableUntil and the availability-hour rows are selected
+  // here because unavailableReason() reads them. They were previously joined
+  // with attributes: [] - present in the SQL, never loaded - which is why an
+  // out-of-hours product reached the catalog and was only rejected later, at
+  // order creation.
+  const products = await models.Product.findAll({
     where,
     include: [
       {
         association: 'cinemaProducts',
-        attributes: [],
+        attributes: ['id', 'productId', 'availableFrom', 'availableUntil', 'isActive'],
         where: { cinemaId, isActive: true },
         required: true,
         include: [
           {
             association: 'availabilityHours',
-            attributes: [],
+            attributes: ['id', 'dayOfWeek', 'startTime', 'endTime'],
             required: false,
           },
         ],
@@ -207,23 +217,35 @@ async function getProducts(
         ],
         where: {
           cinemaId,
-          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(new Date())] },
+          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
           isActive: true,
         },
         required: true,
       },
     ],
     attributes: ['id', 'name', 'description', 'imageUrl'],
-    subQuery: false,
     raw: false,
-    limit,
-    offset: (page - 1) * limit,
     order: [['name', 'ASC']],
-    distinct: true,
   });
 
+  // The same predicate order creation uses (pricing.service.unavailableReason),
+  // so the catalog and the order check cannot drift apart. Deliberately applied
+  // in JS rather than reimplemented as SQL: a second implementation of these
+  // rules is exactly the drift this is meant to prevent.
+  //
+  // (cinema_id, product_id) is unique, and the join is required, so there is
+  // exactly one link per row.
+  const available = products.filter(
+    (product) => !unavailableReason(product.cinemaProducts[0], now)
+  );
+
+  // Paginated after filtering. Slicing the database page instead would return
+  // short pages and a total that counts products the customer cannot order.
+  const offset = (page - 1) * limit;
+  const pageProducts = available.slice(offset, offset + limit);
+
   // Transform products to include basePrice with source discount
-  const transformedProducts = products.map((product) => {
+  const transformedProducts = pageProducts.map((product) => {
     const pricing = product.pricings && product.pricings[0];
     const unitPaise = toPaise(pricing.basePrice);
     const discountPaise = unitDiscountPaise(pricing, ORDER_SOURCES.QR, unitPaise);
@@ -240,7 +262,7 @@ async function getProducts(
 
   return {
     products: transformedProducts,
-    total: count,
+    total: available.length,
   };
 }
 
@@ -253,18 +275,20 @@ async function getProductDetail(cinemaId, productId) {
 
   if (!cinema) throw new NotFoundError('Cinema');
 
+  const now = new Date();
+
   const product = await models.Product.findOne({
     where: { id: productId, isActive: true },
     include: [
       {
         association: 'cinemaProducts',
-        attributes: [],
+        attributes: ['id', 'productId', 'availableFrom', 'availableUntil', 'isActive'],
         where: { cinemaId, isActive: true },
         required: true,
         include: [
           {
             association: 'availabilityHours',
-            attributes: [],
+            attributes: ['id', 'dayOfWeek', 'startTime', 'endTime'],
             required: false,
           },
         ],
@@ -282,7 +306,7 @@ async function getProductDetail(cinemaId, productId) {
         ],
         where: {
           cinemaId,
-          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(new Date())] },
+          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
           isActive: true,
         },
         required: true,
@@ -293,6 +317,11 @@ async function getProductDetail(cinemaId, productId) {
   });
 
   if (!product) throw new NotFoundError('Product');
+
+  // Same predicate as the listing and as order creation. A product that is not
+  // orderable right now is not addressable either - otherwise a stale link or a
+  // guessed id would still put it in the cart.
+  if (unavailableReason(product.cinemaProducts[0], now)) throw new NotFoundError('Product');
 
   const pricing = product.pricings && product.pricings[0];
   const unitPaise = toPaise(pricing.basePrice);
