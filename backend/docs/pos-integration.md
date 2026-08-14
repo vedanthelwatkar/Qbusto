@@ -1,6 +1,6 @@
 # POS Integration Architecture
 
-> **Status: Phase B1 IMPLEMENTED. Phases B2–B10 PLANNED / NOT STARTED.**
+> **Status: Phases B1 and B2 IMPLEMENTED. Phases B3–B10 PLANNED / NOT STARTED.**
 >
 > Sections are labelled so the distinction is unambiguous:
 >
@@ -11,9 +11,14 @@
 > | **Planned** | Designed, not built |
 > | **Blocked** | Cannot be built until external input arrives |
 >
-> Only §4 (the `shows` table) is Implemented. Everything describing adapters,
-> synchronization, the Consumer API and Reports remains Planned or Blocked, and
-> must not be read as existing code.
+> §4 (the `shows` table) and §5 (the adapter boundary) are Implemented.
+> Everything describing synchronization, the Consumer API, the Dashboard and
+> Reports remains Planned or Blocked, and must not be read as existing code.
+>
+> §5 being Implemented means the **boundary** exists — the contract, the
+> normalized shape, the registry and the error taxonomy. **No provider adapter
+> exists.** The registry is empty, so every provider currently resolves to a
+> failure; Vista (B3) and Showbiz (B4) are blocked on §12.3.
 >
 > Progress is tracked in [../phases.md](../phases.md). Table definitions that
 > exist today are in [schema.md](./schema.md) and [schema.dbml](./schema.dbml).
@@ -66,6 +71,13 @@ the model validator and the database CHECK constraint. Note the schema spells it
 
 Verified by inspection of `src/routes/`, `src/controllers/`, `src/services/`,
 `src/validators/` and `src/routes/api.routes.js`:
+
+> **Historical — this is the state as surveyed in Phase B0.** Two bullets have
+> since changed and are kept as written rather than rewritten: B1 created the
+> `shows` table (§4), and B2 created the provider abstraction in `src/pos/`
+> (§5). Everything else below is still accurate — in particular there is still
+> no POS route, controller, service or validator, no Vista or Showbiz client, no
+> credential resolution, and no synchronization.
 
 - **No POS service, controller, route, or validator.** No `/api/pos-*` endpoint
   is mounted. The five POS models are loaded and associated, and nothing reads
@@ -217,7 +229,7 @@ is a request field, never a stored column.
 
 ---
 
-## 5. Normalized model and adapter boundary
+## 5. Normalized model and adapter boundary — **IMPLEMENTED (Phase B2)**
 
 ```
                     ┌──────────────────────────────────┐
@@ -241,7 +253,24 @@ is a request field, never a stored column.
         Consumer API         Dashboard API          Reports
 ```
 
-**The adapter contract** (planned, single method for the show use case):
+### 5.1 The adapter contract (BUILT — Phase B2)
+
+Built in `src/pos/`. Five files, no framework:
+
+| File                          | Role                                                                       |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| `src/pos/adapter.js`          | `PosAdapter` and `ShowWindow` typedefs; `assertPosAdapter`, `assertShowWindow` |
+| `src/pos/externalShow.js`     | `ExternalShow` typedef; `normalizeExternalShow(s)`, `normalizeShowTimeLocal` |
+| `src/pos/posErrors.js`        | Provider-neutral error taxonomy                                            |
+| `src/pos/providerRegistry.js` | `provider` → adapter lookup                                                |
+| `src/constants.js`            | `POS_PROVIDERS`, mirroring `CK_pos_integrations_provider`                   |
+
+`src/pos/` is not a new architectural layer. CLAUDE.md §14 already names
+`Business Service → Provider Adapter → External POS` as the required shape for
+integrations; this is that adapter layer, sitting beside `src/services/`. The B5
+sync service will be an ordinary service that consumes it.
+
+The signature, unchanged from the B0 design:
 
 ```
 fetchShows(integration, { fromUtc, toUtc }) → ExternalShow[]
@@ -256,15 +285,156 @@ ExternalShow {
 }
 ```
 
+An adapter is a **plain object** with a `provider` string and a `fetchShows`
+method. There is no base class to extend and no factory to call. Everything
+provider-specific — transport, authentication, retries, pagination, response
+quirks, error mapping — lives inside `fetchShows`, and nothing above the adapter
+reads `provider` except the registry.
+
+`assertPosAdapter` checks the shape at registration time, so a malformed adapter
+fails when the process wires itself up rather than on the first sync tick.
+`assertShowWindow` rejects a missing, non-`Date` or backwards window identically
+for every provider.
+
+### 5.2 `ExternalShow` — what crosses the boundary
+
+Every field maps to a column that already exists on `shows`:
+
+| Field               | Type            | `shows` column        |
+| ------------------- | --------------- | --------------------- |
+| `externalSessionId` | string          | `external_session_id` |
+| `externalScreenId`  | string \| null  | `external_screen_id`  |
+| `externalFilmId`    | string \| null  | `external_film_id`    |
+| `filmTitle`         | string          | `film_title`          |
+| `showTimeLocal`     | string          | `show_time`, after B5 converts it |
+| `cancelled`         | boolean         | `status`              |
+
+Nothing else. Seat maps, pricing, ratings, runtime and booking counts are all
+things a POS could return and none has a column, so accepting them would create
+a field with no meaning downstream. `cancelled` is not speculative — §6.3
+requires a POS-cancelled show to become `status = 'cancelled'` rather than
+vanish, and that cannot be derived from absence alone.
+
+`normalizeExternalShow` enforces the shape: required fields, optional screen and
+film ids, and **rejection rather than truncation** when a value is wider than
+its column, since a truncated `externalSessionId` would silently corrupt the
+natural key. A malformed row raises `PosMalformedResponseError` at the boundary
+instead of failing as a constraint violation during the B5 upsert.
+
+### 5.3 Provider registry
+
+Selection is by `pos_integrations.provider` through a `Map`. No factory
+framework, no base class — per CLAUDE.md §3, no new architectural layers beyond
+Route → Controller → Service → Model.
+
+```js
+const adapter = getAdapter(integration.provider);
+const shows = await adapter.fetchShows(integration, { fromUtc, toUtc });
+```
+
+**The registry ships empty.** `pos_integrations.provider` accepts four values —
+`vista`, `showbizz` (note the double z, which is what the frozen CHECK
+constraint contains), `impact`, `qbusto` — and none of them has an adapter.
+Database support is not application support: a provider being storable says the
+schema will hold the row, not that the application can talk to that POS.
+
+So `getAdapter` currently throws for every provider. Failing loudly is the
+point — an integration that quietly synced nothing would look, from the
+Dashboard and the Consumer dropdown, exactly like a cinema with no shows
+scheduled. Two cases are distinguished because they need different fixes:
+
+| Case                                  | Message                              | Fix                                           |
+| ------------------------------------- | ------------------------------------ | --------------------------------------------- |
+| Value the database would reject       | `Unknown POS provider "…"`           | Bad data, or a schema change not mirrored into `src/constants.js` |
+| Known value, no adapter registered    | `… has no adapter implemented`       | The phase implementing it is not done (B3/B4) |
+
+`hasAdapter(provider)` exists for callers that must skip or report an
+unsupported integration rather than fail — a B5 sync run iterating every active
+integration, or the B8 Dashboard health view.
+
+### 5.4 Error semantics
+
+Four outcomes, distinguishable by `posCode` without knowing the provider:
+
+| Outcome                          | Class                           | `posCode`                    |
+| -------------------------------- | ------------------------------- | ---------------------------- |
+| Provider failed or unreachable   | `PosProviderUnavailableError`   | `POS_PROVIDER_UNAVAILABLE`   |
+| Integration configured wrongly   | `PosConfigurationError`         | `POS_INVALID_CONFIGURATION`  |
+| Answered, but unusable payload   | `PosMalformedResponseError`     | `POS_MALFORMED_RESPONSE`     |
+| No adapter for the provider      | `PosProviderNotSupportedError`  | `POS_PROVIDER_NOT_SUPPORTED` |
+
+**Zero shows is none of these.** A successful call returning `[]` is the normal
+state outside opening hours. §6.3 depends on the distinction: only a
+*successful* sync may cancel shows absent from the window, so an adapter that
+threw on an empty result would both look like an outage and suppress the
+cancellation pass.
+
+Neutrality rules, all enforced by tests:
+
+- The class is chosen from the taxonomy, never from an HTTP status, SOAP fault
+  or provider error string. No class name, code or default message mentions a
+  provider or a transport.
+- Credentials, tokens, auth headers and raw provider payloads never appear in
+  `message` (CLAUDE.md §15, §17). The underlying error is attached as `cause`
+  for diagnostics and is deliberately kept **off** `details`, which is the only
+  part the error middleware serializes to a client.
+- `toLogContext()` returns identifiers only: `posCode`, `provider`,
+  `integrationId`, `operation`.
+
+The classes extend `AppError` so that if one ever escapes to a route — a manual
+sync endpoint in B5, the health view in B8 — the existing error middleware
+handles it safely instead of leaking a 500. The HTTP status on each is a safe
+default, not a contract: **`posCode` is the discriminator**, and mapping POS
+failures onto HTTP responses is B5/B8's decision, not the adapter's.
+
+`PosProviderUnavailableError` also carries `ambiguous`, for the case where an
+adapter cannot tell whether a request reached the provider. `fetchShows` is a
+read and is safe to retry; the flag exists so the same taxonomy can carry write
+operations later without violating CLAUDE.md §13/§15.
+
+### 5.5 Timezone responsibility — enforced, not merely documented
+
 The adapter returns provider wall-clock and does **not** convert timezones.
 Conversion is centralized in the sync service so both providers cannot drift
-apart. Adapters are also where provider auth, retries and response-shape quirks
-live; nothing above the adapter may branch on `provider`.
+apart (§9.3, CLAUDE.md §14).
 
-Selection is by `pos_integrations.provider` through a small registry
-(`{ vista: VistaAdapter, showbizz: ShowbizAdapter }`). No factory framework, no
-base class — per CLAUDE.md, no new architectural layers beyond
-Route → Controller → Service → Model.
+B2 makes this a rule the code enforces. `normalizeShowTimeLocal` accepts only
+`YYYY-MM-DDTHH:mm[:ss]` (a space separator is tolerated) and rejects:
+
+- any value carrying a `Z` or a `±HH:MM` offset — an offset means the value has
+  been pinned to an absolute instant;
+- a JavaScript `Date` — a `Date` *is* an instant, so its presence proves the
+  adapter already converted;
+- an impossible date such as `2026-02-30T10:00:00`, rather than letting it roll
+  over into March.
+
+An adapter that converts therefore cannot pass its own normalizer. The output is
+byte-identical to the provider's wall clock and is unaffected by the server's
+process timezone.
+
+The request window is the mirror image: `{ fromUtc, toUtc }`, computed from the
+server clock (§6.6) and identical for every provider, which is why it is
+expressed in UTC rather than in any cinema's local time. If a provider's API
+requires a *local-time* window, the sync service must supply it — deriving it
+inside the adapter would put timezone logic straight back where this rule
+removed it. How B5 supplies it is open item §12.13 and is deliberately not
+decided here.
+
+### 5.6 What B5 consumes from B2
+
+The sync service needs exactly four things, and nothing about any provider:
+
+1. `getAdapter(integration.provider)` — resolution, or a clear failure.
+2. `adapter.fetchShows(integration, { fromUtc, toUtc })` → `ExternalShow[]`.
+3. `posCode` on any thrown `PosAdapterError`, to decide whether the run failed
+   (leave rows untouched, cancel nothing, retry next tick — §6.5) or the
+   integration is misconfigured (retrying cannot help).
+4. An empty array meaning "successful, quiet window", which is what licenses the
+   §6.3 cancellation pass.
+
+Everything else is B5's own work: timezone conversion, screen mapping,
+tenant-consistency validation, the natural-key upsert, reconciliation and
+scheduling. B2 deliberately implements none of it.
 
 ---
 
@@ -562,6 +732,8 @@ rather than being removed, so references elsewhere stay valid.
 | §12.8 | **Cancelled show with an existing order** — what happens to an order whose show the POS later cancels? | OPEN |
 | §12.9 | **Sync frequency and horizon** — 5 minutes / two days are proposals | OPEN, unvalidated against real POS limits |
 | §12.10 | **Unmapped screens** — appear with no screen name (recommended), or be hidden? | OPEN |
+| §12.12 | **Credential resolution** — what does `pos_integrations.credential_ref` point at? Which secret store, and what lookup shape? | OPEN. **Moved out of B2 into B3** — the answer depends on what Vista/Showbiz actually authenticate with, which is §12.3. Resolution happens inside an adapter, which already receives the whole integration row, so the B2 boundary is unaffected. |
+| §12.13 | **Local-time request window** — if a provider's API needs the sync window as cinema-local wall clock rather than UTC instants, how does B5 supply it without putting timezone logic back into the adapter? | OPEN. Cannot be decided before §12.3: whether any provider needs this is unknown. The B2 contract passes `{ fromUtc, toUtc }` (§5.5). |
 
 ### 12.11 Consumer Show Time contract
 

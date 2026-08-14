@@ -14,6 +14,7 @@ const env = require('./env');
 const logger = require('./logger');
 
 const { allowedOrigins, allowCredentials } = env.cors;
+console.log('🚀 ~ allowedOrigins:', allowedOrigins);
 
 if (allowedOrigins.length === 0) {
   logger.warn(

@@ -17,12 +17,12 @@ Before starting any backend work:
 
 Related documents:
 
-| Document                                                       | Scope                                               |
-| -------------------------------------------------------------- | --------------------------------------------------- |
-| [docs/schema.md](./docs/schema.md)                             | The frozen database schema as it exists today       |
-| [docs/schema-explained.md](./docs/schema-explained.md)         | Why the schema is shaped the way it is              |
-| [docs/backend-verification.md](./docs/backend-verification.md) | Setup, verification and the API contract workflow   |
-| [docs/pos-integration.md](./docs/pos-integration.md)           | POS/show architecture — §4 built (B1), rest planned |
+| Document                                                       | Scope                                                           |
+| -------------------------------------------------------------- | --------------------------------------------------------------- |
+| [docs/schema.md](./docs/schema.md)                             | The frozen database schema as it exists today                   |
+| [docs/schema-explained.md](./docs/schema-explained.md)         | Why the schema is shaped the way it is                          |
+| [docs/backend-verification.md](./docs/backend-verification.md) | Setup, verification and the API contract workflow               |
+| [docs/pos-integration.md](./docs/pos-integration.md)           | POS/show architecture — §4 (B1) and §5 (B2) built, rest planned |
 
 ---
 
@@ -50,12 +50,13 @@ tables exist; no application code reads or writes the POS tables.
 
 ## POS / Show Integration — phase progress
 
-**B0 and B1 are complete. B2–B10 are PLANNED and have not been started.**
+**B0, B1 and B2 are complete. B3–B10 are PLANNED and have not been started.**
 
 - [x] Phase B0 — POS architecture and source-of-truth (COMPLETE — 2026-08-13)
 - [x] Phase B1 — `shows` data model and migration (COMPLETE — 2026-08-13,
       VALIDATED AGAINST REAL SQL SERVER)
-- [ ] Phase B2 — POS adapter abstraction (NOT STARTED)
+- [x] Phase B2 — POS adapter abstraction (COMPLETE — 2026-08-14, UNIT TESTED;
+      no provider adapter exists and no live POS call was made)
 - [ ] Phase B3 — Vista adapter (NOT STARTED — **externally blocked**)
 - [ ] Phase B4 — Showbiz adapter (NOT STARTED — **externally blocked**)
 - [ ] Phase B5 — Sync orchestration and reconciliation (NOT STARTED)
@@ -67,14 +68,19 @@ tables exist; no application code reads or writes the POS tables.
 
 ## Current phase
 
-**Next: Phase B2 — POS adapter abstraction. Status: NOT STARTED.**
+**Next: Phase B8 — Dashboard POS Integrations module. Status: NOT STARTED.**
 
-B1 delivered the `shows` table and model only. No POS route, controller,
-service, adapter, sync or Consumer endpoint exists, and no OpenAPI or generated
-client changed.
+B1 delivered the `shows` table and model. B2 delivered the provider boundary —
+the adapter contract, the `ExternalShow` shape, the provider registry and the
+error taxonomy, under `src/pos/`. No POS route, controller, service, sync or
+Consumer endpoint exists; **no provider adapter is registered**; and no OpenAPI
+or generated client changed.
 
-B2 can begin without external input. B3 and B4 cannot — they are blocked on
-Vista/Showbiz documentation and credentials (§12.3).
+The next phase in numeric order is B3, but **B3 and B4 remain externally
+blocked** on Vista/Showbiz documentation and credentials (§12.3), and B5 needs
+at least one of them. Of the unblocked work, B8 needs only B1 and B2 (except its
+manual-sync action) and B6 can be written though not validated — see the
+dependency graph below.
 
 ---
 
@@ -228,32 +234,97 @@ column — decided in B0, scheduled for B5 where it is first read.
 
 ---
 
-### Phase B2 — POS adapter abstraction
+### Phase B2 — POS adapter abstraction — COMPLETE (2026-08-14)
 
 **Goal.** A provider boundary such that nothing above it branches on
 `vista` vs `showbizz`.
 
-**Scope.** The adapter contract, the provider registry, credential resolution
-from `pos_integrations.credential_ref`, and error normalization. No real
-provider yet.
+**Scope.** The adapter contract, the provider registry, and error
+normalization. No real provider.
 
 **Deliverables.**
 
-- `ExternalShow` contract and `fetchShows(integration, range)` signature
-  (§5)
-- Provider registry keyed on `pos_integrations.provider`
-- Credential resolution — decides what `credential_ref` actually points at
-- Normalized POS error taxonomy (unreachable / auth failed / bad response)
-- Unit tests against a stub adapter
+- [x] `ExternalShow` contract and `fetchShows(integration, range)` signature
+      (§5)
+- [x] Provider registry keyed on `pos_integrations.provider`
+- [x] Normalized POS error taxonomy (unreachable / bad configuration / bad
+      response / unsupported provider)
+- [x] Unit tests against a stub adapter
+- [ ] ~~Credential resolution — decides what `credential_ref` actually points
+      at~~ — **moved to B3.** See the note below.
+
+**Credential resolution moved to B3.** Deciding what `credential_ref` points at
+means choosing a secret store and a lookup shape, and both answers depend on
+what Vista and Showbiz actually authenticate with — a token, a username and
+password, a certificate, a session that must be refreshed. §12.3 is blocked, so
+any decision made now would be a guess dressed as architecture, and CLAUDE.md
+§14 forbids inventing provider authentication. The boundary is unaffected:
+resolution happens inside an adapter, which already receives the whole
+integration row and therefore `credential_ref`. Recorded as open item §12.12.
 
 **Dependencies.** B1.
 
-**API / data-model implications.** None. Internal only.
+**API / data-model implications.** None. Internal only. No migration, no route,
+no OpenAPI change.
 
 **Validation.** Jest unit tests. Lint. No live POS call.
 
-**Deferred.** Every real provider call. Product and screen sync — this phase
-covers shows only.
+**Deferred.** Every real provider call. Credential resolution (§12.12). Product
+and screen sync — this phase covers shows only.
+
+#### What was built
+
+| File                          | Role                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `src/pos/adapter.js`          | The contract: `PosAdapter` / `ShowWindow` typedefs, `assertPosAdapter`, `assertShowWindow` |
+| `src/pos/externalShow.js`     | `ExternalShow` typedef and the normalizer that enforces it                                 |
+| `src/pos/posErrors.js`        | Provider-neutral error taxonomy                                                            |
+| `src/pos/providerRegistry.js` | `provider` → adapter lookup                                                                |
+| `src/constants.js`            | `POS_PROVIDERS` / `POS_PROVIDER_NAMES`, mirroring the CHECK constraint                     |
+| `tests/pos.adapter.test.js`   | 33 unit tests                                                                              |
+
+`src/pos/` is a new directory, not a new architectural layer: CLAUDE.md §14
+already names `Business Service → Provider Adapter → External POS` as the
+required shape for integrations. It sits beside `src/services/`, and the B5
+sync service will be an ordinary service that consumes it.
+
+#### Implementation notes
+
+- **No factory, no base class.** An adapter is a plain object with `provider`
+  and `fetchShows`; the registry is a `Map`. This is what §5 recommended and
+  what CLAUDE.md §3 requires.
+- **The registry ships empty.** Nothing is registered at module load, so
+  `getAdapter` currently throws for all four providers. A provider being
+  accepted by the database says nothing about whether the application can talk
+  to it, and an integration that quietly synced nothing would be
+  indistinguishable from a cinema with no shows.
+- **Unknown provider and unimplemented provider are distinguished**, because
+  they need different fixes — bad data versus an unfinished phase.
+- **The timezone rule is enforced, not just documented.**
+  `normalizeShowTimeLocal` rejects a value carrying `Z` or an offset, and
+  rejects a `Date` outright — a `Date` is an instant, so its presence proves a
+  conversion already happened inside the adapter. An adapter that converts
+  cannot pass.
+- **Zero shows is a success.** `[]` is a valid result, never an error. §6.3
+  depends on the distinction: only a _successful_ empty sync may cancel absent
+  shows.
+- **Errors carry no provider or transport semantics.** `posCode` is the
+  discriminator; HTTP status is a safe default for the case where one escapes to
+  a route, and mapping POS failures onto HTTP responses is B5/B8's decision.
+  `cause` is kept off `details` so the error middleware can never serialize a
+  provider payload to a client.
+
+#### Validation results
+
+| Check                   | Result                                                                      |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `npm test`              | **PASS** — 483 tests, 16 suites (33 new)                                    |
+| `npm run lint`          | **PASS** — 0 errors, 0 warnings                                             |
+| `npm run format:check`  | **PASS** for all changed files (`CLAUDE.md` warns; pre-existing, untouched) |
+| `npm run verify-schema` | **PASS** — 26 models, 120 associations, unchanged by B2                     |
+| Live POS call           | **NOT DONE** — impossible; no provider adapter exists (§12.3)               |
+
+No real-database probe was needed: B2 touches no model, table or query.
 
 ---
 
@@ -265,7 +336,9 @@ covers shows only.
 
 **Deliverables.** Vista client, response mapping to `ExternalShow`,
 authentication, timeout and retry behaviour, adapter tests against recorded real
-responses.
+responses, and **credential resolution — what `pos_integrations.credential_ref`
+actually points at** (moved here from B2 as open item §12.12, because the answer
+depends on what Vista authenticates with).
 
 **Dependencies.** B2. **Externally blocked** on open question §12.3 — Vista API
 documentation, endpoints and sandbox credentials. No contract may be invented
@@ -503,5 +576,6 @@ B0 ─▶ B1 ─▶ B2 ─┬─▶ B3 (Vista)   ─┐
 The cinema timezone decision (§12.1) is **resolved** and no longer blocks
 anything: `cinemas.timezone` is the agreed design, scheduled for B5.
 
-**Nothing blocks Phase B2** — the adapter abstraction can be built against a stub
-without any provider documentation.
+Phase B2 was not blocked and is now complete — the adapter abstraction was built
+and unit tested against provider-neutral test doubles, with no provider
+documentation and no live POS call.

@@ -96,6 +96,26 @@ const ORDER_SOURCES = Object.freeze({
 
 const ORDER_SOURCE_NAMES = Object.freeze(Object.values(ORDER_SOURCES));
 
+/**
+ * pos_integrations.provider - CK_pos_integrations_provider.
+ *
+ * Mirrored here for the same reason as MODULES: a typo'd provider should fail
+ * at the registry, not silently match no adapter. Note the spelling
+ * `showbizz` - it is what the frozen schema's CHECK constraint contains, and
+ * the application must not "correct" it.
+ *
+ * A value appearing here means the database accepts it. It does NOT mean an
+ * adapter exists for it - see src/pos/providerRegistry.js.
+ */
+const POS_PROVIDERS = Object.freeze({
+  VISTA: 'vista',
+  SHOWBIZZ: 'showbizz',
+  IMPACT: 'impact',
+  QBUSTO: 'qbusto',
+});
+
+const POS_PROVIDER_NAMES = Object.freeze(Object.values(POS_PROVIDERS));
+
 /** Machine-readable error codes returned in error responses. */
 const ERROR_CODES = Object.freeze({
   VALIDATION_ERROR: 'VALIDATION_ERROR',
@@ -130,6 +150,8 @@ module.exports = {
   PAYMENT_STATUS_CODES,
   ORDER_SOURCES,
   ORDER_SOURCE_NAMES,
+  POS_PROVIDERS,
+  POS_PROVIDER_NAMES,
   ERROR_CODES,
   PAGINATION,
 };
