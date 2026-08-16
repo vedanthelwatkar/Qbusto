@@ -18,8 +18,9 @@ const router = express.Router();
  *     tags: [Health]
  *     summary: Liveness probe
  *     description: >
- *       Reports that the process is running. Does not touch the database, so it
- *       stays 200 during a database outage - use /ready to gate traffic.
+ *       Reports that the process is running, along with current database
+ *       connectivity. Always returns 200 while the process is alive - including
+ *       during a database outage - so use /ready to gate traffic.
  *     security: []
  *     responses:
  *       200:
@@ -36,6 +37,18 @@ const router = express.Router();
  *                       properties:
  *                         status:        { type: string, example: ok }
  *                         uptimeSeconds: { type: integer, example: 3600 }
+ *                         database:
+ *                           type: object
+ *                           properties:
+ *                             connected: { type: boolean, example: true }
+ *                             latencyMs:
+ *                               type: number
+ *                               example: 2.4
+ *                               description: Present only when connected.
+ *                             error:
+ *                               type: string
+ *                               example: Database check timed out after 2000ms
+ *                               description: Present only when not connected.
  */
 router.get('/health', healthController.health);
 

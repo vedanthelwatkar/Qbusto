@@ -205,16 +205,48 @@
     align-items: start;
   }
 
-  &__empty {
+  /* Pane heading -------------------------------------------------------- */
+
+  /* Names what the grid is showing. The rail's highlight scrolls away with the
+     rail, so on a long list it was possible to lose track of the category. */
+  /* Opaque, because the pane's background may be the inner banner artwork and
+     dark heading text on an arbitrary photograph is unreadable. With no banner
+     the surface matches the pane and this degrades to plain text. */
+  &__pane-head {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    align-items: baseline;
+    justify-content: space-between;
     gap: var(--space-md);
-    padding: var(--space-2xl) var(--space-lg);
-    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
     background-color: var(--color-bg-primary);
-    border: 1px solid var(--color-border);
-    text-align: center;
+  }
+
+  &__pane-title {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    min-width: 0;
+    /* A long search term must not push the count off the row. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__pane-count {
+    flex-shrink: 0;
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The empty state is the shared StatePanel; it only needs centring in the
+     pane's available height. */
+  .state-panel--boxed {
+    margin: 0 auto;
+    max-width: 420px;
   }
 
   /* Skeletons ---------------------------------------------------------- */
@@ -233,6 +265,14 @@
     width: 100%;
     aspect-ratio: 1;
     border-radius: var(--radius-md);
+  }
+
+  /* Matches the pane title's line box, so the heading does not shift when the
+     real one replaces it. */
+  &__skeleton-title {
+    height: calc(var(--font-size-h3) * 1.2);
+    width: 40%;
+    max-width: 180px;
   }
 
   &__skeleton-line {

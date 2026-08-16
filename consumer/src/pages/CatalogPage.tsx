@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { fetchCategories, fetchProducts, fetchBanners } from '@/services/catalog.service';
 import ProductCard from '@/components/ProductCard';
 import CartDrawer from '@/components/CartDrawer';
+import StatePanel from '@/components/StatePanel';
 import { formatApiError } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
 import { AlertIcon, BagIcon, CloseIcon, ImageIcon, SearchIcon } from '@/components/icons';
@@ -86,22 +87,31 @@ export default function CatalogPage() {
     });
   }, [products, selectedCategoryId, searchQuery]);
 
+  // The heading over the product pane. Without it the only signal for which
+  // category is showing was the rail's own highlight, which is off-screen the
+  // moment the customer scrolls the product list.
+  const activeCategoryName =
+    selectedCategoryId === null
+      ? 'All items'
+      : (categories.find((c) => c.id === selectedCategoryId)?.name ?? 'Items');
+
   // `errorMessage` is global UI state, so it can still hold an error raised by
   // another page. Gate on `loading` so a stale message can't flash here before
   // this page's own fetch has run and cleared it.
   if (errorMessage && !loading) {
     return (
       <div className="catalog">
-        <div className="state-panel">
-          <span className="state-panel__icon">
-            <AlertIcon size={28} />
-          </span>
-          <h1 className="state-panel__title">We couldn&apos;t load the menu</h1>
-          <p className="state-panel__body">{errorMessage}</p>
-          <button className="btn btn--primary" onClick={() => window.location.reload()}>
-            Try again
-          </button>
-        </div>
+        <StatePanel
+          icon={<AlertIcon size={28} />}
+          tone="error"
+          title="We couldn't load the menu"
+          body={errorMessage}
+          actions={
+            <button className="btn btn--primary" onClick={() => window.location.reload()}>
+              Try again
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -185,52 +195,77 @@ export default function CatalogPage() {
           }
         >
           {loading ? (
-            <div className="catalog__grid" aria-busy="true" aria-label="Loading menu">
-              {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
-                <div className="catalog__skeleton-card" key={i}>
-                  <div className="skeleton catalog__skeleton-media" />
-                  <div className="skeleton catalog__skeleton-line" />
-                  <div className="skeleton catalog__skeleton-line catalog__skeleton-line--short" />
-                </div>
-              ))}
+            <div aria-busy="true" aria-label="Loading menu">
+              {/* Placeholder for the pane heading. Without it the grid starts
+                  one row higher and everything jumps down when loading ends. */}
+              <div className="catalog__pane-head">
+                <div className="skeleton catalog__skeleton-title" />
+              </div>
+
+              <div className="catalog__grid">
+                {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+                  <div className="catalog__skeleton-card" key={i}>
+                    <div className="skeleton catalog__skeleton-media" />
+                    <div className="skeleton catalog__skeleton-line" />
+                    <div className="skeleton catalog__skeleton-line catalog__skeleton-line--short" />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : filteredProducts.length > 0 ? (
-            <div className="catalog__grid">
-              {filteredProducts.map((product) => {
-                if (!product.id) return null;
-                return (
-                  <ProductCard
-                    key={product.id}
-                    id={product.id}
-                    name={product.name || 'Unknown'}
-                    description={product.description}
-                    imageUrl={product.imageUrl}
-                    price={product.basePrice}
-                    weight={product.weight}
-                  />
-                );
-              })}
-            </div>
+            <>
+              <div className="catalog__pane-head">
+                <h1 className="catalog__pane-title">
+                  {searchQuery ? `Results for "${searchQuery}"` : activeCategoryName}
+                </h1>
+                {/* Announced on change so a screen-reader user hears the new
+                    count after typing, rather than having to go looking. */}
+                <p className="catalog__pane-count" aria-live="polite">
+                  {filteredProducts.length === 1
+                    ? '1 item'
+                    : `${filteredProducts.length} items`}
+                </p>
+              </div>
+
+              <div className="catalog__grid">
+                {filteredProducts.map((product) => {
+                  if (!product.id) return null;
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      id={product.id}
+                      name={product.name || 'Unknown'}
+                      description={product.description}
+                      imageUrl={product.imageUrl}
+                      price={product.basePrice}
+                      weight={product.weight}
+                    />
+                  );
+                })}
+              </div>
+            </>
           ) : (
-            /* Opaque panel: the empty state sits on top of the inner banner. */
-            <div className="catalog__empty">
-              <span className="state-panel__icon">
-                <SearchIcon size={28} />
-              </span>
-              <h2 className="state-panel__title">
-                {searchQuery ? 'No matches found' : 'Nothing on the menu yet'}
-              </h2>
-              <p className="state-panel__body">
-                {searchQuery
+            /* Boxed: the empty state sits on top of the inner banner artwork
+               and needs an opaque surface of its own. */
+            <StatePanel
+              boxed
+              icon={<SearchIcon size={28} />}
+              // h1 by default: with no grid there is no other heading, so this
+              // is the page's own title and the outline stays single-h1.
+              title={searchQuery ? 'No matches found' : 'Nothing on the menu yet'}
+              body={
+                searchQuery
                   ? `We couldn't find anything for "${searchQuery}". Try a different search.`
-                  : 'This cinema has no items available right now. Please check back later.'}
-              </p>
-              {searchQuery && (
-                <button className="btn btn--secondary" onClick={() => setSearchInput('')}>
-                  Clear search
-                </button>
-              )}
-            </div>
+                  : 'This cinema has no items available right now. Please check back later.'
+              }
+              actions={
+                searchQuery ? (
+                  <button className="btn btn--secondary" onClick={() => setSearchInput('')}>
+                    Clear search
+                  </button>
+                ) : undefined
+              }
+            />
           )}
         </main>
       </div>

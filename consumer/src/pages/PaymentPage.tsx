@@ -4,6 +4,7 @@ import { initializePayment, verifyOrderPayment } from '@/services/orders.service
 import { clearCheckoutSession } from '@/utils/checkoutSession';
 import { formatApiError, isSignatureVerificationFailure } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
+import StatePanel from '@/components/StatePanel';
 import { AlertIcon, ChevronLeftIcon, LockIcon } from '@/components/icons';
 import type { PostApiConsumerOrdersOrderIdPaymentInit200Data } from '@/api/generated/cinemaOrderingAPI.schemas';
 import '../styles/pages/payment.scss';
@@ -441,19 +442,20 @@ export default function PaymentPage() {
   if (paymentState.error && !paymentState.orderId) {
     return (
       <div className="payment">
-        <div className="state-panel">
-          <span className="state-panel__icon">
-            <AlertIcon size={28} />
-          </span>
-          <h1 className="state-panel__title">We couldn&apos;t find your order</h1>
-          <p className="state-panel__body">{paymentState.error}</p>
-          <button
-            className="btn btn--primary"
-            onClick={() => navigate('/catalog', { replace: true })}
-          >
-            Back to the menu
-          </button>
-        </div>
+        <StatePanel
+          icon={<AlertIcon size={28} />}
+          tone="error"
+          title="We couldn't find your order"
+          body={paymentState.error}
+          actions={
+            <button
+              className="btn btn--primary"
+              onClick={() => navigate('/catalog', { replace: true })}
+            >
+              Back to the menu
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -462,10 +464,12 @@ export default function PaymentPage() {
   if (paymentState.isInitializing && !paymentData) {
     return (
       <div className="payment">
-        <div className="state-panel">
-          <span className="spinner" />
-          <p className="state-panel__body">Preparing your payment…</p>
-        </div>
+        <StatePanel
+          spinner
+          role="status"
+          title="Preparing your payment"
+          body="This only takes a moment."
+        />
       </div>
     );
   }
@@ -476,29 +480,31 @@ export default function PaymentPage() {
   if (paymentState.verificationRejected) {
     return (
       <div className="payment">
-        <div className="state-panel">
-          <span className="state-panel__icon">
-            <AlertIcon size={28} />
-          </span>
-          <h1 className="state-panel__title">We couldn&apos;t verify this payment</h1>
-          <p className="state-panel__body">
-            Your payment could not be confirmed as genuine, so this order has not
-            been completed. <strong>Please do not pay again.</strong> Show the
-            reference below to the counter and they will check it for you.
-          </p>
-
+        <StatePanel
+          icon={<AlertIcon size={28} />}
+          tone="error"
+          title="We couldn't verify this payment"
+          body={
+            <>
+              Your payment could not be confirmed as genuine, so this order has not
+              been completed. <strong>Please do not pay again.</strong> Show the
+              reference below to the counter and they will check it for you.
+            </>
+          }
+          actions={
+            <button
+              className="btn btn--primary"
+              onClick={() => navigate('/', { replace: true })}
+            >
+              Back to home
+            </button>
+          }
+        >
           <div className="payment__reference">
             <span className="payment__reference-label">Order reference</span>
             <span className="payment__reference-value">#{paymentState.orderId}</span>
           </div>
-
-          <button
-            className="btn btn--primary"
-            onClick={() => navigate('/', { replace: true })}
-          >
-            Back to home
-          </button>
-        </div>
+        </StatePanel>
       </div>
     );
   }
@@ -517,7 +523,13 @@ export default function PaymentPage() {
           <ChevronLeftIcon size={18} />
           Details
         </button>
-        <span className="payment__step">Step 2 of 2</span>
+        <span className="steps">
+          <span className="steps__track" aria-hidden="true">
+            <span className="steps__dot steps__dot--done" />
+            <span className="steps__dot steps__dot--done" />
+          </span>
+          <span className="steps__label">Step 2 of 2</span>
+        </span>
       </header>
 
       <div className="payment__body">
@@ -527,7 +539,18 @@ export default function PaymentPage() {
         </div>
 
         {paymentState.error && (
-          <div className="alert alert--error" role="alert">
+          /* A held payment is not a failure: Razorpay took the money and only
+             our confirmation is outstanding, and the customer's next step is
+             to confirm it rather than to worry. Dressing that in the error
+             palette said "something broke" about a payment that most likely
+             succeeded. Same message, same condition, same actions — only the
+             colour it is delivered in changes. */
+          <div
+            className={`alert ${
+              paymentState.pendingVerification ? 'alert--warning' : 'alert--error'
+            }`}
+            role="alert"
+          >
             <AlertIcon size={18} />
             <p>{paymentState.error}</p>
           </div>

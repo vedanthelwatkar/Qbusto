@@ -24,15 +24,47 @@ const REQUIRED_SEEDS = {
   payment_statuses: ['pending', 'paid', 'failed', 'refunded'],
 };
 
-/** @returns {Promise<{ok: boolean, latencyMs?: number, error?: string}>} */
-async function checkDatabase() {
+/**
+ * How long a connectivity check may take before it is reported as failed.
+ *
+ * config/config.js sets no connectTimeout, so the mssql driver falls back to
+ * its own (15s). That is far too long for /health, which must answer promptly
+ * or the orchestrator's liveness probe times out and kills a process whose only
+ * problem is a slow database.
+ */
+const DB_CHECK_TIMEOUT_MS = 2000;
+
+/**
+ * @param {{timeoutMs?: number}} [options]
+ * @returns {Promise<{ok: boolean, latencyMs?: number, error?: string}>}
+ */
+async function checkDatabase({ timeoutMs = DB_CHECK_TIMEOUT_MS } = {}) {
   const startedAt = process.hrtime.bigint();
+  let timer;
+
   try {
-    await sequelize.authenticate();
+    const authenticated = sequelize.authenticate();
+
+    // Whichever promise loses the race still settles. Without this the loser's
+    // rejection surfaces as an unhandled rejection.
+    authenticated.catch(() => {});
+
+    await Promise.race([
+      authenticated,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Database check timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        );
+      }),
+    ]);
+
     const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     return { ok: true, latencyMs: Number(latencyMs.toFixed(1)) };
   } catch (err) {
     return { ok: false, error: err.message };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

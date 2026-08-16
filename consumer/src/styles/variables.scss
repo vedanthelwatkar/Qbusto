@@ -28,6 +28,7 @@
   --color-bg-tertiary: #efeae5;
   --color-bg-error: #fdf1ef;
   --color-bg-success: #eef7f1;
+  --color-bg-warning: #fdf6ec;
 
   --color-border: #e8e3de;
   --color-border-strong: #d6cfc8;
@@ -50,6 +51,11 @@
   --color-success: #1f8a4c;
   --color-error: #c8321f;
   --color-warning: #c77700;
+  /* Border and body-copy weights of the warning hue. --color-warning itself is
+     ~4.0:1 on the warning background — fine for a large glyph, short of the
+     4.5:1 that body copy needs — so text uses the darker value. */
+  --color-warning-muted: #f0dcbc;
+  --color-warning-dark: #8a5300;
 
   /* Typography --------------------------------------------------------- */
   --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,

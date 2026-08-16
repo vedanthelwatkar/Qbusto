@@ -31,10 +31,16 @@ const models = Object.fromEntries(
 );
 
 async function connect() {
+  const startedAt = process.hrtime.bigint();
   await sequelize.authenticate();
+  const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+
   logger.info('Database connection established', {
+    dialect: sequelize.getDialect(),
     host: sequelize.config.host,
+    port: sequelize.config.port,
     database: sequelize.config.database,
+    latencyMs: Number(latencyMs.toFixed(1)),
   });
 }
 

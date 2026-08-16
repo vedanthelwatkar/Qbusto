@@ -286,3 +286,94 @@
     }
   }
 }
+
+/* Plate tone. Reserved for genuine failures — an empty search result is not
+   an error and must not be dressed as one. */
+.state-panel__icon--error {
+  background-color: var(--color-bg-error);
+  color: var(--color-error);
+}
+
+/* Actions stack full-width on phones so the primary action is a full-width
+   target, and sit side by side once there is room. */
+.state-panel__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 320px;
+
+  @media (min-width: 480px) {
+    flex-direction: row;
+    justify-content: center;
+    width: auto;
+    max-width: none;
+
+    .btn {
+      flex: 1;
+      min-width: 160px;
+    }
+  }
+}
+
+/* Boxed: an opaque surface for a state that sits on top of artwork, and a
+   panel that sizes to its content instead of filling the region. */
+.state-panel--boxed {
+  flex: 0 1 auto;
+  padding: var(--space-2xl) var(--space-lg);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+}
+
+/* Attention, not failure ------------------------------------------------ */
+
+/* For situations the customer must read and act on but that are not errors —
+   most importantly a payment that went through but is not yet confirmed.
+   Dressing that in the error palette tells the customer something broke when
+   the likeliest truth is that their money is fine. Uses --color-warning,
+   which the token set already defined. */
+.alert--warning {
+  background-color: var(--color-bg-warning);
+  border: 1px solid var(--color-warning-muted);
+  color: var(--color-warning-dark);
+}
+
+/* Two-step checkout progress ------------------------------------------- */
+
+/* Replaces the bare "Step 1 of 2" text on checkout and payment: same
+   information, but the customer can see how far along they are at a glance.
+   The text is kept for assistive tech rather than being dropped. */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.steps__track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.steps__dot {
+  width: 18px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-border-strong);
+  transition: background-color var(--transition-normal);
+}
+
+.steps__dot--done {
+  background-color: var(--color-primary);
+}
+
+.steps__label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
+}

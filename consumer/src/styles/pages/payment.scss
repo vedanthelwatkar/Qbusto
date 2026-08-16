@@ -8,7 +8,12 @@
   min-height: 100dvh;
   background-color: var(--color-bg-secondary);
 
+  /* Sticky, matching checkout. The two pages sit either side of one flow and
+     the bar jumping from pinned to scrolling between them read as a glitch. */
   &__topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -41,13 +46,7 @@
     }
   }
 
-  &__step {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
-    color: var(--color-text-light);
-  }
+  /* Progress is the shared .steps component — see shared.scss. */
 
   &__body {
     display: flex;
@@ -147,14 +146,17 @@
     letter-spacing: var(--tracking-tight);
   }
 
+  /* Sits directly under the warning-toned alert for the same state, so it
+     carries the same colour rather than reading as a separate, unrelated
+     notice stacked below it. */
   &__unverified {
     padding: var(--space-md) var(--space-lg);
     border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    border: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-warning);
+    border: 1px solid var(--color-warning-muted);
     font-size: var(--font-size-small);
     line-height: var(--line-height-snug);
-    color: var(--color-text-primary);
+    color: var(--color-warning-dark);
   }
 
   &__unavailable {

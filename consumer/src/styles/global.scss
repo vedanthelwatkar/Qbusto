@@ -130,6 +130,32 @@ input[type='number'] {
   }
 }
 
+/* Date/time inputs are sized by the browser from their internal shadow-DOM
+   fields plus the picker button, and that intrinsic width acts as an automatic
+   minimum that `width: 100%` cannot shrink below. That is why this one control
+   overflows a narrow column while the text fields beside it behave.
+
+   `min-width: 0` releases the automatic minimum so the declared width wins.
+   Dropping the native appearance also drops the UA's own height, so the
+   min-height restores the same control height as its neighbours. */
+input[type='datetime-local'] {
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--touch-target-min);
+
+  /* WebKit centres the value and adds its own margin once appearance is
+     dropped; align it with every other field's text. */
+  &::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
+
+  &::-webkit-calendar-picker-indicator {
+    flex-shrink: 0;
+  }
+}
+
 /* Buttons -------------------------------------------------------------- */
 button {
   cursor: pointer;

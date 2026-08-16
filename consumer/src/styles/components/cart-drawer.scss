@@ -15,6 +15,11 @@
   z-index: calc(var(--z-modal) - 1);
   background-color: rgba(26, 22, 20, 0.5);
   animation: qb-cart-fade-in var(--transition-normal);
+  /* Swallow scroll gestures that start on the overlay. Without it a drag over
+     the dimmed area scrolls the product list behind the open sheet, which
+     reads as the sheet having lost its place. */
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .cart-drawer {
@@ -103,27 +108,10 @@
 
   /* Empty state -------------------------------------------------------- */
 
-  &__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-3xl) var(--space-lg);
+  /* Structure and copy now come from the shared StatePanel; the sheet only
+     adds the bottom inset, which the shared panel cannot know about. */
+  .state-panel {
     padding-bottom: calc(var(--space-3xl) + env(safe-area-inset-bottom));
-    text-align: center;
-  }
-
-  &__empty-title {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-  }
-
-  &__empty-body {
-    max-width: 30ch;
-    font-size: var(--font-size-small);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-sm);
   }
 
   /* Items -------------------------------------------------------------- */

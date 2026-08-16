@@ -124,6 +124,12 @@
     font-variant-numeric: tabular-nums;
   }
 
+  &__seat {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
   &__next {
     margin: var(--space-lg) 0 var(--space-xl);
     max-width: 34ch;

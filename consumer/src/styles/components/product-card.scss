@@ -1,5 +1,20 @@
 /* Product card. All rules scoped to .product-card. */
 
+/* One short beat when the count badge first appears, so adding an item is
+   acknowledged somewhere other than the button that was just tapped. Runs
+   once and does not delay the tap; the global reduced-motion rule collapses
+   it to nothing. */
+@keyframes qb-badge-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .product-card {
   display: flex;
   flex-direction: column;
@@ -71,6 +86,7 @@
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-bold);
     box-shadow: var(--shadow-sm);
+    animation: qb-badge-pop 220ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
   }
 
   /* Body -------------------------------------------------------------- */

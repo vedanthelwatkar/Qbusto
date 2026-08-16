@@ -12,7 +12,7 @@ import { formatMoney } from '@/utils/formatMoney';
 import { formatApiError } from '@/utils/formatApiError';
 import { orderFingerprint, getOrCreateIdempotencyKey } from '@/utils/checkoutSession';
 import { isoToLocalInput, localInputToIso, isValidLocalDateTime } from '@/utils/showTime';
-import { AlertIcon, ChevronLeftIcon, LockIcon } from '@/components/icons';
+import { AlertIcon, ChevronDownIcon, ChevronLeftIcon, LockIcon } from '@/components/icons';
 import type {
   PostApiConsumerOrdersBody,
   PostApiConsumerOrders201Data,
@@ -90,6 +90,15 @@ export default function CheckoutPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  /**
+   * Mobile only. The summary sits above the form on a phone, so a long cart
+   * pushed the first input below the fold — the customer had to scroll past
+   * what they were buying before they could start typing. Collapsed by
+   * default, with the count and total still on the header so nothing the
+   * customer needs at a glance is hidden. CSS forces it open on desktop,
+   * where the summary is a sidebar and there is nothing to save.
+   */
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const prefilledSeat = splitSeat(seatNumber);
 
@@ -203,7 +212,15 @@ export default function CheckoutPage() {
           <ChevronLeftIcon size={18} />
           Menu
         </button>
-        <span className="checkout__step">Step 1 of 2</span>
+        {/* Same information the bare "Step 1 of 2" carried, plus a glance-able
+            sense of progress. The text stays for assistive tech. */}
+        <span className="steps">
+          <span className="steps__track" aria-hidden="true">
+            <span className="steps__dot steps__dot--done" />
+            <span className="steps__dot" />
+          </span>
+          <span className="steps__label">Step 1 of 2</span>
+        </span>
       </header>
 
       <div className="checkout__layout">
@@ -324,7 +341,20 @@ export default function CheckoutPage() {
                     </span>
                   )}
                 </div>
+              </div>
+            </fieldset>
 
+            {/* Its own group: a show time is not part of a seat, and grouping
+                it under "Your seat" made the form read as though it were.
+                The control, its validation and the submitted value are
+                unchanged — only the heading it sits under moved. */}
+            <fieldset className="checkout__group" disabled={busy}>
+              <legend className="checkout__group-title">Your show</legend>
+              <p className="checkout__group-hint">
+                So the kitchen can time your order to the film.
+              </p>
+
+              <div className="checkout__fields">
                 <div className="field">
                   <label className="field__label" htmlFor="showtime">
                     Show Time <span className="field__required" aria-hidden="true">*</span>
@@ -343,7 +373,6 @@ export default function CheckoutPage() {
                     </span>
                   )}
                 </div>
-
               </div>
             </fieldset>
 
@@ -372,34 +401,62 @@ export default function CheckoutPage() {
 
         <aside className="checkout__aside" aria-label="Order summary">
           <div className="checkout__summary">
-            <div className="checkout__summary-head">
-              <h2 className="checkout__summary-title">Your order</h2>
-              <span className="checkout__summary-count">
-                {itemCount === 1 ? '1 item' : `${itemCount} items`}
+            {/* Mobile header and disclosure control. Hidden on desktop, where
+                the static head below takes over and the body is always open. */}
+            <button
+              type="button"
+              className="checkout__summary-toggle"
+              aria-expanded={summaryOpen}
+              aria-controls="order-summary"
+              onClick={() => setSummaryOpen((open) => !open)}
+            >
+              <span className="checkout__summary-title">Your order</span>
+              <span className="checkout__summary-meta">
+                <span className="checkout__summary-count">
+                  {itemCount === 1 ? '1 item' : `${itemCount} items`}
+                </span>
+                <span className="checkout__summary-amount">
+                  {formatMoney(estimatedSubtotal)}
+                </span>
+                <ChevronDownIcon size={18} className="checkout__summary-chevron" />
               </span>
+            </button>
+
+            <div
+              id="order-summary"
+              className={`checkout__summary-body${summaryOpen ? ' is-open' : ''}`}
+            >
+              <div className="checkout__summary-head">
+                <h2 className="checkout__summary-title">Your order</h2>
+                <span className="checkout__summary-count">
+                  {itemCount === 1 ? '1 item' : `${itemCount} items`}
+                </span>
+              </div>
+
+              <ul className="checkout__lines">
+                {cartItems.map((item) => (
+                  <li key={item.productId} className="checkout__line">
+                    <span className="checkout__line-qty">{item.quantity}×</span>
+                    <span className="checkout__line-name">{item.productName}</span>
+                    <span className="checkout__line-price">
+                      {formatMoney(item.quantity * item.unitPrice)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="checkout__total">
+                <span className="checkout__total-label">Estimated subtotal</span>
+                <span className="checkout__total-value">
+                  {formatMoney(estimatedSubtotal)}
+                </span>
+              </div>
+
+              <p className="checkout__total-note">
+                Taxes and any discounts are applied by the cinema when your order is
+                confirmed. The final amount is shown on the payment screen.
+              </p>
             </div>
-
-            <ul className="checkout__lines">
-              {cartItems.map((item) => (
-                <li key={item.productId} className="checkout__line">
-                  <span className="checkout__line-qty">{item.quantity}×</span>
-                  <span className="checkout__line-name">{item.productName}</span>
-                  <span className="checkout__line-price">
-                    {formatMoney(item.quantity * item.unitPrice)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="checkout__total">
-              <span className="checkout__total-label">Estimated subtotal</span>
-              <span className="checkout__total-value">{formatMoney(estimatedSubtotal)}</span>
-            </div>
-
-            <p className="checkout__total-note">
-              Taxes and any discounts are applied by the cinema when your order is
-              confirmed. The final amount is shown on the payment screen.
-            </p>
           </div>
         </aside>
       </div>

@@ -1,7 +1,9 @@
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useCartStore } from '@/stores/cart.store';
+import { useContextStore } from '@/stores/context.store';
 import { clearCheckoutSession } from '@/utils/checkoutSession';
 import { formatMoney } from '@/utils/formatMoney';
+import StatePanel from '@/components/StatePanel';
 import { AlertIcon, CheckIcon } from '@/components/icons';
 import '../styles/pages/confirmation.scss';
 
@@ -10,27 +12,28 @@ export default function ConfirmationPage() {
   const location = useLocation();
   const { orderId } = useParams<{ orderId: string }>();
   const clearCart = useCartStore((state) => state.clear);
+  // From the persisted QR context, so it survives a refresh of this page —
+  // unlike the cart, which is in-memory and would vanish.
+  const seatNumber = useContextStore((state) => state.seatNumber);
 
   // Safety: orderId must be a strictly positive integer (digits only, no leading zero)
   if (!orderId || !/^[1-9]\d*$/.test(orderId)) {
     return (
       <div className="confirmation">
-        <div className="state-panel">
-          <span className="state-panel__icon">
-            <AlertIcon size={28} />
-          </span>
-          <h1 className="state-panel__title">Order not found</h1>
-          <p className="state-panel__body">
-            We couldn&apos;t display this order confirmation. If you completed a
-            payment, your order is safe — please check with the counter.
-          </p>
-          <button
-            className="btn btn--primary"
-            onClick={() => navigate('/', { replace: true })}
-          >
-            Back to home
-          </button>
-        </div>
+        <StatePanel
+          icon={<AlertIcon size={28} />}
+          tone="error"
+          title="Order not found"
+          body="We couldn't display this order confirmation. If you completed a payment, your order is safe — please check with the counter."
+          actions={
+            <button
+              className="btn btn--primary"
+              onClick={() => navigate('/', { replace: true })}
+            >
+              Back to home
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -71,6 +74,12 @@ export default function ConfirmationPage() {
             <div className="confirmation__row">
               <dt>Amount paid</dt>
               <dd className="confirmation__amount">{formatMoney(amountPaise / 100)}</dd>
+            </div>
+          )}
+          {seatNumber && (
+            <div className="confirmation__row">
+              <dt>Delivering to</dt>
+              <dd className="confirmation__seat">Seat {seatNumber}</dd>
             </div>
           )}
         </dl>

@@ -46,13 +46,7 @@
     }
   }
 
-  &__step {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
-    color: var(--color-text-light);
-  }
+  /* Progress is the shared .steps component — see shared.scss. */
 
   /* Layout -------------------------------------------------------------- */
 
@@ -134,15 +128,14 @@
     margin-top: var(--space-lg);
   }
 
-  /* Row + seat pair, show time full width, screen + film pair. */
+  /* Two controls that belong on one line: row and seat. The positional
+     `nth-child(3)` rule this replaces was left over from when screen and film
+     were still fields here, and would have caught whichever control happened
+     to land third. */
   &__fields--pair {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-md);
-
-    .field:nth-child(3) {
-      grid-column: 1 / -1;
-    }
   }
 
   /* Actions ------------------------------------------------------------- */
@@ -175,8 +168,10 @@
 
   &__aside {
     min-width: 0;
-    /* Below the form on mobile: the user should read what they are buying
-       after filling details, not before. */
+    /* Above the form on mobile, so the customer can confirm what they are
+       buying before entering details — collapsed by default so it costs no
+       scrolling. (The previous comment here claimed the opposite of what this
+       rule does.) */
     order: -1;
   }
 
@@ -184,11 +179,60 @@
     background-color: var(--color-bg-primary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    padding: var(--space-lg);
   }
 
-  &__summary-head {
+  /* Mobile disclosure header ------------------------------------------- */
+
+  &__summary-toggle {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    width: 100%;
+    min-height: var(--touch-target-min);
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--radius-lg);
+    text-align: left;
+  }
+
+  &__summary-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--color-text-secondary);
+  }
+
+  &__summary-amount {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__summary-chevron {
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+    transition: transform var(--transition-fast);
+  }
+
+  &__summary-toggle[aria-expanded='true'] &__summary-chevron {
+    transform: rotate(180deg);
+  }
+
+  &__summary-body {
+    display: none;
+    padding: 0 var(--space-lg) var(--space-lg);
+
+    &.is-open {
+      display: block;
+    }
+  }
+
+  /* Static head. Redundant with the toggle on mobile, so it only appears at
+     the desktop breakpoint where the toggle is hidden. */
+  &__summary-head {
+    display: none;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-md);
@@ -196,8 +240,18 @@
     border-bottom: 1px solid var(--color-border);
   }
 
+  /* Used by both the mobile toggle (a span) and the desktop head (an h2), so
+     the weight is set here rather than inherited from the heading element. */
   &__summary-title {
     font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    /* Yields to the count and total, which must never wrap or clip. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__summary-count {
@@ -272,6 +326,15 @@
   }
 }
 
+/* On the narrowest phones the toggle row runs out of width. The total is the
+   number the customer is looking for, so the item count is what gives way —
+   it is still on the first line of the expanded summary. */
+@media (max-width: 360px) {
+  .checkout__summary-toggle .checkout__summary-count {
+    display: none;
+  }
+}
+
 /* Desktop: form and summary side by side, with the summary pinned so the
    totals stay visible while the form is filled in. */
 @media (min-width: 900px) {
@@ -287,6 +350,23 @@
     order: 0;
     position: sticky;
     top: calc(72px + var(--space-lg));
+  }
+
+  /* The sidebar has room for the whole summary, so there is nothing for a
+     disclosure to save. The static head replaces the toggle and the body is
+     always open, regardless of the collapsed state the customer may have left
+     it in on a narrower screen. */
+  .checkout__summary-toggle {
+    display: none;
+  }
+
+  .checkout__summary-head {
+    display: flex;
+  }
+
+  .checkout__summary-body {
+    display: block;
+    padding-top: var(--space-lg);
   }
 
   .checkout__actions {

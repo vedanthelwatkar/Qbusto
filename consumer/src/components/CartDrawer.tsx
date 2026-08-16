@@ -1,9 +1,15 @@
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '@/stores/cart.store';
 import { useUIStore } from '@/stores/ui.store';
+import StatePanel from '@/components/StatePanel';
 import { formatMoney } from '@/utils/formatMoney';
 import { BagIcon, CloseIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons';
 import '../styles/components/cart-drawer.scss';
+
+/** Everything inside the sheet that can hold focus. */
+const FOCUSABLE =
+  'button:not(:disabled), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export default function CartDrawer() {
   const navigate = useNavigate();
@@ -14,8 +20,69 @@ export default function CartDrawer() {
   const cartOpen = useUIStore((state) => state.cartOpen);
   const toggleCart = useUIStore((state) => state.toggleCart);
 
+  const panelRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  /** The control that opened the sheet, so focus can be handed back to it. */
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
   const subtotal = estimatedSubtotal();
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
+
+  /**
+   * The sheet is a modal: it covers the page behind an overlay, so it has to
+   * behave like one. Previously it could only be dismissed by pointing at the
+   * overlay or the close button, and focus stayed on the page underneath — a
+   * keyboard user could tab through controls they could not see.
+   */
+  useEffect(() => {
+    if (!cartOpen) return;
+
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    // Focus the close button rather than the panel: it is the reliable escape
+    // route, and it reads the sheet's label on the way in.
+    closeRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        toggleCart();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      // Wrap at both ends so Tab can never land on the page behind the sheet.
+      if (event.shiftKey && (active === first || !panelRef.current.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [cartOpen, toggleCart]);
+
+  // Hand focus back to whatever opened the sheet. Split from the effect above
+  // so it runs on close only and never fights the focus call on open.
+  useEffect(() => {
+    if (cartOpen) return;
+    const target = returnFocusRef.current;
+    returnFocusRef.current = null;
+    // Only if it is still in the document — the opener may have unmounted.
+    if (target && document.contains(target)) target.focus();
+  }, [cartOpen]);
 
   const handleCheckout = () => {
     toggleCart();
@@ -29,7 +96,10 @@ export default function CartDrawer() {
       {/* The panel stays mounted so it can animate, so it must be hidden from
           assistive tech and the tab order while closed. */}
       <aside
+        ref={panelRef}
         className={`cart-drawer${cartOpen ? ' is-open' : ''}`}
+        role="dialog"
+        aria-modal="true"
         aria-hidden={!cartOpen}
         aria-label="Your cart"
       >
@@ -44,24 +114,28 @@ export default function CartDrawer() {
               </span>
             )}
           </div>
-          <button className="cart-drawer__close" onClick={toggleCart} aria-label="Close cart">
+          <button
+            ref={closeRef}
+            className="cart-drawer__close"
+            onClick={toggleCart}
+            aria-label="Close cart"
+          >
             <CloseIcon size={20} />
           </button>
         </header>
 
         {items.length === 0 ? (
-          <div className="cart-drawer__empty">
-            <span className="state-panel__icon">
-              <BagIcon size={28} />
-            </span>
-            <p className="cart-drawer__empty-title">Your cart is empty</p>
-            <p className="cart-drawer__empty-body">
-              Add something from the menu and it will show up here.
-            </p>
-            <button className="btn btn--secondary" onClick={toggleCart}>
-              Browse the menu
-            </button>
-          </div>
+          <StatePanel
+            icon={<BagIcon size={28} />}
+            titleAs="p"
+            title="Your cart is empty"
+            body="Add something from the menu and it will show up here."
+            actions={
+              <button className="btn btn--secondary" onClick={toggleCart}>
+                Browse the menu
+              </button>
+            }
+          />
         ) : (
           <>
             <ul className="cart-drawer__items">
@@ -74,9 +148,7 @@ export default function CartDrawer() {
                     </span>
                   </div>
 
-                  <p className="cart-drawer__item-unit">
-                    {formatMoney(item.unitPrice)} each
-                  </p>
+                  <p className="cart-drawer__item-unit">{formatMoney(item.unitPrice)} each</p>
 
                   <div className="cart-drawer__item-controls">
                     <div className="cart-drawer__stepper">
@@ -121,9 +193,7 @@ export default function CartDrawer() {
                 <span className="cart-drawer__summary-label">Estimated subtotal</span>
                 <span className="cart-drawer__summary-value">{formatMoney(subtotal)}</span>
               </div>
-              <p className="cart-drawer__note">
-                Final pricing is confirmed at checkout.
-              </p>
+              <p className="cart-drawer__note">Final pricing is confirmed at checkout.</p>
 
               <button className="btn btn--primary btn--block" onClick={handleCheckout}>
                 Proceed to checkout
