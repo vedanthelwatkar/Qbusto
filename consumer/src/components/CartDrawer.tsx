@@ -59,12 +59,20 @@ export default function CartDrawer() {
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       const active = document.activeElement;
+      /**
+       * Focus can end up outside the sheet without the customer moving it:
+       * removing the last cart item unmounts the button they just pressed and
+       * the browser drops focus to <body>. Treating that as "at the boundary"
+       * pulls it back in on the next Tab in either direction — otherwise a
+       * forward Tab from <body> walks into the page behind the overlay.
+       */
+      const outside = !panelRef.current.contains(active);
 
       // Wrap at both ends so Tab can never land on the page behind the sheet.
-      if (event.shiftKey && (active === first || !panelRef.current.contains(active))) {
+      if (event.shiftKey && (active === first || outside)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && active === last) {
+      } else if (!event.shiftKey && (active === last || outside)) {
         event.preventDefault();
         first.focus();
       }

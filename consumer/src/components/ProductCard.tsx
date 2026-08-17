@@ -1,6 +1,7 @@
 import { useCartStore } from '@/stores/cart.store';
 import { formatMoney } from '@/utils/formatMoney';
-import { ImageIcon, MinusIcon, PlusIcon } from '@/components/icons';
+import Thumbnail from '@/components/Thumbnail';
+import { MinusIcon, PlusIcon } from '@/components/icons';
 import '../styles/components/product-card.scss';
 
 interface ProductCardProps {
@@ -43,13 +44,13 @@ export default function ProductCard({
   return (
     <article className={`product-card${inCart ? ' product-card--in-cart' : ''}`}>
       <div className="product-card__media">
-        {imageUrl ? (
-          <img src={imageUrl} alt={name} className="product-card__image" loading="lazy" />
-        ) : (
-          <div className="product-card__placeholder" aria-hidden="true">
-            <ImageIcon size={28} />
-          </div>
-        )}
+        <Thumbnail
+          src={imageUrl}
+          alt={name}
+          imgClassName="product-card__image"
+          placeholderClassName="product-card__placeholder"
+          iconSize={28}
+        />
 
         {inCart && (
           <span className="product-card__badge" aria-hidden="true">

@@ -50,9 +50,17 @@
     margin: 0 auto;
   }
 
+  /* Holds either the magnifier or, while a search is running, the spinner —
+     hence the flex centring: the two glyphs are different sizes and must sit
+     on the same spot. */
   &__search-icon {
     position: absolute;
     left: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
     color: var(--color-text-light);
     pointer-events: none;
   }
@@ -203,6 +211,28 @@
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: var(--space-md);
     align-items: start;
+  }
+
+  /* Results being narrowed by a search. The previous set is held rather than
+     swapped for skeletons — that would flash on every keystroke — but it is
+     dimmed so it reads as superseded, and pointer events are off so nothing
+     can be added from a list that is about to be replaced. */
+  &__grid.is-stale {
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+  }
+
+  /* Pagination --------------------------------------------------------- */
+
+  &__more {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-xl);
+  }
+
+  &__list-error {
+    margin-top: var(--space-lg);
   }
 
   /* Pane heading -------------------------------------------------------- */
@@ -361,18 +391,28 @@
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
     color: rgba(255, 255, 255, 0.85);
+    /* A five-figure total on a 320px screen would otherwise push the CTA off
+       the bar. This is the one element here that is safe to lose. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__cart-right {
     display: flex;
     align-items: center;
     gap: var(--space-md);
+    /* Never compress the money or the CTA; the item label on the left gives
+       way instead — the count is already on the badge. */
+    flex-shrink: 0;
   }
 
   &__cart-total {
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-bold);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__cart-cta {

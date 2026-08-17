@@ -54,6 +54,45 @@ export async function fetchCategories(
   };
 }
 
+/** The endpoint's own ceiling (controller: `Math.min(limit, 100)`). */
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * Hard stop for the category paging loop. Ten pages of 100 is far beyond any
+ * real cinema's category list; the bound exists so a bad `total` can never
+ * spin this forever, not because 1000 is a meaningful product limit.
+ */
+const MAX_CATEGORY_PAGES = 10;
+
+/**
+ * Every category the cinema carries.
+ *
+ * The rail is navigation, not a list: a category that is missing from it is
+ * unreachable, so this cannot stop at the first page the way the product grid
+ * does. It pages properly against `meta.pagination.total` rather than asking
+ * for one large page and assuming it covered everything — the caller has no
+ * way to know it did.
+ */
+export async function fetchAllCategories(cinemaId: number): Promise<Category[]> {
+  const first = await fetchCategories(cinemaId, { limit: MAX_PAGE_SIZE, page: 1 });
+  const total = first.meta?.pagination?.total ?? first.data.length;
+
+  const all = [...first.data];
+  let page = 2;
+
+  // `all.length < total` alone would loop forever if the server ever returned
+  // an empty page while still reporting a larger total, hence the page bound
+  // and the empty-page break below.
+  while (all.length < total && page <= MAX_CATEGORY_PAGES) {
+    const next = await fetchCategories(cinemaId, { limit: MAX_PAGE_SIZE, page });
+    if (next.data.length === 0) break;
+    all.push(...next.data);
+    page += 1;
+  }
+
+  return all;
+}
+
 /**
  * Fetch products for a cinema (paginated, optionally filtered by category or search).
  */

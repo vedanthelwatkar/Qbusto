@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { useCartStore } from '@/stores/cart.store';
 import { useContextStore } from '@/stores/context.store';
-import { useUIStore } from '@/stores/ui.store';
 import { createOrderIdempotent } from '@/services/orders.service';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatApiError } from '@/utils/formatApiError';
@@ -83,7 +82,6 @@ export default function CheckoutPage() {
   const showTime = useContextStore((state) => state.showTime);
   const filmTitle = useContextStore((state) => state.filmTitle);
   const source = useContextStore((state) => state.source);
-  const setError = useUIStore((state) => state.setError);
 
   const [checkoutState, setCheckoutState] = useState<CheckoutState>({
     createdOrder: null,
@@ -189,9 +187,9 @@ export default function CheckoutPage() {
         createdOrder: orderResponse,
       }));
     } catch (err) {
-      const message = formatApiError(err);
-      setLocalError(message);
-      setError(message);
+      // Local only: this failure belongs to this form, and the banner above
+      // the submit button is where the customer is already looking.
+      setLocalError(formatApiError(err));
       setIsSubmitting(false);
     }
   };

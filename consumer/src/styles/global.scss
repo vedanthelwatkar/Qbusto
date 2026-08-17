@@ -38,6 +38,25 @@ body {
   flex-direction: column;
 }
 
+/* The route-change focus target wraps every page, so it has to be invisible
+   to layout: pages rely on being a flex child of #root for their `flex: 1`
+   and full-height rules to work. It only ever receives focus programmatically
+   (tabIndex="-1"), so suppressing the ring here hides nothing from a keyboard
+   user — the page's own controls keep theirs. */
+.routed-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  /* No `min-height: 0` here: these pages scroll. The flex default of `auto`
+     is what lets a tall checkout grow the wrapper instead of being clipped by
+     it — the catalog sets its own fixed height and is unaffected either way. */
+
+  &:focus {
+    outline: none;
+    box-shadow: none;
+  }
+}
+
 /* Headings ------------------------------------------------------------- */
 h1,
 h2,

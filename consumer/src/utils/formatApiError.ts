@@ -49,6 +49,18 @@ export function formatApiError(error: unknown): string {
 }
 
 /**
+ * True when the server said the resource does not exist.
+ *
+ * The generic 404 copy ("Item not found") is wrong for a whole-page load: if
+ * the cinema in the QR code is gone or deactivated, the customer needs to be
+ * told to rescan, not that an item is missing. Callers that own a page use
+ * this to say something useful instead.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 404;
+}
+
+/**
  * True when payment-verify rejected the signature itself — a permanent failure
  * that re-sending the same credentials can never resolve, as opposed to a
  * network or server error where retrying is the correct recovery.
