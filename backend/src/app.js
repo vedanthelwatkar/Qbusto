@@ -13,9 +13,10 @@
  *   3. helmet           - security headers before anything can respond
  *   4. cors             - reject disallowed origins early
  *   5. compression      - wraps all downstream responses
- *   6. body parsers     - with a size cap
- *   7. docs, routes
- *   8. 404, then the error handler (must be last)
+ *   6. webhooks         - raw body, before the JSON parser (see below)
+ *   7. body parsers     - with a size cap
+ *   8. docs, routes
+ *   9. 404, then the error handler (must be last)
  */
 
 const express = require('express');
@@ -34,6 +35,7 @@ const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
 const healthRoutes = require('./routes/health.routes');
 const apiRoutes = require('./routes/api.routes');
+const webhookRoutes = require('./routes/webhook.routes');
 
 const BODY_LIMIT = '1mb';
 
@@ -58,6 +60,13 @@ function createApp() {
 
   app.use(cors(corsOptions));
   app.use(compression());
+
+  // Webhooks mount BEFORE the JSON parser. Razorpay signs the exact request
+  // bytes, so the router needs the unparsed Buffer; once express.json() has
+  // run, those bytes are gone and no signature could ever be verified. The
+  // exception is scoped to this one path — every other route still gets
+  // parsed JSON exactly as before.
+  app.use('/api/webhooks', webhookRoutes);
 
   app.use(express.json({ limit: BODY_LIMIT }));
   app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));

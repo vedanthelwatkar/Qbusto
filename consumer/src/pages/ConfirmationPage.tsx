@@ -15,6 +15,7 @@ export default function ConfirmationPage() {
   // From the persisted QR context, so it survives a refresh of this page —
   // unlike the cart, which is in-memory and would vanish.
   const seatNumber = useContextStore((state) => state.seatNumber);
+  const clearCustomerData = useContextStore((state) => state.clearCustomerData);
 
   // Safety: orderId must be a strictly positive integer (digits only, no leading zero)
   if (!orderId || !/^[1-9]\d*$/.test(orderId)) {
@@ -49,6 +50,12 @@ export default function ConfirmationPage() {
     // End the checkout session so the next order mints a fresh idempotency key
     // rather than reusing this completed order's.
     clearCheckoutSession();
+    // Forget this customer, keep the installation. On a shared kiosk the next
+    // person would otherwise walk up to the previous customer's seat, film and
+    // show time already filled in. Deliberately here and not earlier: the seat
+    // is read back on this very screen, so clearing it before the customer
+    // acknowledges would blank their own confirmation.
+    clearCustomerData();
     // Return to screensaver
     navigate('/', { replace: true });
   };

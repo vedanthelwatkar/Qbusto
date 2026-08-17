@@ -5,8 +5,11 @@ import {
   Route,
   Navigate,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 import { useContextStore } from '@/stores/context.store';
+import { useCartStore } from '@/stores/cart.store';
+import { clearCheckoutSession } from '@/utils/checkoutSession';
 import { parseUrlParams } from '@/utils/parseUrlParams';
 import ScreensaverPage from '@/pages/ScreensaverPage';
 import CatalogPage from '@/pages/CatalogPage';
@@ -24,6 +27,91 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
   }
   return <>{children}</>;
+}
+
+/** Idle before the session is abandoned and handed back to the next customer. */
+const IDLE_MS = 60_000;
+
+/**
+ * Activity that counts as "someone is still here".
+ *
+ * `scroll` is listened for in the capture phase because the catalog's product
+ * list and category rail are their own scroll containers, and scroll does not
+ * bubble to window — without capture, a customer browsing the menu by
+ * scrolling would be reset mid-browse.
+ */
+const ACTIVITY_EVENTS = [
+  'pointerdown',
+  'keydown',
+  'touchstart',
+  'wheel',
+  'scroll',
+  // Checkout's Show Time is a datetime-local control, which opens a native
+  // picker. Time spent in that picker produces no pointer or key events on the
+  // page, so without these a customer choosing a show time could be reset
+  // mid-checkout. `focusin` covers autofill and tabbing for the same reason.
+  'input',
+  'change',
+  'focusin',
+] as const;
+
+/**
+ * Returns an abandoned session to the screensaver and forgets the customer.
+ *
+ * A kiosk is shared, so a customer who walks away mid-order would otherwise
+ * hand the next person their cart, seat, film and show time. The same rule is
+ * applied on phones deliberately: it costs a phone customer nothing, because a
+ * QR scan re-supplies everything, and one behaviour is far easier to keep
+ * correct than two.
+ *
+ * NEVER runs on the payment page. Razorpay's checkout is an iframe, so a
+ * customer typing their card details generates no events we can see and the
+ * timer would fire while they are actively paying. Resetting there would also
+ * discard the order id and attempt record that recovery depends on, at the
+ * exact moment money may have moved.
+ *
+ * The screensaver is excluded too: there is nothing to abandon there.
+ */
+function IdleReset() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const clearCustomerData = useContextStore((state) => state.clearCustomerData);
+  const clearCart = useCartStore((state) => state.clear);
+
+  const enabled = pathname !== '/' && !pathname.startsWith('/payment');
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let timerId: number;
+
+    const abandon = () => {
+      clearCart();
+      clearCheckoutSession();
+      // Keeps cinemaId/screenId/source, so a kiosk never needs re-provisioning.
+      clearCustomerData();
+      navigate('/', { replace: true });
+    };
+
+    const restart = () => {
+      window.clearTimeout(timerId);
+      timerId = window.setTimeout(abandon, IDLE_MS);
+    };
+
+    for (const event of ACTIVITY_EVENTS) {
+      window.addEventListener(event, restart, { passive: true, capture: true });
+    }
+    restart();
+
+    return () => {
+      window.clearTimeout(timerId);
+      for (const event of ACTIVITY_EVENTS) {
+        window.removeEventListener(event, restart, { capture: true });
+      }
+    };
+  }, [enabled, pathname, navigate, clearCart, clearCustomerData]);
+
+  return null;
 }
 
 /**
@@ -82,6 +170,7 @@ export default function App() {
 
   return (
     <Router>
+      <IdleReset />
       <RoutedView>
         <Routes>
         <Route path="/" element={<ScreensaverPage />} />

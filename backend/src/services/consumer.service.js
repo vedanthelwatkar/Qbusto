@@ -20,9 +20,11 @@
 const { Op } = require('sequelize');
 
 const { models, sequelize } = require('../config/database');
+const logger = require('../config/logger');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { PAGINATION, ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } = require('../constants');
 const pricingService = require('./pricing.service');
+const { applyPaidTransition } = require('./paymenttransition.service');
 
 const {
   toPaise,
@@ -624,6 +626,160 @@ async function createOrder(payload, idempotencyKey) {
   });
 }
 
+/**
+ * How long reconciliation may wait on Razorpay.
+ *
+ * This call sits inside payment-init, which a customer is standing at a kiosk
+ * waiting on, so the budget is the customer's patience rather than Razorpay's
+ * worst case. Measured against the live test account on this machine, the
+ * round trip is ~1s (payment-init 1.69s with reconciliation vs 0.73s without).
+ * 4s leaves roughly 4x headroom for a slow-but-healthy Razorpay while capping
+ * what a hung endpoint can cost the customer.
+ *
+ * Erring long would be the wrong trade: a timeout costs only a missed chance to
+ * reconcile, which the next attempt retries, whereas a stalled payment-init
+ * strands someone mid-purchase.
+ */
+const RECONCILIATION_TIMEOUT_MS = 4000;
+
+/**
+ * Bound how long we WAIT for a promise. This is not cancellation.
+ *
+ * If the timeout wins, the underlying HTTP request is still in flight - the
+ * axios default set alongside this may abort the socket, but that is
+ * best-effort. What is guaranteed is that our caller stops waiting.
+ *
+ * The loser's rejection is swallowed explicitly: once we have returned, a late
+ * rejection would otherwise surface as an unhandled rejection and, under Node's
+ * default, take the process down. The timer is always cleared so a fast success
+ * cannot leak one.
+ */
+function withTimeout(value, ms, label) {
+  let timerId;
+
+  const timeout = new Promise((_resolve, reject) => {
+    timerId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+
+  // Promise.resolve() rather than using `value` directly: if the SDK ever
+  // returns a non-thenable or throws synchronously, calling .catch() on it
+  // would throw AFTER the timer above exists, leaking a timer that fires much
+  // later as an unhandled rejection. Normalising first makes that impossible.
+  const settled = Promise.resolve(value);
+
+  // Attach a handler now, so a rejection arriving after we have already
+  // returned is never unhandled - Node terminates the process on those.
+  settled.catch(() => {});
+
+  return Promise.race([settled, timeout]).finally(() => clearTimeout(timerId));
+}
+
+/**
+ * Ask Razorpay whether an already-initialised order was in fact paid.
+ *
+ * THE GAP THIS CLOSES
+ *
+ * Our backend normally learns of a payment two ways: the browser posts the
+ * signature, or a webhook arrives. If BOTH fail - the customer's phone dies on
+ * cinema wifi and the webhook delivery is exhausted or misconfigured - the
+ * money is gone and our order sits `pending` forever, with nothing in the
+ * system able to discover otherwise.
+ *
+ * `orders.fetchPayments` (GET /orders/{id}/payments) is Razorpay's own record
+ * of what happened, authenticated with our key secret. It is server-to-server,
+ * so unlike the browser callback it cannot be lost, forged or replayed by a
+ * customer.
+ *
+ * WHAT MAKES IT SAFE
+ *
+ * - It only ever CONFIRMS. A payment is accepted only when Razorpay itself
+ *   reports `status: 'captured'` for the exact amount we expect. Anything else
+ *   - authorized-not-captured, failed, refunded, a mismatched amount, an API
+ *   error - leaves the order exactly as it was. It never guesses.
+ * - `authorized` is deliberately not accepted: this codebase never calls
+ *   payments.capture(), so authorised money has not been taken.
+ * - The transition goes through applyPaidTransition like every other source,
+ *   so it cannot double the state change or the post-payment side effects,
+ *   whichever source wins the race.
+ * - A failure to reach Razorpay is swallowed: the caller then behaves exactly
+ *   as it did before this existed. Reconciliation is an extra chance to learn
+ *   the truth, never a new way to fail a legitimate retry.
+ *
+ * @returns {Promise<boolean>} true when the order is now paid.
+ */
+async function reconcilePaymentFromRazorpay(order) {
+  let payments;
+
+  try {
+    const Razorpay = require('razorpay');
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+
+    // Razorpay 2.9.8 exposes no timeout option (its own config sets only
+    // baseURL, headers and auth), so one is applied two ways. The axios
+    // default below is best-effort and does genuinely abort the socket, but it
+    // reaches into SDK internals and would silently stop applying if those
+    // change - so it is never relied on alone.
+    try {
+      if (razorpay.api && razorpay.api.rq && razorpay.api.rq.defaults) {
+        razorpay.api.rq.defaults.timeout = RECONCILIATION_TIMEOUT_MS;
+      }
+    } catch {
+      // Internals not as expected; the bounded wait below still applies.
+    }
+
+    const response = await withTimeout(
+      razorpay.orders.fetchPayments(order.razorpayOrderId),
+      RECONCILIATION_TIMEOUT_MS,
+      'Razorpay reconciliation'
+    );
+    payments = response && Array.isArray(response.items) ? response.items : [];
+  } catch (error) {
+    // Razorpay unreachable, credentials wrong, order unknown to them. Not
+    // knowing is the status quo, so carry on rather than blocking a customer
+    // who may simply be retrying a genuinely failed payment.
+    logger.warn('Razorpay reconciliation could not be completed', {
+      orderId: order.id,
+      // Message only - never the payload, and never credentials.
+      reason: error && error.message ? error.message : 'unknown',
+    });
+    return false;
+  }
+
+  const expectedPaise = toPaise(order.total);
+
+  // Integer paise on both sides; no floating-point money comparison.
+  const captured = payments.find(
+    (payment) =>
+      payment &&
+      payment.status === 'captured' &&
+      Number.isInteger(payment.amount) &&
+      payment.amount === expectedPaise
+  );
+
+  if (!captured) return false;
+
+  logger.info('Razorpay reconciliation found a captured payment', {
+    orderId: order.id,
+    razorpayOrderId: order.razorpayOrderId,
+  });
+
+  await sequelize.transaction(async (transaction) => {
+    await applyPaidTransition(
+      {
+        orderId: order.id,
+        razorpayPaymentId: captured.id || null,
+        reason: 'Payment confirmed by reconciliation with Razorpay',
+      },
+      transaction
+    );
+  });
+
+  return true;
+}
+
 /** POST /api/consumer/orders/{orderId}/payment-init - Initialize Razorpay payment (IDEMPOTENT) */
 async function paymentInit(orderId) {
   const order = await models.Order.findByPk(orderId, {
@@ -645,8 +801,27 @@ async function paymentInit(orderId) {
     });
   }
 
-  // If razorpayOrderId already set, return it (idempotent)
+  // If razorpayOrderId already set, return it (idempotent).
   if (order.razorpayOrderId) {
+    // Before handing back a payable order, ask Razorpay whether this order was
+    // ALREADY paid. Reaching here means a previous attempt existed, and the
+    // dangerous case is the one where that attempt succeeded but neither the
+    // browser callback nor the webhook ever told us — the customer would
+    // otherwise be shown a Pay button for money they have already handed over.
+    //
+    // This is the only trigger: a customer-initiated request on an order that
+    // has already been initialised. It is not a poller.
+    const reconciled = await reconcilePaymentFromRazorpay(order);
+
+    if (reconciled) {
+      // Same 409 shape payment-init already returns for a settled order, so
+      // the Consumer's existing recovery reads it and moves to confirmation.
+      throw new ConflictError('Order is not in pending payment state', {
+        orderId,
+        paymentStatus: PAYMENT_STATUSES.PAID,
+      });
+    }
+
     return {
       orderId,
       razorpayOrderId: order.razorpayOrderId,
@@ -760,30 +935,33 @@ async function paymentVerify(orderId, razorpayPaymentId, razorpaySignature) {
     ]);
   }
 
-  // Update order status to paid in a transaction
+  // Update order status to paid in a transaction.
+  //
+  // The status was read above, OUTSIDE this transaction, so it is a snapshot:
+  // the Razorpay webhook can commit `paid` for the same payment in between.
+  // This used to be an unconditional UPDATE plus an unconditional log insert,
+  // which meant the loser of that race still wrote a second
+  // payment_status_logs row for a transition that had already happened - and,
+  // more dangerously, still ran this block, which is where post-payment side
+  // effects (kitchen ticket, receipt, notification) would naturally be added.
+  //
+  // The write is therefore the same compare-and-set the webhook path uses:
+  // only a still-pending row transitions, so exactly one of the two callers
+  // ever performs the transition and everything hanging off it runs once.
   return sequelize.transaction(async (transaction) => {
-    const [newPaymentStatusId, oldPaymentStatusId] = await Promise.all([
-      resolveStatusId('payment', PAYMENT_STATUSES.PAID, transaction),
-      resolveStatusId('payment', PAYMENT_STATUSES.PENDING, transaction),
-    ]);
-
-    await models.Order.update(
-      { paymentStatusId: newPaymentStatusId, razorpayPaymentId },
-      { where: { id: orderId }, transaction }
+    // The transition and everything that must happen exactly once with it live
+    // in paymenttransition.service, shared with the webhook and reconciliation
+    // paths. A `false` here means one of those got there first, which is a
+    // normal race outcome, not a failure.
+    await applyPaidTransition(
+      { orderId, razorpayPaymentId, reason: 'Payment verified' },
+      transaction
     );
 
-    // Create payment status log
-    await models.PaymentStatusLog.create(
-      {
-        orderId,
-        previousStatusId: oldPaymentStatusId,
-        newStatusId: newPaymentStatusId,
-        razorpayPaymentId,
-        reason: 'Payment verified',
-      },
-      { transaction }
-    );
-
+    // `paid` either way, and that is the truth: this request verified a
+    // genuine signature, and the order is paid whether this call or another
+    // source was the one to record it. Reporting anything else here would
+    // strand a customer whose payment had in fact succeeded.
     return {
       orderId,
       paymentStatus: PAYMENT_STATUSES.PAID,

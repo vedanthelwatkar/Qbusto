@@ -82,6 +82,7 @@ export default function CheckoutPage() {
   const showTime = useContextStore((state) => state.showTime);
   const filmTitle = useContextStore((state) => state.filmTitle);
   const source = useContextStore((state) => state.source);
+  const setContext = useContextStore((state) => state.setContext);
 
   const [checkoutState, setCheckoutState] = useState<CheckoutState>({
     createdOrder: null,
@@ -143,13 +144,17 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
     setLocalError(null);
 
+    // What the customer actually asked for, which is not necessarily what the
+    // QR said — the seat fields are editable precisely so it can be corrected.
+    const submittedSeat = `${data.rowNumber.toUpperCase()}${data.seatNumber}`;
+
     try {
       const orderData: PostApiConsumerOrdersBody = {
         cinemaId,
         // From the context store (QR), no longer from a form field. The order
         // contract is unchanged; only the manual inputs were removed.
         screenId,
-        seatNumber: `${data.rowNumber.toUpperCase()}${data.seatNumber}`,
+        seatNumber: submittedSeat,
         source,
         customerMobile: data.customerMobile,
         customerEmail: data.customerEmail || null,
@@ -177,6 +182,16 @@ export default function CheckoutPage() {
         setLocalError('We could not confirm your order. Please try again.');
         setIsSubmitting(false);
         return;
+      }
+
+      // Align the stored context with the seat the order was actually accepted
+      // for. The QR value was only ever a prefill; leaving it in place meant
+      // the confirmation screen read it back and told a customer who had
+      // corrected their seat that the food was going to the original one.
+      // Done only after the backend accepted the order, so the context can
+      // never claim a seat that no order exists for.
+      if (submittedSeat !== seatNumber) {
+        setContext({ seatNumber: submittedSeat });
       }
 
       // Navigation handled by useEffect watching createdOrder. isSubmitting is

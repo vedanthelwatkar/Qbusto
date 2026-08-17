@@ -76,6 +76,27 @@ const envSchema = Joi.object({
   // ---- Razorpay (Phase 2; not required to boot) ----
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
+
+  /**
+   * Webhook signing secret, set in the Razorpay Dashboard when the webhook is
+   * created. It is NOT the API key secret — Razorpay generates a separate
+   * value per webhook, and signatures verify against this one.
+   *
+   * Optional so development and test can boot without it; the webhook route
+   * then refuses every request rather than accepting unverified ones. In
+   * production it is required, because a deployment that silently stopped
+   * verifying signatures would accept forged payment notifications.
+   */
+  RAZORPAY_WEBHOOK_SECRET: Joi.string()
+    .allow('')
+    .optional()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().min(MIN_PRODUCTION_SECRET_LENGTH).required().messages({
+        'any.required':
+          'RAZORPAY_WEBHOOK_SECRET is required in production: without it payment webhooks cannot be verified and would have to be rejected.',
+      }),
+    }),
 }).unknown(true);
 
 const { value, error } = envSchema.validate(process.env, {
@@ -86,6 +107,69 @@ const { value, error } = envSchema.validate(process.env, {
 if (error) {
   const details = error.details.map((detail) => `  - ${detail.message}`).join('\n');
   throw new Error(`Invalid environment configuration:\n${details}`);
+}
+
+/**
+ * A production deployment running on Razorpay test keys is the worst kind of
+ * misconfiguration: the checkout works, the webhook verifies, orders are
+ * marked paid, food goes out — and no real money was ever taken. Nothing
+ * downstream can detect it, because every signal looks healthy. Refusing to
+ * boot is the only place it can be caught.
+ */
+/**
+ * The Joi rule above cannot catch an EMPTY secret in production: `.allow('')`
+ * on the base schema puts '' in the valids list, and Joi checks valids before
+ * `.min(32)` or `.required()` in the conditional branch — so
+ * `RAZORPAY_WEBHOOK_SECRET=` passes validation. Verified against joi directly.
+ *
+ * The consequence is the worst kind of silent failure: production boots with
+ * `webhooksEnabled: false`, every Razorpay delivery is answered 400, and a
+ * payment whose browser callback is lost can never be recovered. Nothing in
+ * the running system looks wrong.
+ */
+if (value.NODE_ENV === 'production' && !value.RAZORPAY_WEBHOOK_SECRET) {
+  throw new Error(
+    'Invalid environment configuration:\n' +
+      '  - RAZORPAY_WEBHOOK_SECRET is empty but NODE_ENV is production. ' +
+      'Webhook deliveries would all be rejected and lost payments could not be recovered.'
+  );
+}
+
+if (value.NODE_ENV === 'production' && String(value.RAZORPAY_KEY_ID).startsWith('rzp_test_')) {
+  throw new Error(
+    'Invalid environment configuration:\n' +
+      '  - RAZORPAY_KEY_ID is a test-mode key (rzp_test_*) but NODE_ENV is production. ' +
+      'Payments would be simulated and no money collected. Use the live key, or do not run as production.'
+  );
+}
+
+/**
+ * The mirror image of the check above, and a real footgun: a developer who
+ * copies a production .env to run something locally would be taking REAL
+ * money from REAL cards on their laptop. A warning rather than a throw,
+ * because production-key debugging is occasionally legitimate — but it must
+ * never happen without someone noticing.
+ */
+if (value.NODE_ENV !== 'production' && String(value.RAZORPAY_KEY_ID).startsWith('rzp_live_')) {
+  console.warn(
+    `[config] RAZORPAY_KEY_ID is a LIVE key but NODE_ENV is "${value.NODE_ENV}". ` +
+      'Payments made against this instance will charge real cards.'
+  );
+}
+
+/**
+ * Razorpay configured but webhooks not. The app still runs and customers can
+ * still pay, but the backend can only learn of a payment from the customer's
+ * browser — so a closed tab or a dropped connection leaves the order pending
+ * with no way to recover it. That is precisely the failure the webhook exists
+ * to close, and it is silent, so it is called out at startup.
+ */
+if (value.RAZORPAY_KEY_ID && !value.RAZORPAY_WEBHOOK_SECRET) {
+  console.warn(
+    '[config] RAZORPAY_KEY_ID is set but RAZORPAY_WEBHOOK_SECRET is not. ' +
+      'Webhook deliveries will be refused, so a payment whose browser callback ' +
+      'is lost cannot be recovered automatically.'
+  );
 }
 
 // console.warn rather than the logger: the logger depends on this module.
@@ -132,6 +216,16 @@ const env = {
 
   swagger: {
     enabled: value.SWAGGER_ENABLED,
+  },
+
+  razorpay: {
+    /**
+     * Server-side only. Never reaches the Consumer: the browser is given
+     * `razorpayKeyId` by payment-init and nothing else, and this value is what
+     * proves a webhook actually came from Razorpay.
+     */
+    webhookSecret: value.RAZORPAY_WEBHOOK_SECRET || '',
+    webhooksEnabled: Boolean(value.RAZORPAY_WEBHOOK_SECRET),
   },
 };
 

@@ -61,6 +61,35 @@ export function isNotFoundError(error: unknown): boolean {
 }
 
 /**
+ * The order's payment status as reported by a 409 from payment-init.
+ *
+ * This is the ONLY authoritative payment-status signal the consumer API
+ * exposes today — there is no `GET /orders/{id}`. When an order is no longer
+ * pending, payment-init refuses with:
+ *
+ *   409 { error: { code: 'CONFLICT', details: { orderId, paymentStatus } } }
+ *
+ * Verified against the running backend rather than inferred from the schema.
+ * It is read only to answer "did this order already get paid?" after an
+ * interrupted attempt; the alternative is to guess, and guessing wrong here
+ * means asking a customer to pay twice.
+ *
+ * Returns null when the error is not that 409, including when the shape is not
+ * what we expect — an unrecognised error must never be read as a status.
+ */
+export function readConflictPaymentStatus(error: unknown): string | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 409) return null;
+
+  const details = (error.response?.data as { error?: { details?: unknown } } | undefined)?.error
+    ?.details;
+
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+
+  const status = (details as { paymentStatus?: unknown }).paymentStatus;
+  return typeof status === 'string' ? status : null;
+}
+
+/**
  * True when payment-verify rejected the signature itself — a permanent failure
  * that re-sending the same credentials can never resolve, as opposed to a
  * network or server error where retrying is the correct recovery.

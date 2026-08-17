@@ -276,6 +276,7 @@ export default function OrderDetailsDrawer({
           orderId={order.id ?? 0}
           currentPaymentStatus={order.paymentStatus}
           paymentStatuses={paymentStatuses}
+          razorpayOrderId={order.razorpayOrderId}
           onClose={() => setPaymentTransitionOpen(false)}
           onSuccess={() => {
             onTransitionComplete();

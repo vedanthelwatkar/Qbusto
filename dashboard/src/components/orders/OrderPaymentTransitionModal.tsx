@@ -16,6 +16,12 @@ interface OrderPaymentTransitionModalProps {
   orderId: number;
   currentPaymentStatus: string;
   paymentStatuses: OrderStatus[];
+  /**
+   * Set once payment-init has run, i.e. a Razorpay payment was actually
+   * started for this order. Its presence is what makes marking the order
+   * `failed` risky - see the warning below.
+   */
+  razorpayOrderId?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -32,6 +38,7 @@ export default function OrderPaymentTransitionModal({
   orderId,
   currentPaymentStatus,
   paymentStatuses,
+  razorpayOrderId,
   onClose,
   onSuccess,
 }: OrderPaymentTransitionModalProps) {
@@ -40,6 +47,22 @@ export default function OrderPaymentTransitionModal({
   const [error, setError] = useState<string | null>(null);
 
   const validTransitions = VALID_PAYMENT_TRANSITIONS[currentPaymentStatus] ?? [];
+
+  /**
+   * A Razorpay payment was started for this order and has not settled here.
+   *
+   * Marking it `failed` in that state is the one staff action that can
+   * contradict reality: Razorpay may capture the payment moments later, and
+   * because the automated paths only move an order out of `pending`, the
+   * capture would then find the order already `failed` and leave it there. The
+   * customer would have paid against an order our system calls failed.
+   *
+   * Deliberately a warning rather than a block. Whether staff may write off an
+   * order with a live payment attempt is a business rule, not something this
+   * component should decide, and the backend remains authoritative either way.
+   */
+  const contradictsLivePayment =
+    currentPaymentStatus === 'pending' && Boolean(razorpayOrderId) && nextStatus === 'failed';
   const currentStatusLabel =
     paymentStatuses.find((s) => s.code === currentPaymentStatus)?.name ?? currentPaymentStatus;
 
@@ -68,8 +91,8 @@ export default function OrderPaymentTransitionModal({
       onCancel={onClose}
       onOk={handleTransition}
       confirmLoading={loading}
-      okText="Confirm"
-      okButtonProps={{ disabled: !nextStatus }}
+      okText={contradictsLivePayment ? 'Mark failed anyway' : 'Confirm'}
+      okButtonProps={{ disabled: !nextStatus, danger: contradictsLivePayment }}
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         <div>
@@ -81,6 +104,20 @@ export default function OrderPaymentTransitionModal({
             message="Error updating payment status"
             description={error}
             type="error"
+            showIcon
+          />
+        )}
+
+        {contradictsLivePayment && (
+          <Alert
+            message="A Razorpay payment was started for this order"
+            description={
+              'If that payment is captured after you mark this order failed, the customer ' +
+              'will have paid for an order the system shows as failed, and the automatic ' +
+              'update will not correct it. Confirm in the Razorpay dashboard that no ' +
+              'payment was captured before continuing.'
+            }
+            type="warning"
             showIcon
           />
         )}

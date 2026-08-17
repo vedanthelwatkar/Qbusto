@@ -97,13 +97,21 @@
     color: var(--color-text-secondary);
   }
 
+  /* Fluid rather than fixed: at 40px a six-figure total (₹1,23,456.00) is
+     wider than a 320px screen's content box and was overflowing the card.
+     Scaling with the viewport fixes the whole range of totals instead of the
+     one that happened to be tested. */
   &__amount {
-    font-size: 40px;
+    font-size: clamp(28px, 9vw, 40px);
     font-weight: var(--font-weight-bold);
     line-height: var(--line-height-tight);
     letter-spacing: var(--tracking-tight);
     color: var(--color-text-primary);
     font-variant-numeric: tabular-nums;
+    /* Last resort if a currency format is wider still — break rather than
+       push the card sideways and start the page scrolling horizontally. */
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   &__amount-note {
