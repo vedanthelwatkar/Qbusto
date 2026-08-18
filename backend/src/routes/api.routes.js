@@ -17,6 +17,7 @@ const chainRoutes = require('./chain.routes');
 const cinemaRoutes = require('./cinema.routes');
 const cinemaProductRoutes = require('./cinemaproduct.routes');
 const consumerRoutes = require('./consumer.routes');
+const kitchenRoutes = require('./kitchen.routes');
 const orderRoutes = require('./order.routes');
 const { orderStatusRouter, paymentStatusRouter } = require('./orderstatus.routes');
 const pricingRoutes = require('./pricing.routes');
@@ -57,6 +58,7 @@ router.use('/product-availability-hours', availabilityRoutes);
 router.use('/product-pricing', pricingRoutes);
 router.use('/banners', bannerRoutes);
 router.use('/orders', orderRoutes);
+router.use('/kitchen', kitchenRoutes);
 router.use('/order-statuses', orderStatusRouter);
 router.use('/payment-statuses', paymentStatusRouter);
 

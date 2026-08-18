@@ -330,7 +330,7 @@ export default function PricingPage() {
     query.isActive !== undefined;
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Pricing"
         description="What each product costs, per cinema and per day"

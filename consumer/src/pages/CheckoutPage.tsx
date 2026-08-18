@@ -8,7 +8,7 @@ import { useCartStore } from '@/stores/cart.store';
 import { useContextStore } from '@/stores/context.store';
 import { createOrderIdempotent } from '@/services/orders.service';
 import { formatMoney } from '@/utils/formatMoney';
-import { formatApiError } from '@/utils/formatApiError';
+import { mapCheckoutError } from '@/utils/checkoutErrors';
 import { orderFingerprint, getOrCreateIdempotencyKey } from '@/utils/checkoutSession';
 import { isoToLocalInput, localInputToIso, isValidLocalDateTime } from '@/utils/showTime';
 import { AlertIcon, ChevronDownIcon, ChevronLeftIcon, LockIcon } from '@/components/icons';
@@ -26,6 +26,21 @@ const ROW_PATTERN = /^[A-Za-z]{1,2}$/;
 const SEAT_PATTERN = /^\d{1,3}$/;
 const MOBILE_PATTERN = /^\d{10}$/;
 
+/**
+ * The screen is identified by its numeric id, because that is what the order
+ * carries - `orders.screen_id` is a foreign key, not a name.
+ *
+ * Entered as a number for now. The backend resolves it against the current
+ * cinema and answers "Screen not found" if it does not belong there, so a
+ * wrong number fails clearly rather than attaching the order to the wrong
+ * auditorium. A picker listing the cinema's screens by name is the intended
+ * replacement; it needs a public endpoint that does not exist yet.
+ */
+const SCREEN_ID_PATTERN = /^\d{1,9}$/;
+
+/** orders.film_title is VARCHAR(200). */
+const FILM_TITLE_MAX = 200;
+
 const checkoutSchema = z.object({
   customerMobile: z
     .string()
@@ -42,6 +57,25 @@ const checkoutSchema = z.object({
     .string()
     .min(1, 'Seat number is required')
     .refine((val) => SEAT_PATTERN.test(val), 'Enter a valid seat number, for example 5'),
+  screenId: z
+    .string()
+    .min(1, 'Screen number is required')
+    .refine((val) => SCREEN_ID_PATTERN.test(val.trim()), 'Enter the screen number, for example 3')
+    // Zero is rejected here rather than left to the backend, which treats a
+    // falsy screenId as "no screen given" and stores null. Without this a
+    // customer typing 0 into a required field gets an order with no screen and
+    // no error to tell them.
+    .refine((val) => Number(val.trim()) >= 1, 'Screen number must be 1 or higher'),
+  filmTitle: z
+    .string()
+    // Checked on the trimmed value: a string of spaces satisfies a plain
+    // minimum length, then trims to empty on submit, and the backend stores
+    // null for it - the same silent loss of a required field.
+    .refine((val) => val.trim().length > 0, 'Film name is required')
+    .refine(
+      (val) => val.trim().length <= FILM_TITLE_MAX,
+      `Film name must be ${FILM_TITLE_MAX} characters or fewer`
+    ),
   showTime: z
     .string()
     .min(1, 'Please select valid show time.')
@@ -53,8 +87,9 @@ const checkoutSchema = z.object({
       (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
       'Invalid email format'
     ),
-  // No screenId/filmTitle here: they are no longer user-editable. Both still
-  // travel on the order, taken from the context store where the QR put them.
+  // Screen and film are entered here and prefilled from the QR context where
+  // it supplied them, so a customer who scanned a generic lobby code can still
+  // say which auditorium and film the order is for.
 });
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
@@ -104,6 +139,7 @@ export default function CheckoutPage() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
@@ -114,6 +150,9 @@ export default function CheckoutPage() {
       customerEmail: '',
       rowNumber: prefilledSeat.row,
       seatNumber: prefilledSeat.seat,
+      // Prefilled from the QR context when it carried them; empty otherwise.
+      screenId: screenId ? String(screenId) : '',
+      filmTitle: filmTitle ?? '',
       // QR supplies an absolute ISO instant; the control needs local wall-clock.
       showTime: isoToLocalInput(showTime),
     },
@@ -147,18 +186,22 @@ export default function CheckoutPage() {
     // What the customer actually asked for, which is not necessarily what the
     // QR said — the seat fields are editable precisely so it can be corrected.
     const submittedSeat = `${data.rowNumber.toUpperCase()}${data.seatNumber}`;
+    const submittedScreenId = Number(data.screenId.trim());
+    const submittedFilmTitle = data.filmTitle.trim();
 
     try {
       const orderData: PostApiConsumerOrdersBody = {
         cinemaId,
-        // From the context store (QR), no longer from a form field. The order
-        // contract is unchanged; only the manual inputs were removed.
-        screenId,
+        // What the customer entered, which is not necessarily what the QR
+        // said - the fields are editable so a generic lobby code can still be
+        // corrected to the right auditorium and film. The backend resolves
+        // screenId against this cinema and rejects one that does not belong.
+        screenId: submittedScreenId,
         seatNumber: submittedSeat,
         source,
         customerMobile: data.customerMobile,
         customerEmail: data.customerEmail || null,
-        filmTitle: filmTitle || null,
+        filmTitle: submittedFilmTitle,
         showTime: localInputToIso(data.showTime),
         items: cartItems.map((item) => ({
           productId: item.productId,
@@ -190,8 +233,13 @@ export default function CheckoutPage() {
       // corrected their seat that the food was going to the original one.
       // Done only after the backend accepted the order, so the context can
       // never claim a seat that no order exists for.
-      if (submittedSeat !== seatNumber) {
-        setContext({ seatNumber: submittedSeat });
+      const contextChanges: Parameters<typeof setContext>[0] = {};
+      if (submittedSeat !== seatNumber) contextChanges.seatNumber = submittedSeat;
+      if (submittedScreenId !== screenId) contextChanges.screenId = submittedScreenId;
+      if (submittedFilmTitle !== filmTitle) contextChanges.filmTitle = submittedFilmTitle;
+
+      if (Object.keys(contextChanges).length > 0) {
+        setContext(contextChanges);
       }
 
       // Navigation handled by useEffect watching createdOrder. isSubmitting is
@@ -202,9 +250,26 @@ export default function CheckoutPage() {
         createdOrder: orderResponse,
       }));
     } catch (err) {
-      // Local only: this failure belongs to this form, and the banner above
-      // the submit button is where the customer is already looking.
-      setLocalError(formatApiError(err));
+      /*
+       * Put the failure where the customer can act on it.
+       *
+       * The backend rejects a screen that does not belong to this cinema, and
+       * that is a wrong value in a specific box - showing it in the banner as
+       * "Item not found" left the customer with no idea which field to fix.
+       * Anything that is not about one input still goes to the banner above
+       * the submit button.
+       */
+      const mapped = mapCheckoutError(err);
+
+      if (mapped.field) {
+        setLocalError(null);
+        // shouldFocus moves the cursor to the offending input, matching how a
+        // failed client-side validation behaves.
+        setError(mapped.field, { type: 'server', message: mapped.message }, { shouldFocus: true });
+      } else {
+        setLocalError(mapped.message);
+      }
+
       setIsSubmitting(false);
     }
   };
@@ -364,8 +429,54 @@ export default function CheckoutPage() {
             <fieldset className="checkout__group" disabled={busy}>
               <legend className="checkout__group-title">Your show</legend>
               <p className="checkout__group-hint">
-                So the kitchen can time your order to the film.
+                So the kitchen knows where to send your order and when. Prefilled
+                from your QR code where available.
               </p>
+
+              <div className="checkout__fields checkout__fields--pair">
+                <div className="field">
+                  <label className="field__label" htmlFor="screen">
+                    Screen No. <span className="field__required" aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="screen"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={9}
+                    placeholder="3"
+                    aria-required="true"
+                    aria-invalid={errors.screenId ? 'true' : undefined}
+                    aria-describedby={errors.screenId ? 'screen-error' : undefined}
+                    {...register('screenId')}
+                  />
+                  {errors.screenId && (
+                    <span className="field__error" id="screen-error">
+                      {errors.screenId.message}
+                    </span>
+                  )}
+                </div>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="film">
+                    Film <span className="field__required" aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="film"
+                    type="text"
+                    maxLength={200}
+                    placeholder="Avengers: Endgame"
+                    aria-required="true"
+                    aria-invalid={errors.filmTitle ? 'true' : undefined}
+                    aria-describedby={errors.filmTitle ? 'film-error' : undefined}
+                    {...register('filmTitle')}
+                  />
+                  {errors.filmTitle && (
+                    <span className="field__error" id="film-error">
+                      {errors.filmTitle.message}
+                    </span>
+                  )}
+                </div>
+              </div>
 
               <div className="checkout__fields">
                 <div className="field">

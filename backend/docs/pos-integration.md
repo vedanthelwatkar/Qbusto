@@ -20,7 +20,7 @@
 > exists.** The registry is empty, so every provider currently resolves to a
 > failure; Vista (B3) and Showbiz (B4) are blocked on §12.3.
 >
-> Progress is tracked in [../phases.md](../phases.md). Table definitions that
+> Table definitions that
 > exist today are in [schema.md](./schema.md) and [schema.dbml](./schema.dbml).
 
 ---
@@ -134,7 +134,7 @@ this design changes that.
 > **Implemented in Phase B1.** Migration `20260813000100-create-shows.js`, model
 > `models/show.js`. The as-built table is documented in
 > [schema.md](./schema.md#shows); the design below is what was built, unchanged.
-> Validated against real SQL Server — see [../phases.md](../phases.md) Phase B1.
+> Validated against a real SQL Server instance.
 
 **Why.** The dropdown needs to list shows that have no orders yet. Every existing
 representation of a show (`orders.show_time`, `order_pos_context.*`) is created
@@ -149,7 +149,7 @@ represent no sale, and would make show synchronization write to the order table.
 
 ### 4.1 The table (CREATED — Phase B1)
 
-Named `shows`, not `pos_shows`: per CLAUDE.md's modernization principle the
+Named `shows`, not `pos_shows`: following the platform's modernization principle, the
 domain stays provider-neutral, and the POS-ness is carried by
 `pos_integration_id` + the `external_*` columns.
 
@@ -265,7 +265,7 @@ Built in `src/pos/`. Five files, no framework:
 | `src/pos/providerRegistry.js` | `provider` → adapter lookup                                                |
 | `src/constants.js`            | `POS_PROVIDERS`, mirroring `CK_pos_integrations_provider`                   |
 
-`src/pos/` is not a new architectural layer. CLAUDE.md §14 already names
+`src/pos/` is not a new architectural layer. The development guide already names
 `Business Service → Provider Adapter → External POS` as the required shape for
 integrations; this is that adapter layer, sitting beside `src/services/`. The B5
 sync service will be an ordinary service that consumes it.
@@ -324,7 +324,7 @@ instead of failing as a constraint violation during the B5 upsert.
 ### 5.3 Provider registry
 
 Selection is by `pos_integrations.provider` through a `Map`. No factory
-framework, no base class — per CLAUDE.md §3, no new architectural layers beyond
+framework, no base class — no new architectural layers beyond
 Route → Controller → Service → Model.
 
 ```js
@@ -375,7 +375,7 @@ Neutrality rules, all enforced by tests:
   or provider error string. No class name, code or default message mentions a
   provider or a transport.
 - Credentials, tokens, auth headers and raw provider payloads never appear in
-  `message` (CLAUDE.md §15, §17). The underlying error is attached as `cause`
+  `message`, per the external-integration and logging conventions. The underlying error is attached as `cause`
   for diagnostics and is deliberately kept **off** `details`, which is the only
   part the error middleware serializes to a client.
 - `toLogContext()` returns identifiers only: `posCode`, `provider`,
@@ -390,13 +390,13 @@ failures onto HTTP responses is B5/B8's decision, not the adapter's.
 `PosProviderUnavailableError` also carries `ambiguous`, for the case where an
 adapter cannot tell whether a request reached the provider. `fetchShows` is a
 read and is safe to retry; the flag exists so the same taxonomy can carry write
-operations later without violating CLAUDE.md §13/§15.
+operations later without violating the idempotency and reliability conventions.
 
 ### 5.5 Timezone responsibility — enforced, not merely documented
 
 The adapter returns provider wall-clock and does **not** convert timezones.
 Conversion is centralized in the sync service so both providers cannot drift
-apart (§9.3, CLAUDE.md §14).
+apart (§9.3, and the adapter-boundary convention).
 
 B2 makes this a rule the code enforces. `normalizeShowTimeLocal` accepts only
 `YYYY-MM-DDTHH:mm[:ss]` (a space separator is tolerated) and rejects:
@@ -552,7 +552,7 @@ Response, in the standard `success()` envelope:
 `externalFilmId`, `externalScreenId`, `status`, `lastSyncedAt`. The Consumer must
 not be able to tell which POS produced a show.
 
-**Not paginated,** deliberately. CLAUDE.md requires server-side pagination for
+**Not paginated,** deliberately. The platform conventions require server-side pagination for
 browsable lists; this is a bounded window at a single cinema (tens of rows at
 most) that exists only to fill one dropdown. Revisit if a real dataset disproves
 the bound.
@@ -670,7 +670,7 @@ field rather than changing `showTime`'s meaning.
 
 ## 10. Dashboard implications
 
-The `POS Integrations` permission module exists and has no UI (CLAUDE.md,
+The `POS Integrations` permission module exists and has no UI (see the platform conventions,
 "Remaining"). The same normalized data serves it:
 
 - **Integrations CRUD** — `pos_integrations` per cinema. Secrets are never

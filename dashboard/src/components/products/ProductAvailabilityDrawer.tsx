@@ -268,7 +268,7 @@ export default function ProductAvailabilityDrawer({
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <Text>{product.name} is not carried at this cinema.</Text>
             <Text type="secondary">
               Availability is set per cinema, so the cinema has to carry the product before it can
@@ -286,7 +286,7 @@ export default function ProductAvailabilityDrawer({
     );
   } else if (cinemaProduct) {
     body = (
-      <Space direction="vertical" size="middle" className="stack">
+      <Space orientation="vertical" size="middle" className="stack">
         {cinemaProduct.isActive === false ? (
           <Alert
             type="warning"
@@ -349,7 +349,7 @@ export default function ProductAvailabilityDrawer({
       afterOpenChange={(isOpen) => {
         if (!isOpen) onClose();
       }}
-      width={640}
+      size={640}
       title="Availability"
       extra={
         canEdit && cinemaProduct ? (
@@ -359,7 +359,7 @@ export default function ProductAvailabilityDrawer({
         ) : null
       }
     >
-      <Space direction="vertical" size="middle" className="stack">
+      <Space orientation="vertical" size="middle" className="stack">
         <div>
           <Title level={5} style={{ marginBottom: 0 }}>
             {product.name}

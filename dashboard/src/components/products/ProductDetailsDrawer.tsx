@@ -66,7 +66,7 @@ export default function ProductDetailsDrawer({
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={480}
+      size={480}
       title={product?.name ?? 'Product'}
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

@@ -217,7 +217,7 @@ export default function CategoriesPage() {
   };
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Categories"
         description="How products are grouped for ordering"

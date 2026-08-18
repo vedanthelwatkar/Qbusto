@@ -34,6 +34,7 @@ const { models, sequelize } = require('../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { ROLES, ORDER_STATUSES, PAYMENT_STATUSES, PAGINATION } = require('../constants');
 const pricingService = require('./pricing.service');
+const fulfilmentService = require('./fulfilment.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -75,29 +76,14 @@ const ITEM_ATTRIBUTES = [
 const STATUS_ATTRIBUTES = ['id', 'code', 'name', 'description', 'isActive'];
 
 /**
- * Legal order status moves, keyed by the code the order is currently in.
+ * The legal fulfilment graph now lives in fulfilment.service, which owns the
+ * transition itself as well as the graph.
  *
- * The forward path is the one documented in docs/schema-explained.md:
- * initiated -> confirmed -> preparing -> ready -> delivered. It is a straight
- * line with no skipping, so an order cannot be marked delivered while the
- * kitchen has not been told to make it.
- *
- * `rejected` is reachable from every non-terminal state. The schema seeds
- * exactly one failure status and defines no point past which an order stops
- * being cancellable, and refusing to reject an order that is merely `ready`
- * would leave staff with no way to record a customer who never collected it.
- *
- * `delivered` and `rejected` are terminal: both map to an empty set. Reopening
- * a finished order would need an "un-deliver" concept the schema does not have.
+ * It moved there when the KDS arrived and the Dashboard stopped being the only
+ * caller that changes order status. Re-exported from this module so existing
+ * importers keep working; there is still exactly one copy of the graph.
  */
-const ORDER_TRANSITIONS = Object.freeze({
-  [ORDER_STATUSES.INITIATED]: [ORDER_STATUSES.CONFIRMED, ORDER_STATUSES.REJECTED],
-  [ORDER_STATUSES.CONFIRMED]: [ORDER_STATUSES.PREPARING, ORDER_STATUSES.REJECTED],
-  [ORDER_STATUSES.PREPARING]: [ORDER_STATUSES.READY, ORDER_STATUSES.REJECTED],
-  [ORDER_STATUSES.READY]: [ORDER_STATUSES.DELIVERED, ORDER_STATUSES.REJECTED],
-  [ORDER_STATUSES.DELIVERED]: [],
-  [ORDER_STATUSES.REJECTED]: [],
-});
+const ORDER_TRANSITIONS = fulfilmentService.ORDER_TRANSITIONS;
 
 /**
  * Legal payment status moves.
@@ -224,9 +210,19 @@ function serializeOrder(order) {
  * makes it an inner join, so an order in another chain drops out of the result
  * set entirely and reads as 404 rather than 403.
  *
- * This is chain-level, not cinema-level. No service in the codebase narrows to
- * `actor.cinemaId`, and doing it here alone would be a second authorization
- * model that only orders obey.
+ * This is chain-level, not cinema-level: a cinema_admin assigned to one cinema
+ * can still read and transition orders at any cinema in their chain.
+ *
+ * kitchen.service is now the ONE exception, and deliberately so. A kitchen
+ * display is a fixed terminal on one counter - showing it another site's
+ * tickets is an operational fault, not merely a privacy question - so it
+ * narrows to `actor.cinemaId`. That does not automatically make chain-level
+ * wrong here: the Dashboard is a management surface, and a cinema_admin
+ * covering two sites for a shift is a real thing this deliberately allows.
+ *
+ * Whether the staff order API should follow the kitchen is an open product
+ * decision, not an oversight. Narrowing it would be a behaviour change for
+ * every existing cinema_admin, so it is not made as a side effect of the KDS.
  */
 function cinemaScope(actor, attributes = ['id', 'chainId']) {
   return {
@@ -751,37 +747,16 @@ function assertTransitionAllowed(transitions, from, to, label) {
  */
 async function updateOrderStatus(actor, orderId, { status, reason }) {
   await sequelize.transaction(async (transaction) => {
+    // findForUpdate applies the tenant join, so an order outside the actor's
+    // chain is a 404 before any transition is considered.
     const order = await findForUpdate(actor, orderId, 'status', transaction);
 
-    const current = order.status ? order.status.code : null;
-
-    if (current === status) return;
-
-    assertTransitionAllowed(ORDER_TRANSITIONS, current, status, 'status');
-
-    const newStatusId = await resolveStatusId('order', status, transaction);
-    const previousStatusId = order.statusId;
-
-    await order.update(
-      {
-        statusId: newStatusId,
-        // The moment the customer got the food. Only meaningful on this one
-        // transition, and never cleared: the transitions out of `delivered` are
-        // empty, so it cannot be reached twice.
-        ...(status === ORDER_STATUSES.DELIVERED ? { deliveredAt: new Date() } : {}),
-      },
-      { transaction }
-    );
-
-    await models.OrderStatusLog.create(
-      {
-        orderId: order.id,
-        previousStatusId,
-        newStatusId,
-        changedByUserId: actor.id,
-        reason: reason ?? null,
-      },
-      { transaction }
+    // The graph, the compare-and-set and the audit row all live in
+    // fulfilment.service. The KDS calls the same function with the same
+    // guarantees - this path holds no transition logic of its own.
+    await fulfilmentService.applyStatusTransition(
+      { order, targetStatus: status, actorId: actor.id, reason: reason ?? null },
+      transaction
     );
   });
 
@@ -810,7 +785,30 @@ async function updatePaymentStatus(actor, orderId, { paymentStatus, reason }) {
     const newStatusId = await resolveStatusId('payment', paymentStatus, transaction);
     const previousStatusId = order.paymentStatusId;
 
-    await order.update({ paymentStatusId: newStatusId }, { transaction });
+    // Compare-and-set, for the same reason the fulfilment transition uses one:
+    // a Razorpay webhook can be marking this order paid at the exact moment a
+    // staff member writes it off as failed. Whoever matches the row wins; the
+    // loser is told to refresh rather than silently overwriting the other.
+    const [rowsUpdated] = await models.Order.update(
+      { paymentStatusId: newStatusId },
+      { where: { id: order.id, paymentStatusId: previousStatusId }, transaction }
+    );
+
+    if (rowsUpdated !== 1) {
+      throw new ConflictError('This order was updated by someone else. Refresh and try again.', {
+        from: current,
+        to: paymentStatus,
+        concurrent: true,
+      });
+    }
+
+    // A counter order paid in cash never touches Razorpay, so it never reaches
+    // the post-payment seam - but it is just as ready for the kitchen as a
+    // gateway payment is. Same idempotent function as the seam calls, so there
+    // is one implementation of "payment starts fulfilment", not two.
+    if (paymentStatus === PAYMENT_STATUSES.PAID) {
+      await fulfilmentService.confirmOnPayment(order.id, transaction);
+    }
 
     await models.PaymentStatusLog.create(
       {

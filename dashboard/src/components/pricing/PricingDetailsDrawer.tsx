@@ -79,7 +79,7 @@ export default function PricingDetailsDrawer({
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={480}
+      size={480}
       title="Price"
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

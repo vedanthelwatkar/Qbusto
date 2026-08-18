@@ -283,7 +283,7 @@ export default function CinemasPage() {
     query.isActive !== undefined;
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Cinemas"
         description="Each belongs to one chain, and its code is what appears in QR ordering URLs"

@@ -64,7 +64,7 @@ export default function CinemaDetailsDrawer({
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={480}
+      size={480}
       title={cinema?.name ?? 'Cinema'}
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

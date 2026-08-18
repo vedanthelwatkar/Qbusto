@@ -28,6 +28,7 @@
 
 const { models } = require('../config/database');
 const { PAYMENT_STATUSES } = require('../constants');
+const fulfilmentService = require('./fulfilment.service');
 
 /** Resolve a payment status code to its id. */
 async function resolvePaymentStatusId(code, transaction) {
@@ -103,6 +104,18 @@ async function applyPaidTransition({ orderId, razorpayPaymentId = null, reason }
   // it to "a webhook arrived" or "verify was called" instead of "the row
   // moved" is what produces two kitchen tickets for one payment.
   // =============================================================
+
+  // The order becomes work for the kitchen. This is the KDS "ticket": there is
+  // no separate kitchen queue table, so the ticket is the order itself moving
+  // initiated -> confirmed, which is what makes it visible to the KDS.
+  //
+  // Deliberately attached here and not in razorpaywebhook.service, not in
+  // paymentVerify and not in reconciliation. Those are three ways of finding
+  // out about ONE payment; this line runs once regardless of which of them got
+  // there first, so a webhook retry racing the browser cannot produce two
+  // tickets. confirmOnPayment is itself a compare-and-set on `initiated`, so
+  // an order a human already confirmed or rejected is left alone.
+  await fulfilmentService.confirmOnPayment(orderId, transaction);
 
   return { transitioned: true };
 }

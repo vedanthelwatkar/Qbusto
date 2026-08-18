@@ -39,7 +39,7 @@ export default function DashboardLayout() {
       {isMobile ? (
         <Drawer
           placement="left"
-          width={240}
+          size={240}
           open={navDrawerOpen}
           onClose={() => setNavDrawerOpen(false)}
           closable={false}

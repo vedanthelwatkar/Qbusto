@@ -432,6 +432,90 @@ const definition = {
           },
         },
       },
+      KitchenOrder: {
+        type: 'object',
+        description:
+          'An order as a kitchen screen sees it. Deliberately narrower than `Order`: ' +
+          'a KDS hangs on a wall where anyone can read it, so customer mobile, ' +
+          'customer email and the razorpay_* identifiers are not included. ' +
+          'Only orders that are paid and in a kitchen-owned fulfilment status are ' +
+          'ever returned. Money is a JSON number, as elsewhere in this API.',
+        properties: {
+          id: {
+            type: 'integer',
+            example: 128,
+            description: 'Also the token number a cook calls out - the schema has no separate one.',
+          },
+          status: {
+            type: 'string',
+            enum: ['confirmed', 'preparing', 'ready', 'delivered'],
+            example: 'preparing',
+            description: 'Fulfilment status code. Independent of paymentStatus.',
+          },
+          paymentStatus: {
+            type: 'string',
+            example: 'paid',
+            description:
+              'Always `paid` in practice, since nothing else is eligible. Returned so a ' +
+              'screen can display it rather than assert it.',
+          },
+          source: {
+            type: 'string',
+            nullable: true,
+            enum: ['qr', 'seat_qr', 'kiosk', 'counter'],
+            example: 'seat_qr',
+          },
+          seatNumber: { type: 'string', nullable: true, example: 'G12' },
+          filmTitle: { type: 'string', nullable: true, example: 'Avengers Endgame' },
+          showTime: { type: 'string', format: 'date-time', nullable: true },
+          notes: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Order-level special instructions. The schema has no per-item modifier ' +
+              'or combo composition, so this is the only free text an order carries.',
+          },
+          total: { type: 'number', format: 'double', example: 450 },
+          cinema: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              id: { type: 'integer' },
+              name: { type: 'string' },
+            },
+          },
+          screen: {
+            type: 'object',
+            nullable: true,
+            description: 'Null for counter and kiosk orders, which are not screen-specific.',
+            properties: {
+              id: { type: 'integer' },
+              name: { type: 'string', example: 'Audi 3' },
+            },
+          },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'integer' },
+                productId: { type: 'integer' },
+                productName: { type: 'string', example: 'Large Popcorn' },
+                quantity: { type: 'integer', example: 2 },
+                unitPrice: { type: 'number', format: 'double' },
+                total: { type: 'number', format: 'double' },
+              },
+            },
+          },
+          placedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: "The order's created_at. Elapsed time is derived from this client-side.",
+          },
+          updatedAt: { type: 'string', format: 'date-time' },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
       OrderStatusLog: {
         type: 'object',
         description:

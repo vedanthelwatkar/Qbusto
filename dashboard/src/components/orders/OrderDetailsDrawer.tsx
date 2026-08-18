@@ -1,28 +1,28 @@
 /**
- * Order details drawer.
+ * Read-only view of one order, plus the staff transition controls.
  *
- * Shows complete read-only order snapshot:
- * - Order info (ID, cinema, screen, customer, source, show, notes)
- * - Items as immutable snapshots (productName, quantity, unitPrice, discounts, lineTotals)
- * - Subtotal, total, delivered-at timestamp
- * - Status history in chronological order
- * - Payment status history in chronological order
- * - Action buttons for status/payment transitions (if edit permission)
+ * Mounted only while it is open, so opening it is a fresh mount and the
+ * initial state is the loading state — the same pattern as every other details
+ * drawer in the Dashboard.
+ *
+ * Order items are immutable snapshots taken when the order was placed:
+ * productName, unitPrice and discount are frozen, so renaming or repricing a
+ * product later cannot rewrite what the customer was charged.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
   Descriptions,
   Drawer,
-  Divider,
   Empty,
+  Skeleton,
   Space,
-  Spin,
   Table,
   Tag,
   Timeline,
+  Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -35,13 +35,21 @@ import type {
 import { formatMoney } from '@/components/pricing/money';
 import OrderStatusTransitionModal from '@/components/orders/OrderStatusTransitionModal';
 import OrderPaymentTransitionModal from '@/components/orders/OrderPaymentTransitionModal';
+import {
+  orderSourceLabel,
+  orderStatusColor,
+  paymentStatusColor,
+} from '@/components/orders/statusPresentation';
 import { toApiError } from '@/services/api';
 import * as ordersService from '@/services/orders.service';
+
+const { Text } = Typography;
 
 interface OrderDetailsDrawerProps {
   orderId: number;
   onClose: () => void;
-  onTransitionComplete: () => void;
+  /** Tells the parent list to re-read, so the table row matches the drawer. */
+  onOrderChanged: () => void;
   canEdit: boolean;
   orderStatuses: OrderStatus[];
   paymentStatuses: OrderStatus[];
@@ -50,273 +58,345 @@ interface OrderDetailsDrawerProps {
 export default function OrderDetailsDrawer({
   orderId,
   onClose,
-  onTransitionComplete,
+  onOrderChanged,
   canEdit,
   orderStatuses,
   paymentStatuses,
 }: OrderDetailsDrawerProps) {
-  const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [statusTransitionOpen, setStatusTransitionOpen] = useState(false);
   const [paymentTransitionOpen, setPaymentTransitionOpen] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      setError(null);
-      try {
-        const data = await ordersService.getOrder(orderId);
-        setOrder(data);
-      } catch (err) {
-        setError(toApiError(err).message);
+  /** Closes itself, then tells the parent, so the slide-out animation runs. */
+  const [visible, setVisible] = useState(true);
+
+  /**
+   * One load path, used by the initial fetch and by Try again alike.
+   *
+   * The token guards against an out-of-order response: `orderId` is a prop, so
+   * opening a different order while a slow request is in flight would
+   * otherwise let the older response overwrite the newer order.
+   */
+  const requestRef = useRef(0);
+
+  const load = useCallback(() => {
+    const token = ++requestRef.current;
+
+    // State is settled in the callbacks rather than before the request. The
+    // initial state is already the loading state, so the mount path has
+    // nothing to reset, and setting it synchronously here would make this a
+    // cascading render inside the effect below.
+    return ordersService.getOrder(orderId).then(
+      (loaded) => {
+        if (token !== requestRef.current) return;
+        setOrder(loaded);
+        setLoading(false);
+      },
+      (caught: unknown) => {
+        if (token !== requestRef.current) return;
+        setError(toApiError(caught).message);
+        setLoading(false);
       }
-    })();
+    );
   }, [orderId]);
 
-  if (!order) {
-    return (
-      <Drawer title={`Order ${orderId}`} onClose={onClose} width={800}>
-        {error ? (
-          <Alert message="Error loading order" description={error} type="error" />
-        ) : (
-          <Spin />
-        )}
-      </Drawer>
-    );
-  }
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Retry is a user action, so it owns putting the view back into loading. */
+  const retry = () => {
+    setError(null);
+    setLoading(true);
+    void load();
+  };
+
+  /**
+   * A transition succeeded.
+   *
+   * The drawer stays open showing the order the SERVER returned, rather than
+   * closing or re-deriving it locally. If another user moved the order first,
+   * what lands here is the state it is actually in.
+   */
+  const handleTransitioned = (updated: OrderDetail) => {
+    setOrder(updated);
+    onOrderChanged();
+  };
 
   const itemColumns: ColumnsType<OrderItem> = [
     {
       title: 'Product',
       dataIndex: 'productName',
       key: 'productName',
-      render: (name: string) => <span>{name}</span>,
     },
     {
       title: 'Qty',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: 60,
+      width: 70,
       align: 'center',
     },
     {
-      title: 'Unit Price',
+      title: 'Unit price',
       dataIndex: 'unitPrice',
       key: 'unitPrice',
-      width: 100,
-      render: (price: number) => formatMoney(price),
+      width: 110,
+      align: 'right',
+      render: (price: OrderItem['unitPrice']) => formatMoney(price),
     },
     {
+      // `discount` and `total`, as the API names them. These columns previously
+      // read `discountValue` and `lineTotal`, which the order item has never
+      // carried, so both rendered empty for every line.
       title: 'Discount',
-      dataIndex: 'discountValue',
-      key: 'discountValue',
-      width: 100,
-      render: (discount: number | null | undefined) =>
-        discount ? `-${formatMoney(discount)}` : '—',
+      dataIndex: 'discount',
+      key: 'discount',
+      width: 110,
+      align: 'right',
+      render: (discount: OrderItem['discount']) =>
+        discount ? `-${formatMoney(discount)}` : <Text type="secondary">-</Text>,
     },
     {
-      title: 'Line Total',
-      dataIndex: 'lineTotal',
-      key: 'lineTotal',
-      width: 100,
-      render: (total: number) => formatMoney(total),
+      title: 'Line total',
+      dataIndex: 'total',
+      key: 'total',
+      width: 110,
+      align: 'right',
+      render: (total: OrderItem['total']) => formatMoney(total),
     },
   ];
 
-  const currentStatusLabel = order.statusDetail?.name ?? order.status ?? '—';
-  const currentPaymentStatusLabel = order.paymentStatusDetail?.name ?? order.paymentStatus ?? '—';
+  const statusLabel = order?.statusDetail?.name ?? order?.status ?? '-';
+  const paymentLabel = order?.paymentStatusDetail?.name ?? order?.paymentStatus ?? '-';
 
   return (
     <Drawer
-      title={`Order #${order.id}`}
-      onClose={onClose}
-      width={800}
-      bodyStyle={{ overflow: 'auto' }}
+      open={visible}
+      onClose={() => setVisible(false)}
+      afterOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      size={840}
+      title={`Order #${orderId}`}
     >
-      {error && (
-        <Alert message="Error" description={error} type="error" style={{ marginBottom: 16 }} />
-      )}
-
-      {/* Order Info */}
-      <Descriptions title="Order Information" column={2} bordered size="small">
-        <Descriptions.Item label="Order ID">{order.id}</Descriptions.Item>
-        <Descriptions.Item label="Cinema">{order.cinema?.name}</Descriptions.Item>
-        <Descriptions.Item label="Screen">{order.screen?.name}</Descriptions.Item>
-        <Descriptions.Item label="Source">{order.source || '—'}</Descriptions.Item>
-        {order.customerMobile && (
-          <Descriptions.Item label="Customer Mobile">{order.customerMobile}</Descriptions.Item>
-        )}
-        {order.customerEmail && (
-          <Descriptions.Item label="Customer Email">{order.customerEmail}</Descriptions.Item>
-        )}
-        {order.filmTitle && <Descriptions.Item label="Film">{order.filmTitle}</Descriptions.Item>}
-        {order.seatNumber && <Descriptions.Item label="Seat">{order.seatNumber}</Descriptions.Item>}
-      </Descriptions>
-
-      <Divider />
-
-      {/* Items */}
-      <h3>Order Items (Snapshot)</h3>
-      <Table
-        columns={itemColumns}
-        dataSource={order.items}
-        rowKey="id"
-        pagination={false}
-        size="small"
-        bordered
-      />
-
-      <Divider />
-
-      {/* Totals */}
-      <Descriptions column={1} size="small">
-        <Descriptions.Item label="Subtotal">{formatMoney(order.subtotal ?? 0)}</Descriptions.Item>
-        <Descriptions.Item label="Discount">{formatMoney(order.discount ?? 0)}</Descriptions.Item>
-        <Descriptions.Item label="Total">
-          <strong>{formatMoney(order.total ?? 0)}</strong>
-        </Descriptions.Item>
-      </Descriptions>
-
-      <Divider />
-
-      {/* Status Controls */}
-      <div style={{ marginBottom: 24 }}>
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <div>
-            <strong>Order Status:</strong>{' '}
-            <Tag color={getStatusColor(order.status ?? '')}>{currentStatusLabel}</Tag>
-          </div>
-          {canEdit && (
-            <Button onClick={() => setStatusTransitionOpen(true)}>Change Order Status</Button>
-          )}
-        </Space>
-      </div>
-
-      {/* Payment Status Controls */}
-      <div style={{ marginBottom: 24 }}>
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <div>
-            <strong>Payment Status:</strong>{' '}
-            <Tag color={getPaymentStatusColor(order.paymentStatus ?? '')}>
-              {currentPaymentStatusLabel}
-            </Tag>
-          </div>
-          {canEdit && (
-            <Button onClick={() => setPaymentTransitionOpen(true)}>Change Payment Status</Button>
-          )}
-        </Space>
-      </div>
-
-      <Divider />
-
-      {/* Status History */}
-      <h3>Order Status History</h3>
-      {order.statusLogs && order.statusLogs.length > 0 ? (
-        <Timeline
-          items={order.statusLogs.map((log: OrderStatusLog) => {
-            const status = orderStatuses.find((s) => s.code === log.newStatus);
-            const timestamp = log.createdAt ? new Date(log.createdAt).toLocaleString() : '—';
-            return {
-              label: timestamp,
-              children: (
-                <div>
-                  <strong>{status?.name ?? log.newStatus}</strong>
-                  {log.reason && (
-                    <div style={{ fontSize: 12, color: '#888' }}>Reason: {log.reason}</div>
-                  )}
-                </div>
-              ),
-            };
-          })}
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message={error}
+          className="form-alert"
+          action={
+            <Button size="small" onClick={retry}>
+              Try again
+            </Button>
+          }
         />
-      ) : (
-        <Empty />
-      )}
+      ) : null}
 
-      <Divider />
+      {loading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
 
-      {/* Payment Status History */}
-      <h3>Payment Status History</h3>
-      {order.paymentStatusLogs && order.paymentStatusLogs.length > 0 ? (
-        <Timeline
-          items={order.paymentStatusLogs.map((log: OrderStatusLog) => {
-            const status = paymentStatuses.find((s) => s.code === log.newStatus);
-            const timestamp = log.createdAt ? new Date(log.createdAt).toLocaleString() : '—';
-            return {
-              label: timestamp,
-              children: (
-                <div>
-                  <strong>{status?.name ?? log.newStatus}</strong>
-                  {log.reason && (
-                    <div style={{ fontSize: 12, color: '#888' }}>Reason: {log.reason}</div>
-                  )}
-                </div>
-              ),
-            };
-          })}
-        />
-      ) : (
-        <Empty />
-      )}
+      {order ? (
+        <>
+          <Descriptions column={2} size="small" bordered>
+            <Descriptions.Item label="Order ID">#{order.id}</Descriptions.Item>
+            <Descriptions.Item label="Placed">
+              {order.createdAt ? new Date(order.createdAt).toLocaleString() : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Cinema">
+              {order.cinema?.name ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="Screen">
+              {order.screen?.name ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="Source">{orderSourceLabel(order.source)}</Descriptions.Item>
+            <Descriptions.Item label="Seat">
+              {order.seatNumber ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="Film">
+              {order.filmTitle ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="Show time">
+              {order.showTime ? new Date(order.showTime).toLocaleString() : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Customer mobile">
+              {order.customerMobile ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="Customer email">
+              {order.customerEmail ?? <Text type="secondary">-</Text>}
+            </Descriptions.Item>
+            {order.deliveredAt ? (
+              <Descriptions.Item label="Delivered" span={2}>
+                {new Date(order.deliveredAt).toLocaleString()}
+              </Descriptions.Item>
+            ) : null}
+            {order.notes ? (
+              <Descriptions.Item label="Notes" span={2}>
+                <span className="details-drawer__text">{order.notes}</span>
+              </Descriptions.Item>
+            ) : null}
+          </Descriptions>
 
-      {/* Transition Modals */}
-      {statusTransitionOpen && order.status && (
+          <div className="details-drawer__section">
+            <Typography.Title level={5}>Items</Typography.Title>
+            <Table<OrderItem>
+              columns={itemColumns}
+              dataSource={order.items ?? []}
+              rowKey={(item) => String(item.id)}
+              pagination={false}
+              size="small"
+              locale={{
+                emptyText: (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No items recorded" />
+                ),
+              }}
+              summary={() => (
+                <Table.Summary>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={4} align="right">
+                      Subtotal
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right">
+                      {formatMoney(order.subtotal)}
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={4} align="right">
+                      Discount
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right">
+                      {order.discount ? `-${formatMoney(order.discount)}` : formatMoney(0)}
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={4} align="right">
+                      <strong>Total</strong>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right">
+                      <strong>{formatMoney(order.total)}</strong>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )}
+            />
+          </div>
+
+          <div className="details-drawer__section">
+            <Typography.Title level={5}>Status</Typography.Title>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="Order status">
+                <Space>
+                  <Tag color={orderStatusColor(order.status)}>{statusLabel}</Tag>
+                  {canEdit ? (
+                    <Button size="small" onClick={() => setStatusTransitionOpen(true)}>
+                      Change
+                    </Button>
+                  ) : null}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="Payment status">
+                <Space>
+                  <Tag color={paymentStatusColor(order.paymentStatus)}>{paymentLabel}</Tag>
+                  {canEdit ? (
+                    <Button size="small" onClick={() => setPaymentTransitionOpen(true)}>
+                      Change
+                    </Button>
+                  ) : null}
+                </Space>
+              </Descriptions.Item>
+              {/*
+                Shown only when a gateway payment was actually started. It is
+                reference for staff checking against the Razorpay dashboard;
+                nothing here acts on it.
+              */}
+              {order.razorpayOrderId ? (
+                <Descriptions.Item label="Razorpay order">
+                  <Text copyable>{order.razorpayOrderId}</Text>
+                </Descriptions.Item>
+              ) : null}
+              {order.razorpayPaymentId ? (
+                <Descriptions.Item label="Razorpay payment">
+                  <Text copyable>{order.razorpayPaymentId}</Text>
+                </Descriptions.Item>
+              ) : null}
+            </Descriptions>
+          </div>
+
+          <div className="details-drawer__section">
+            <Typography.Title level={5}>Order status history</Typography.Title>
+            <StatusTimeline logs={order.statusLogs} statuses={orderStatuses} />
+          </div>
+
+          <div className="details-drawer__section">
+            <Typography.Title level={5}>Payment status history</Typography.Title>
+            <StatusTimeline logs={order.paymentStatusLogs} statuses={paymentStatuses} />
+          </div>
+        </>
+      ) : null}
+
+      {/*
+        Guarded on a loaded order with a known status: without a current status
+        there is no transition graph to offer, and the modal would render an
+        empty control.
+      */}
+      {statusTransitionOpen && order?.id !== undefined && order.status ? (
         <OrderStatusTransitionModal
-          orderId={order.id ?? 0}
+          orderId={order.id}
           currentStatus={order.status}
           orderStatuses={orderStatuses}
           onClose={() => setStatusTransitionOpen(false)}
-          onSuccess={() => {
-            onTransitionComplete();
-          }}
+          onSuccess={handleTransitioned}
         />
-      )}
+      ) : null}
 
-      {paymentTransitionOpen && order.paymentStatus && (
+      {paymentTransitionOpen && order?.id !== undefined && order.paymentStatus ? (
         <OrderPaymentTransitionModal
-          orderId={order.id ?? 0}
+          orderId={order.id}
           currentPaymentStatus={order.paymentStatus}
           paymentStatuses={paymentStatuses}
           razorpayOrderId={order.razorpayOrderId}
           onClose={() => setPaymentTransitionOpen(false)}
-          onSuccess={() => {
-            onTransitionComplete();
-          }}
+          onSuccess={handleTransitioned}
         />
-      )}
+      ) : null}
     </Drawer>
   );
 }
 
-function getStatusColor(code: string): string {
-  switch (code) {
-    case 'initiated':
-      return 'blue';
-    case 'confirmed':
-      return 'cyan';
-    case 'preparing':
-      return 'orange';
-    case 'ready':
-      return 'green';
-    case 'delivered':
-      return 'green';
-    case 'rejected':
-      return 'red';
-    default:
-      return 'default';
+/** One audit trail, oldest first, as the API returns it. */
+function StatusTimeline({
+  logs,
+  statuses,
+}: {
+  logs: OrderStatusLog[] | undefined;
+  statuses: OrderStatus[];
+}) {
+  if (!logs || logs.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No changes recorded" />;
   }
-}
 
-function getPaymentStatusColor(code: string): string {
-  switch (code) {
-    case 'pending':
-      return 'orange';
-    case 'paid':
-      return 'green';
-    case 'failed':
-      return 'red';
-    case 'refunded':
-      return 'blue';
-    default:
-      return 'default';
-  }
+  return (
+    <Timeline
+      mode="left"
+      items={logs.map((log) => ({
+        children: (
+          <div>
+            <strong>{statuses.find((s) => s.code === log.newStatus)?.name ?? log.newStatus}</strong>
+            <div>
+              <Text type="secondary">
+                {log.createdAt ? new Date(log.createdAt).toLocaleString() : '-'}
+              </Text>
+            </div>
+            {log.reason ? (
+              <div>
+                <Text type="secondary">Reason: {log.reason}</Text>
+              </div>
+            ) : null}
+          </div>
+        ),
+      }))}
+    />
+  );
 }

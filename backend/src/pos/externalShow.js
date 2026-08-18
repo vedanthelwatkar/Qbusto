@@ -27,7 +27,7 @@
  * `showTimeLocal` is the provider's cinema-local wall clock, exactly as the POS
  * expressed it, with no offset attached and no conversion applied. Conversion
  * to a UTC instant happens once, centrally, in the Phase B5 sync service, so
- * two providers cannot drift apart (CLAUDE.md §14).
+ * two providers cannot drift apart, per the adapter-boundary rule.
  *
  * `normalizeExternalShow` enforces this rather than merely documenting it: a
  * value carrying a `Z` or a `+05:30`, or a JavaScript `Date` (which is an

@@ -1,21 +1,22 @@
 /**
  * Orders management page.
  *
- * Staff-facing interface for viewing, searching and filtering orders.
- * All filtering, sorting and pagination is server-side - the query object in
+ * Filtering, sorting and pagination are all server-side: the query object in
  * the store is the single source of truth for what GET /api/orders is asked
  * for, and the table never re-sorts or re-filters what it was sent.
  *
- * Clicking a row or its View action opens the details drawer (Task 4),
- * which loads the full order snapshot on demand rather than expanding the
- * list response.
+ * Orders are never created here — they arrive from the Consumer app or the
+ * counter — so this page has no "New order" action. What staff can do is find
+ * an order and move its status, which happens in the details drawer.
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Empty, Input, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { Alert, Button, Card, DatePicker, Empty, Input, Select, Space, Table, Tag } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
-import { EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 
 import type { GetApiOrdersParams, Order } from '@/api/generated/cinemaOrderingAPI.schemas';
 import PageHeader from '@/components/PageHeader';
@@ -23,9 +24,17 @@ import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import ScreenSelect from '@/components/screens/ScreenSelect';
 import { formatMoney } from '@/components/pricing/money';
 import OrderDetailsDrawer from '@/components/orders/OrderDetailsDrawer';
+import {
+  ORDER_SOURCES,
+  orderSourceLabel,
+  orderStatusColor,
+  paymentStatusColor,
+} from '@/components/orders/statusPresentation';
 import { useAuthStore } from '@/stores/auth.store';
 import { useOrdersStore } from '@/stores/orders.store';
 import { hasPermission } from '@/utils/permissions';
+
+const { RangePicker } = DatePicker;
 
 /** The fields GET /api/orders accepts for `sort` (GetApiOrdersSort). */
 const SORTABLE = new Set<string>([
@@ -43,14 +52,6 @@ const SORT_ORDER: Record<string, GetApiOrdersParams['order']> = {
   descend: 'desc',
 };
 
-/** GetApiOrdersSource values, with a display label. */
-const ORDER_SOURCES = [
-  { label: 'QR', value: 'qr' },
-  { label: 'Seat QR', value: 'seat_qr' },
-  { label: 'Kiosk', value: 'kiosk' },
-  { label: 'Counter', value: 'counter' },
-];
-
 export default function OrdersPage() {
   const actor = useAuthStore((state) => state.user);
 
@@ -67,6 +68,16 @@ export default function OrdersPage() {
   const reset = useOrdersStore((state) => state.reset);
 
   const [detailsId, setDetailsId] = useState<number | undefined>();
+
+  /**
+   * Remounts the filter controls when the user clears them.
+   *
+   * The search box and date range are uncontrolled — the established pattern
+   * for search on every other page — so clearing the store's query is not
+   * enough to empty what is on screen. Changing the key discards the old
+   * inputs rather than reaching into them.
+   */
+  const [filterKey, setFilterKey] = useState(0);
 
   const canView = hasPermission(actor, 'Orders', 'read');
   const canEdit = hasPermission(actor, 'Orders', 'edit');
@@ -103,33 +114,77 @@ export default function OrdersPage() {
     });
   };
 
+  /**
+   * The API bounds `createdAt` with two ISO instants and requires
+   * `createdTo > createdFrom`. A day picked in the browser therefore has to
+   * cover the whole day, or an order placed in the afternoon of the end date
+   * would fall outside a range that visually includes it.
+   */
+  const handleDateRange = (range: [Dayjs | null, Dayjs | null] | null) => {
+    const [from, to] = range ?? [null, null];
+
+    setQuery({
+      createdFrom: from ? from.startOf('day').toISOString() : undefined,
+      createdTo: to ? to.endOf('day').toISOString() : undefined,
+    });
+  };
+
+  const clearFilters = () => {
+    setQuery({
+      search: undefined,
+      cinemaId: undefined,
+      screenId: undefined,
+      status: undefined,
+      paymentStatus: undefined,
+      source: undefined,
+      createdFrom: undefined,
+      createdTo: undefined,
+    });
+    setFilterKey((key) => key + 1);
+  };
+
+  const filtersApplied = Boolean(
+    query.search ||
+    query.cinemaId ||
+    query.screenId ||
+    query.status ||
+    query.paymentStatus ||
+    query.source ||
+    query.createdFrom ||
+    query.createdTo
+  );
+
   const columns: ColumnsType<Order> = [
     {
-      title: 'Order ID',
+      title: 'Order',
       dataIndex: 'id',
       key: 'id',
-      width: 90,
+      width: 100,
       sorter: true,
-      render: (id: number) => <code>{id}</code>,
+      // The identifying column opens the details view, as on every other page.
+      render: (_, order) => (
+        <Button type="link" className="table-link" onClick={() => setDetailsId(order.id)}>
+          #{order.id}
+        </Button>
+      ),
     },
     {
       title: 'Cinema',
       key: 'cinemaId',
       sorter: true,
-      render: (_: unknown, record: Order) =>
-        record.cinema?.name ?? (record.cinemaId ? `Cinema ${record.cinemaId}` : '-'),
+      render: (_, order) => order.cinema?.name ?? '-',
     },
     {
       title: 'Screen',
       key: 'screenId',
-      render: (_: unknown, record: Order) =>
-        record.screen?.name ?? (record.screenId ? `Screen ${record.screenId}` : '-'),
+      render: (_, order) => order.screen?.name ?? '-',
     },
     {
       title: 'Items',
       dataIndex: 'items',
       key: 'items',
-      width: 70,
+      width: 80,
+      align: 'right',
       render: (items: Order['items']) => items?.length ?? 0,
     },
     {
@@ -137,26 +192,27 @@ export default function OrdersPage() {
       dataIndex: 'total',
       key: 'total',
       width: 110,
+      align: 'right',
       sorter: true,
       render: (total: Order['total']) => formatMoney(total),
     },
     {
-      title: 'Order Status',
+      title: 'Order status',
       key: 'status',
       width: 130,
-      render: (_: unknown, record: Order) => (
-        <Tag color={getStatusColor(record.status)}>
-          {record.statusDetail?.name ?? record.status ?? 'Unknown'}
+      render: (_, order) => (
+        <Tag color={orderStatusColor(order.status)}>
+          {order.statusDetail?.name ?? order.status ?? 'Unknown'}
         </Tag>
       ),
     },
     {
-      title: 'Payment Status',
+      title: 'Payment',
       key: 'paymentStatus',
-      width: 130,
-      render: (_: unknown, record: Order) => (
-        <Tag color={getPaymentStatusColor(record.paymentStatus)}>
-          {record.paymentStatusDetail?.name ?? record.paymentStatus ?? 'Unknown'}
+      width: 120,
+      render: (_, order) => (
+        <Tag color={paymentStatusColor(order.paymentStatus)}>
+          {order.paymentStatusDetail?.name ?? order.paymentStatus ?? 'Unknown'}
         </Tag>
       ),
     },
@@ -164,117 +220,126 @@ export default function OrdersPage() {
       title: 'Source',
       dataIndex: 'source',
       key: 'source',
-      width: 100,
-      render: (source: Order['source']) =>
-        ORDER_SOURCES.find((s) => s.value === source)?.label ?? source ?? '-',
+      width: 110,
+      render: (source: Order['source']) => orderSourceLabel(source),
     },
     {
-      title: 'Created At',
+      title: 'Placed',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 170,
+      width: 180,
       sorter: true,
       defaultSortOrder: 'descend',
       render: (date: Order['createdAt']) => (date ? new Date(date).toLocaleString() : '-'),
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 90,
-      render: (_: unknown, record: Order) => (
-        <Button
-          type="text"
-          size="small"
-          icon={<EyeOutlined />}
-          onClick={() => setDetailsId(record.id)}
-        >
-          View
-        </Button>
-      ),
-    },
   ];
 
   return (
-    <>
-      <PageHeader title="Orders" description="View and manage orders" />
+    <Space orientation="vertical" size="large" className="stack">
+      <PageHeader
+        title="Orders"
+        description="Every order placed at your cinemas, and its fulfilment and payment state"
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={() => void fetch()} loading={loading}>
+            Refresh
+          </Button>
+        }
+      />
 
       <Card>
+        <Space className="filters" size="middle" wrap>
+          <Input.Search
+            key={`search-${filterKey}`}
+            allowClear
+            placeholder="Search order ID, email, mobile, seat or film"
+            defaultValue={query.search}
+            onSearch={(value) => setQuery({ search: value || undefined })}
+            style={{ width: 300 }}
+          />
+
+          <CinemaSelect
+            allowClear
+            placeholder="Any cinema"
+            value={query.cinemaId}
+            // Screen is meaningless without its cinema, so changing the cinema
+            // drops a screen filter that would otherwise silently exclude
+            // everything.
+            onChange={(cinemaId) =>
+              setQuery({ cinemaId: cinemaId ?? undefined, screenId: undefined })
+            }
+            style={{ width: 200 }}
+          />
+
+          <ScreenSelect
+            cinemaId={query.cinemaId}
+            allowClear
+            placeholder="Any screen"
+            value={query.screenId}
+            onChange={(screenId) => setQuery({ screenId: screenId ?? undefined })}
+            disabled={!query.cinemaId}
+            style={{ width: 180 }}
+          />
+
+          <Select
+            allowClear
+            placeholder="Any order status"
+            value={query.status}
+            onChange={(status) => setQuery({ status })}
+            options={orderStatuses.map((status) => ({ label: status.name, value: status.code }))}
+            style={{ width: 170 }}
+          />
+
+          <Select
+            allowClear
+            placeholder="Any payment status"
+            value={query.paymentStatus}
+            onChange={(paymentStatus) => setQuery({ paymentStatus })}
+            options={paymentStatuses.map((status) => ({ label: status.name, value: status.code }))}
+            style={{ width: 180 }}
+          />
+
+          <Select
+            allowClear
+            placeholder="Any source"
+            value={query.source}
+            onChange={(source) => setQuery({ source })}
+            options={ORDER_SOURCES.map((entry) => ({ label: entry.label, value: entry.value }))}
+            style={{ width: 150 }}
+          />
+
+          <RangePicker
+            key={`dates-${filterKey}`}
+            allowEmpty={[true, true]}
+            placeholder={['Placed from', 'Placed to']}
+            defaultValue={
+              query.createdFrom || query.createdTo
+                ? [
+                    query.createdFrom ? dayjs(query.createdFrom) : null,
+                    query.createdTo ? dayjs(query.createdTo) : null,
+                  ]
+                : undefined
+            }
+            onChange={handleDateRange}
+          />
+
+          <Button onClick={clearFilters} disabled={!filtersApplied}>
+            Clear filters
+          </Button>
+        </Space>
+
         {error ? (
           <Alert
-            message="Could not load orders"
-            description={error}
             type="error"
             showIcon
-            closable
+            message={error}
+            className="form-alert"
             action={
               <Button size="small" onClick={() => void fetch()}>
                 Try again
               </Button>
             }
-            style={{ marginBottom: 16 }}
           />
         ) : null}
-
-        <Space style={{ marginBottom: 16 }} wrap>
-          <Input
-            placeholder="Search by order ID, email, mobile, seat, film"
-            allowClear
-            style={{ width: 260 }}
-            value={query.search ?? ''}
-            onChange={(e) => setQuery({ search: e.target.value || undefined })}
-          />
-
-          <CinemaSelect
-            placeholder="Filter by cinema"
-            allowClear
-            style={{ width: 200 }}
-            value={query.cinemaId}
-            onChange={(cinemaId) =>
-              setQuery({ cinemaId: cinemaId ?? undefined, screenId: undefined })
-            }
-          />
-
-          <ScreenSelect
-            cinemaId={query.cinemaId}
-            placeholder="Filter by screen"
-            allowClear
-            style={{ width: 200 }}
-            value={query.screenId}
-            onChange={(screenId) => setQuery({ screenId: screenId ?? undefined })}
-            disabled={!query.cinemaId}
-          />
-
-          <Select
-            placeholder="Order Status"
-            allowClear
-            style={{ width: 160 }}
-            value={query.status}
-            onChange={(status) => setQuery({ status })}
-            options={orderStatuses.map((s) => ({ label: s.name, value: s.code }))}
-          />
-
-          <Select
-            placeholder="Payment Status"
-            allowClear
-            style={{ width: 160 }}
-            value={query.paymentStatus}
-            onChange={(paymentStatus) => setQuery({ paymentStatus })}
-            options={paymentStatuses.map((s) => ({ label: s.name, value: s.code }))}
-          />
-
-          <Select
-            placeholder="Source"
-            allowClear
-            style={{ width: 140 }}
-            value={query.source}
-            onChange={(source) => setQuery({ source })}
-            options={ORDER_SOURCES}
-          />
-
-          <Tooltip title="Refresh">
-            <Button icon={<ReloadOutlined />} onClick={() => void fetch()} loading={loading} />
-          </Tooltip>
-        </Space>
 
         <Table<Order>
           rowKey={(order) => String(order.id)}
@@ -283,15 +348,14 @@ export default function OrdersPage() {
           loading={loading}
           onChange={handleTableChange}
           scroll={{ x: 1200 }}
-          onRow={(record) => ({
-            onClick: () => setDetailsId(record.id),
-            style: { cursor: 'pointer' },
-          })}
           locale={{
             emptyText: error ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Could not load orders" />
             ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No orders found" />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={filtersApplied ? 'No orders match these filters' : 'No orders yet'}
+              />
             ),
           }}
           pagination={{
@@ -309,49 +373,14 @@ export default function OrdersPage() {
         <OrderDetailsDrawer
           orderId={detailsId}
           onClose={() => setDetailsId(undefined)}
-          onTransitionComplete={() => {
-            void fetch();
-            setDetailsId(undefined);
-          }}
+          // Re-reads the list so the row matches the drawer. The drawer stays
+          // open showing the order the server returned.
+          onOrderChanged={() => void fetch()}
           canEdit={canEdit}
           orderStatuses={orderStatuses}
           paymentStatuses={paymentStatuses}
         />
       ) : null}
-    </>
+    </Space>
   );
-}
-
-function getStatusColor(code: Order['status']): string {
-  switch (code) {
-    case 'initiated':
-      return 'blue';
-    case 'confirmed':
-      return 'cyan';
-    case 'preparing':
-      return 'orange';
-    case 'ready':
-      return 'gold';
-    case 'delivered':
-      return 'green';
-    case 'rejected':
-      return 'red';
-    default:
-      return 'default';
-  }
-}
-
-function getPaymentStatusColor(code: Order['paymentStatus']): string {
-  switch (code) {
-    case 'pending':
-      return 'orange';
-    case 'paid':
-      return 'green';
-    case 'failed':
-      return 'red';
-    case 'refunded':
-      return 'blue';
-    default:
-      return 'default';
-  }
 }

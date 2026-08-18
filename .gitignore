@@ -44,5 +44,6 @@ backend/scripts/create-dev-user.js
 coverage/
 .cache/
 
-# claude
+# Local tooling / editor state
 .claude/
+scratchpad/

@@ -55,7 +55,7 @@ export default function CategoryDetailsDrawer({ categoryId, onClose }: CategoryD
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={480}
+      size={480}
       title={category?.name ?? 'Category'}
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

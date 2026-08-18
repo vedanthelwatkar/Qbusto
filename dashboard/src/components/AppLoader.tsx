@@ -4,7 +4,7 @@ import { Spin } from 'antd';
 export default function AppLoader({ tip = 'Loading' }: { tip?: string }) {
   return (
     <div className="app-loader">
-      <Spin size="large" tip={tip}>
+      <Spin size="large" description={tip}>
         <div className="app-loader__target" />
       </Spin>
     </div>

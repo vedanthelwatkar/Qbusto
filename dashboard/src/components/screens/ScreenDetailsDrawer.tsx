@@ -64,7 +64,7 @@ export default function ScreenDetailsDrawer({
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={480}
+      size={480}
       title={screen?.name ?? 'Screen'}
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

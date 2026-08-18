@@ -29,6 +29,10 @@ jest.mock('../src/config/database', () => {
     Order: { findOne: jest.fn(), findByPk: jest.fn(), update: jest.fn() },
     PaymentStatus: { findOne: jest.fn() },
     PaymentStatusLog: { create: jest.fn() },
+    // confirmOnPayment runs at the post-payment seam: a paid order becomes work
+    // for the kitchen by moving initiated -> confirmed.
+    OrderStatus: { findOne: jest.fn() },
+    OrderStatusLog: { create: jest.fn() },
     RazorpayWebhookEvent: { findOne: jest.fn(), create: jest.fn() },
   };
 
@@ -145,6 +149,12 @@ beforeEach(() => {
   });
   models.Order.update.mockResolvedValue([1]);
   models.PaymentStatusLog.create.mockResolvedValue({});
+  // The seam's fulfilment side effect. Ids differ from the payment ones so a
+  // test cannot pass by confusing the two tables.
+  models.OrderStatus.findOne.mockImplementation(async ({ where }) =>
+    where.code === 'confirmed' ? { id: 22 } : { id: 21 }
+  );
+  models.OrderStatusLog.create.mockResolvedValue({});
 });
 
 // ---------------------------------------------------------------------------

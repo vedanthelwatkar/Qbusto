@@ -1,28 +1,42 @@
 /**
- * Order status transition modal.
+ * Order status transition.
  *
- * Displays valid next transitions based on the backend transition graph.
- * Initiates the transition via PUT /api/orders/:id/status with status code.
- * Handles errors (409 for invalid transitions, etc).
+ * Offers only the moves the backend's transition graph allows from the order's
+ * current status, so a control is never shown for a request that would be
+ * rejected. The graph below mirrors the server's; the server remains the
+ * authority and its 409 is surfaced verbatim if the two ever disagree — for
+ * instance when another user moved the order while this modal was open.
  */
 
 import { useState } from 'react';
-import { Alert, Modal, Select, Space } from 'antd';
+import { Alert, App, Form, Input, Modal, Select, Typography } from 'antd';
 
-import type { OrderStatus } from '@/api/generated/cinemaOrderingAPI.schemas';
+import type {
+  OrderDetail,
+  OrderStatus,
+  PutApiOrdersIdStatusBody,
+} from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as ordersService from '@/services/orders.service';
+
+type StatusCode = PutApiOrdersIdStatusBody['status'];
 
 interface OrderStatusTransitionModalProps {
   orderId: number;
   currentStatus: string;
   orderStatuses: OrderStatus[];
   onClose: () => void;
-  onSuccess: () => void;
+  /** Receives the updated order exactly as the server returned it. */
+  onSuccess: (updated: OrderDetail) => void;
 }
 
-/** Backend transition graph: which statuses can transition to which */
-const VALID_TRANSITIONS: Record<string, string[]> = {
+/**
+ * Mirrors the fulfilment graph in the backend's fulfilment service.
+ *
+ * `rejected` is reachable from every live state. `delivered` and `rejected`
+ * are terminal — reopening a finished order is not a concept the schema has.
+ */
+const VALID_TRANSITIONS: Record<string, StatusCode[]> = {
   initiated: ['confirmed', 'rejected'],
   confirmed: ['preparing', 'rejected'],
   preparing: ['ready', 'rejected'],
@@ -38,78 +52,102 @@ export default function OrderStatusTransitionModal({
   onClose,
   onSuccess,
 }: OrderStatusTransitionModalProps) {
-  const [nextStatus, setNextStatus] = useState<string | undefined>();
-  const [loading, setLoading] = useState(false);
+  const { message } = App.useApp();
+
+  const [nextStatus, setNextStatus] = useState<StatusCode | undefined>();
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const validTransitions = VALID_TRANSITIONS[currentStatus] ?? [];
-  const currentStatusLabel =
-    orderStatuses.find((s) => s.code === currentStatus)?.name ?? currentStatus;
+  const statusLabel = (code: string) =>
+    orderStatuses.find((entry) => entry.code === code)?.name ?? code;
 
   const handleTransition = async () => {
-    if (!nextStatus) return;
+    // Guards a second confirm while the first is in flight. antd's
+    // confirmLoading disables the button, but a keyboard Enter can still
+    // arrive before the re-render.
+    if (!nextStatus || submitting) return;
 
-    setLoading(true);
+    setSubmitting(true);
     setError(null);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await ordersService.updateOrderStatus(orderId, nextStatus as any);
-      onSuccess();
+      const updated = await ordersService.updateOrderStatus(
+        orderId,
+        nextStatus,
+        reason.trim() || undefined
+      );
+      message.success(`Order #${orderId} moved to ${statusLabel(nextStatus)}`);
+      onSuccess(updated);
       onClose();
-    } catch (err) {
-      const apiError = toApiError(err);
-      setError(apiError.message);
-      setLoading(false);
+    } catch (caught) {
+      // Stays open on failure with the message shown, so the user can adjust
+      // and retry rather than losing what they had selected.
+      setError(toApiError(caught).message);
+      setSubmitting(false);
     }
   };
 
+  const terminal = validTransitions.length === 0;
+
   return (
     <Modal
-      title="Change Order Status"
+      title="Change order status"
       open
       onCancel={onClose}
-      onOk={handleTransition}
-      confirmLoading={loading}
+      onOk={() => void handleTransition()}
+      confirmLoading={submitting}
       okText="Confirm"
-      okButtonProps={{ disabled: !nextStatus }}
+      okButtonProps={{ disabled: !nextStatus || terminal }}
+      cancelButtonProps={{ disabled: submitting }}
+      // Prevents dismissal mid-request, which would leave the user unsure
+      // whether the change was applied.
+      maskClosable={!submitting}
+      closable={!submitting}
+      destroyOnHidden
     >
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <div>
-          <strong>Current Status:</strong> {currentStatusLabel}
-        </div>
+      {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-        {error && (
-          <Alert message="Error updating status" description={error} type="error" showIcon />
-        )}
+      <Typography.Paragraph type="secondary">
+        Current status: <strong>{statusLabel(currentStatus)}</strong>
+      </Typography.Paragraph>
 
-        {validTransitions.length === 0 ? (
-          <Alert
-            message="No valid transitions available"
-            description={`Order status "${currentStatusLabel}" cannot be changed.`}
-            type="info"
-          />
-        ) : (
-          <div>
-            <label>
-              <strong>Next Status:</strong>
-            </label>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select next status"
+      {terminal ? (
+        <Alert
+          type="info"
+          showIcon
+          message="No further changes are possible"
+          description={`An order that is ${statusLabel(currentStatus).toLowerCase()} has reached the end of its lifecycle.`}
+        />
+      ) : (
+        <Form layout="vertical">
+          <Form.Item label="New status" required>
+            <Select<StatusCode>
+              placeholder="Select the new status"
               value={nextStatus}
               onChange={setNextStatus}
-              options={validTransitions.map((code) => {
-                const status = orderStatuses.find((s) => s.code === code);
-                return {
-                  label: status?.name ?? code,
-                  value: code,
-                };
-              })}
+              disabled={submitting}
+              options={validTransitions.map((code) => ({
+                label: statusLabel(code),
+                value: code,
+              }))}
             />
-          </div>
-        )}
-      </Space>
+          </Form.Item>
+
+          <Form.Item label="Reason" help="Optional. Stored on the order's status history.">
+            <Input.TextArea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              maxLength={500}
+              showCount
+              rows={3}
+              disabled={submitting}
+              placeholder="e.g. Customer cancelled at the counter"
+            />
+          </Form.Item>
+        </Form>
+      )}
     </Modal>
   );
 }

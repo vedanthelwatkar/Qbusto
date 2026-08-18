@@ -20,7 +20,15 @@ jest.mock('../src/config/database', () => {
     Product: { findAll: jest.fn() },
     CinemaProduct: { findAll: jest.fn() },
     ProductPricing: { findAll: jest.fn() },
-    Order: { findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn() },
+    // `update` is the static, not the instance method: status transitions are
+    // compare-and-set writes issued as Order.update({...}, { where: { id, statusId } }),
+    // so that a concurrent writer makes them match zero rows.
+    Order: {
+      findOne: jest.fn(),
+      findAndCountAll: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     OrderItem: { bulkCreate: jest.fn() },
     OrderStatus: { findOne: jest.fn(), findAll: jest.fn() },
     PaymentStatus: { findOne: jest.fn(), findAll: jest.fn() },
@@ -179,6 +187,10 @@ const VALID_ORDER = { cinemaId: 3, items: [{ productId: 17, quantity: 2 }] };
 
 beforeEach(() => {
   rolledBack = false;
+
+  // The default for a transition that wins its compare-and-set: one row
+  // matched. Tests that simulate losing the race override this with [0].
+  models.Order.update.mockResolvedValue([1]);
 
   sequelize.transaction.mockImplementation(async (callback) => {
     try {
@@ -938,7 +950,7 @@ describe('PUT /api/orders/:id/status', () => {
 
   it('moves an order forward one step', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('initiated');
+    orderIn('initiated');
 
     const response = await request(app)
       .put('/api/orders/30/status')
@@ -946,14 +958,14 @@ describe('PUT /api/orders/:id/status', () => {
       .send({ status: 'confirmed' });
 
     expect(response.status).toBe(200);
-    expect(order.update.mock.calls[0][0]).toMatchObject({
+    expect(models.Order.update.mock.calls[0][0]).toMatchObject({
       statusId: ORDER_STATUS_IDS.confirmed,
     });
   });
 
   it('refuses a jump past the next step', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('initiated');
+    orderIn('initiated');
 
     const response = await request(app)
       .put('/api/orders/30/status')
@@ -961,7 +973,7 @@ describe('PUT /api/orders/:id/status', () => {
       .send({ status: 'delivered' });
 
     expect(response.status).toBe(409);
-    expect(order.update).not.toHaveBeenCalled();
+    expect(models.Order.update).not.toHaveBeenCalled();
     expect(models.OrderStatusLog.create).not.toHaveBeenCalled();
   });
 
@@ -992,7 +1004,7 @@ describe('PUT /api/orders/:id/status', () => {
 
   it('allows rejection from any live state', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('ready');
+    orderIn('ready');
 
     const response = await request(app)
       .put('/api/orders/30/status')
@@ -1005,7 +1017,7 @@ describe('PUT /api/orders/:id/status', () => {
       newStatusId: ORDER_STATUS_IDS.rejected,
       reason: 'Customer never collected it',
     });
-    expect(order.update).toHaveBeenCalled();
+    expect(models.Order.update).toHaveBeenCalled();
   });
 
   it('logs the move with both ends and the acting user', async () => {
@@ -1027,32 +1039,32 @@ describe('PUT /api/orders/:id/status', () => {
 
   it('updates the order and writes the log in one transaction', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('confirmed');
+    orderIn('confirmed');
 
     await request(app)
       .put('/api/orders/30/status')
       .set('Authorization', token)
       .send({ status: 'preparing' });
 
-    expect(order.update.mock.calls[0][1]).toEqual({ transaction: TX });
+    expect(models.Order.update.mock.calls[0][1]).toMatchObject({ transaction: TX });
     expect(models.OrderStatusLog.create.mock.calls[0][1]).toEqual({ transaction: TX });
   });
 
   it('stamps deliveredAt on delivery', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('ready');
+    orderIn('ready');
 
     await request(app)
       .put('/api/orders/30/status')
       .set('Authorization', token)
       .send({ status: 'delivered' });
 
-    expect(order.update.mock.calls[0][0].deliveredAt).toBeInstanceOf(Date);
+    expect(models.Order.update.mock.calls[0][0].deliveredAt).toBeInstanceOf(Date);
   });
 
   it('treats a request for the current status as a no-op', async () => {
     const token = authenticateAs(buildActor());
-    const order = orderIn('preparing');
+    orderIn('preparing');
 
     const response = await request(app)
       .put('/api/orders/30/status')
@@ -1060,7 +1072,7 @@ describe('PUT /api/orders/:id/status', () => {
       .send({ status: 'preparing' });
 
     expect(response.status).toBe(200);
-    expect(order.update).not.toHaveBeenCalled();
+    expect(models.Order.update).not.toHaveBeenCalled();
     expect(models.OrderStatusLog.create).not.toHaveBeenCalled();
   });
 
@@ -1101,7 +1113,7 @@ describe('PUT /api/orders/:id/payment-status', () => {
 
   it('marks a pending payment paid and logs it', async () => {
     const token = authenticateAs(buildActor());
-    const order = paymentIn('pending');
+    paymentIn('pending');
 
     const response = await request(app)
       .put('/api/orders/30/payment-status')
@@ -1109,7 +1121,7 @@ describe('PUT /api/orders/:id/payment-status', () => {
       .send({ paymentStatus: 'paid', reason: 'Cash at counter' });
 
     expect(response.status).toBe(200);
-    expect(order.update.mock.calls[0][0]).toMatchObject({
+    expect(models.Order.update.mock.calls[0][0]).toMatchObject({
       paymentStatusId: PAYMENT_STATUS_IDS.paid,
     });
     expect(models.PaymentStatusLog.create.mock.calls[0][0]).toMatchObject({
@@ -1134,7 +1146,7 @@ describe('PUT /api/orders/:id/payment-status', () => {
 
   it('refuses to refund a payment that was never made', async () => {
     const token = authenticateAs(buildActor());
-    const order = paymentIn('pending');
+    paymentIn('pending');
 
     const response = await request(app)
       .put('/api/orders/30/payment-status')
@@ -1142,7 +1154,7 @@ describe('PUT /api/orders/:id/payment-status', () => {
       .send({ paymentStatus: 'refunded' });
 
     expect(response.status).toBe(409);
-    expect(order.update).not.toHaveBeenCalled();
+    expect(models.Order.update).not.toHaveBeenCalled();
   });
 
   it('allows a refund once paid', async () => {
@@ -1183,7 +1195,7 @@ describe('PUT /api/orders/:id/payment-status', () => {
 
   it('treats a request for the current payment status as a no-op', async () => {
     const token = authenticateAs(buildActor());
-    const order = paymentIn('paid');
+    paymentIn('paid');
 
     const response = await request(app)
       .put('/api/orders/30/payment-status')
@@ -1191,20 +1203,20 @@ describe('PUT /api/orders/:id/payment-status', () => {
       .send({ paymentStatus: 'paid' });
 
     expect(response.status).toBe(200);
-    expect(order.update).not.toHaveBeenCalled();
+    expect(models.Order.update).not.toHaveBeenCalled();
     expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
   });
 
   it('updates the order and writes the log in one transaction', async () => {
     const token = authenticateAs(buildActor());
-    const order = paymentIn('pending');
+    paymentIn('pending');
 
     await request(app)
       .put('/api/orders/30/payment-status')
       .set('Authorization', token)
       .send({ paymentStatus: 'paid' });
 
-    expect(order.update.mock.calls[0][1]).toEqual({ transaction: TX });
+    expect(models.Order.update.mock.calls[0][1]).toMatchObject({ transaction: TX });
     expect(models.PaymentStatusLog.create.mock.calls[0][1]).toEqual({ transaction: TX });
   });
 });

@@ -1,4 +1,3 @@
-/* eslint-disable-next-line no-undef */
 module.exports = {
   api: {
     input: "../shared/openapi.json",

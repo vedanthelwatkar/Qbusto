@@ -152,7 +152,7 @@ export default function PermissionsEditor({
   ];
 
   return (
-    <Space direction="vertical" size="small" className="stack">
+    <Space orientation="vertical" size="small" className="stack">
       {actor?.role === 'owner' ? null : (
         <Alert type="info" showIcon message="You can only grant permissions you hold yourself." />
       )}

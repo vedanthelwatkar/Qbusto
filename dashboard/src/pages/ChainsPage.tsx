@@ -224,7 +224,7 @@ export default function ChainsPage() {
   };
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Chains"
         description="The top of the tenant tree - cinemas, users, categories and products all belong to one"

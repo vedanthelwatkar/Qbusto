@@ -41,6 +41,10 @@ jest.mock('../src/config/database', () => {
     Order: { findByPk: jest.fn(), update: jest.fn() },
     PaymentStatus: { findOne: jest.fn() },
     PaymentStatusLog: { create: jest.fn() },
+    // confirmOnPayment runs at the post-payment seam: a paid order becomes work
+    // for the kitchen by moving initiated -> confirmed.
+    OrderStatus: { findOne: jest.fn() },
+    OrderStatusLog: { create: jest.fn() },
   };
 
   return {
@@ -96,6 +100,12 @@ beforeEach(() => {
   );
   models.Order.update.mockResolvedValue([1]);
   models.PaymentStatusLog.create.mockResolvedValue({});
+  // The seam's fulfilment side effect. Ids differ from the payment ones so a
+  // test cannot pass by confusing the two tables.
+  models.OrderStatus.findOne.mockImplementation(async ({ where }) =>
+    where.code === 'confirmed' ? { id: 22 } : { id: 21 }
+  );
+  models.OrderStatusLog.create.mockResolvedValue({});
 });
 
 // ---------------------------------------------------------------------------
@@ -169,6 +179,83 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
 // ---------------------------------------------------------------------------
 // payment-verify
 // ---------------------------------------------------------------------------
+
+/**
+ * The kitchen side effect lives at the post-payment seam, which is reached
+ * exactly once per order by whichever source discovered the payment first.
+ *
+ * These tests are what stop a future change from attaching it to "a webhook
+ * arrived" or "verify was called" instead - three discovery paths for one
+ * payment, and three kitchen tickets for one order.
+ */
+describe('payment starts fulfilment, exactly once', () => {
+  const CONFIRMED_STATUS_ID = 22;
+  const INITIATED_STATUS_ID = 21;
+
+  test('a paid order becomes work for the kitchen', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+
+    await request(app)
+      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
+      .send({
+        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
+        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
+      });
+
+    // initiated -> confirmed is what makes the order visible to the KDS.
+    expect(models.Order.update).toHaveBeenCalledWith(
+      { statusId: CONFIRMED_STATUS_ID },
+      expect.objectContaining({
+        where: { id: ORDER_ID, statusId: INITIATED_STATUS_ID },
+      })
+    );
+    expect(models.OrderStatusLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: ORDER_ID,
+        newStatusId: CONFIRMED_STATUS_ID,
+        // No human made this change, so the audit row records none.
+        changedByUserId: null,
+        reason: 'Payment confirmed',
+      }),
+      expect.anything()
+    );
+  });
+
+  test('the fulfilment write is a compare-and-set on initiated', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+
+    await request(app)
+      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
+      .send({
+        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
+        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
+      });
+
+    const confirmCall = models.Order.update.mock.calls.find(
+      ([values]) => values.statusId === CONFIRMED_STATUS_ID
+    );
+
+    // An order a human already confirmed, or already rejected, is left alone.
+    expect(confirmCall[1].where.statusId).toBe(INITIATED_STATUS_ID);
+  });
+
+  test('a payment that lost the race creates no kitchen work', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    // The paid transition matched zero rows: a webhook got there first, and it
+    // already confirmed the order.
+    models.Order.update.mockResolvedValue([0]);
+
+    await request(app)
+      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
+      .send({
+        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
+        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
+      });
+
+    // The seam was never reached, so no second ticket and no second audit row.
+    expect(models.OrderStatusLog.create).not.toHaveBeenCalled();
+  });
+});
 
 describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
   test('a valid signature marks the order paid', async () => {

@@ -5,7 +5,7 @@
  *
  * A `Map` from `pos_integrations.provider` to a PosAdapter. That is all it is -
  * docs/pos-integration.md §5 explicitly chose a registry over a factory or a
- * base-class hierarchy, and CLAUDE.md §3 forbids adding architectural layers
+ * base-class hierarchy, and the architecture rules forbid adding layers
  * without a demonstrated need. Provider selection is one lookup:
  *
  *   const adapter = getAdapter(integration.provider);
@@ -74,7 +74,7 @@ function registerAdapter(provider, adapter) {
   // CK_pos_integrations_provider. They are deliberately not listed in the
   // message: AppError.message is returned to the client verbatim by
   // errorHandler, and an enumeration of the system's providers is not something
-  // to put on the wire (CLAUDE.md §16).
+  // to put on the wire, per the error-handling rules.
   if (!isKnownProvider(provider)) {
     throw new PosProviderNotSupportedError(
       `Cannot register an adapter for unknown POS provider "${provider}"`,
@@ -110,7 +110,7 @@ function getAdapter(provider) {
   // numbers, no source paths, no provider enumeration. Which phase implements a
   // given provider is recorded in backend/phases.md and in this module's header
   // comment, which is where a developer looks; it is not something to send to a
-  // caller (CLAUDE.md §16).
+  // caller, per the error-handling rules.
   if (isKnownProvider(provider)) {
     throw new PosProviderNotSupportedError(
       `No POS adapter is registered for provider "${provider}"`,

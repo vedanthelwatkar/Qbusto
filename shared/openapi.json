@@ -803,6 +803,139 @@
           }
         }
       },
+      "KitchenOrder": {
+        "type": "object",
+        "description": "An order as a kitchen screen sees it. Deliberately narrower than `Order`: a KDS hangs on a wall where anyone can read it, so customer mobile, customer email and the razorpay_* identifiers are not included. Only orders that are paid and in a kitchen-owned fulfilment status are ever returned. Money is a JSON number, as elsewhere in this API.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 128,
+            "description": "Also the token number a cook calls out - the schema has no separate one."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "preparing",
+              "ready",
+              "delivered"
+            ],
+            "example": "preparing",
+            "description": "Fulfilment status code. Independent of paymentStatus."
+          },
+          "paymentStatus": {
+            "type": "string",
+            "example": "paid",
+            "description": "Always `paid` in practice, since nothing else is eligible. Returned so a screen can display it rather than assert it."
+          },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "qr",
+              "seat_qr",
+              "kiosk",
+              "counter"
+            ],
+            "example": "seat_qr"
+          },
+          "seatNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "G12"
+          },
+          "filmTitle": {
+            "type": "string",
+            "nullable": true,
+            "example": "Avengers Endgame"
+          },
+          "showTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Order-level special instructions. The schema has no per-item modifier or combo composition, so this is the only free text an order carries."
+          },
+          "total": {
+            "type": "number",
+            "format": "double",
+            "example": 450
+          },
+          "cinema": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "screen": {
+            "type": "object",
+            "nullable": true,
+            "description": "Null for counter and kiosk orders, which are not screen-specific.",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "example": "Audi 3"
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "productId": {
+                  "type": "integer"
+                },
+                "productName": {
+                  "type": "string",
+                  "example": "Large Popcorn"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "example": 2
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "total": {
+                  "type": "number",
+                  "format": "double"
+                }
+              }
+            }
+          },
+          "placedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The order's created_at. Elapsed time is derived from this client-side."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
       "OrderStatusLog": {
         "type": "object",
         "description": "One entry in an order status or payment status audit trail. Append-only: it has a createdAt and no updatedAt.",
@@ -3713,6 +3846,284 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/kitchen/orders": {
+      "get": {
+        "tags": [
+          "Kitchen"
+        ],
+        "summary": "List orders the kitchen is responsible for",
+        "description": "The KDS board. Returns only orders that are **paid** and in a fulfilment status the kitchen owns - this is enforced server-side and there is no parameter that relaxes it, so an unpaid or rejected order can never appear on a kitchen screen.\n\n`scope=active` (the default) returns work still outstanding: `confirmed`, `preparing`, `ready`. `scope=completed` returns `delivered`. `scope=all` returns both in one request.\n\nSorted oldest-first by default, because a kitchen works a queue. `search` matches seat number, film title, or the order id exactly. Non-owners see only orders placed at cinemas in their own chain. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "completed",
+                "all"
+              ],
+              "default": "active"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "placedAt",
+                "showTime",
+                "id"
+              ],
+              "default": "placedAt"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "screenId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "description": "Narrow to one kitchen queue.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "preparing",
+                "ready",
+                "delivered"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eligible orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/KitchenOrder"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/kitchen/orders/{id}": {
+      "get": {
+        "tags": [
+          "Kitchen"
+        ],
+        "summary": "Get one kitchen order in full",
+        "description": "The focused ticket view. The same eligibility rule as the board is applied here, so an order that exists but is unpaid, rejected, or in another chain is reported as **404** rather than 403 - the kitchen has no business learning that such an order exists. Requires the Orders module read permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/KitchenOrder"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/kitchen/orders/{id}/status": {
+      "patch": {
+        "tags": [
+          "Kitchen"
+        ],
+        "summary": "Move an order along the kitchen workflow",
+        "description": "Applies one forward step of the fulfilment graph: `confirmed -> preparing -> ready -> delivered`. The move is validated against the order's **current** status on the server, so a stale screen cannot skip a step.\n\nThe kitchen may only set `preparing`, `ready` or `delivered`. `rejected` is a commercial decision that belongs to the Dashboard, and `confirmed` is set by payment rather than by a person.\n\nRequesting the status the order is already in is a no-op and returns **200** with no new audit entry - two screens pressing the same button is a race, not an error. A move that lost such a race, or one that is illegal from the current status, returns **409** with the statuses the order could legally reach; the client should replace its copy with the server's. Requires the Orders module edit permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "ready",
+                      "delivered"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/KitchenOrder"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

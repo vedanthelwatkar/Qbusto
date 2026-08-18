@@ -5,7 +5,7 @@
  *
  * A POS adapter is a plain object with a `provider` string and a `fetchShows`
  * method. That is the whole contract - there is no base class to extend and no
- * factory to call, per CLAUDE.md §3 and docs/pos-integration.md §5. A provider
+ * factory to call - see docs/pos-integration.md §5. A provider
  * implementation is a module that builds such an object and registers it.
  *
  *   fetchShows(integration, range) -> Promise<ExternalShow[]>
@@ -28,12 +28,13 @@
  * WHAT AN ADAPTER MUST NOT DO
  *
  * - Convert timezones. `showTimeLocal` is wall clock; the Phase B5 sync service
- *   converts it once, centrally (CLAUDE.md §14). `normalizeShowTimeLocal`
+ *   converts it once, centrally, per the timezone rule in the development
+ *   guide. `normalizeShowTimeLocal`
  *   rejects any value carrying an offset, so a converting adapter fails.
  * - Touch the database. An adapter reads the POS and returns data; mapping,
  *   upserting and reconciliation are B5's job.
  * - Leak provider error text, credentials or raw payloads into error messages
- *   or logs (CLAUDE.md §15, §17).
+ *   or logs, per the integration reliability and logging rules.
  * - Cancel, retry-forever or otherwise make policy decisions. It reports the
  *   outcome; B5 decides what to do about it.
  *

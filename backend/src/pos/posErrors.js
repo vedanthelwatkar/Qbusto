@@ -21,7 +21,8 @@
  * - Never encode an HTTP status, SOAP fault code or provider error string in
  *   the class choice. Map the provider's failure onto the taxonomy instead.
  * - Never put credentials, tokens, auth headers or raw provider payloads in
- *   `message` (CLAUDE.md §15, §17). `message` is read by humans in logs and may
+ *   `message`, per the integration reliability and logging rules. `message` is
+ *   read by humans in logs and may
  *   reach an operator-facing screen.
  * - Attach the underlying error as `cause` for diagnostics only. It is not part
  *   of `details`, so the error middleware never serializes it to a client.
@@ -89,7 +90,7 @@ class PosAdapterError extends AppError {
 
   /**
    * The safe shape for structured logging: identifiers and outcome only, never
-   * the message of the underlying provider error (CLAUDE.md §17).
+   * the message of the underlying provider error, per the logging rules.
    */
   toLogContext() {
     return {
@@ -106,7 +107,8 @@ class PosAdapterError extends AppError {
  *
  * Deliberately covers both definitive failures and ambiguous ones. An adapter
  * that cannot tell whether a request reached the provider should set
- * `ambiguous: true` so B5 can honour CLAUDE.md §13/§15 and refuse to blindly
+ * `ambiguous: true` so the sync service can honour the idempotency and retry
+ * rules and refuse to blindly
  * retry. `fetchShows` is a read and is safe to retry; the flag exists because
  * the same taxonomy will carry write operations later.
  */

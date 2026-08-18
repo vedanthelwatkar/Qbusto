@@ -276,7 +276,7 @@ export default function BannersPage() {
     query.cinemaId !== undefined || query.type !== undefined || query.isActive !== undefined;
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Banners"
         description="The artwork each cinema shows, and the order it appears in"

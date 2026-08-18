@@ -24,7 +24,7 @@ export default function DashboardPage() {
   );
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title={`Welcome back, ${displayName(user)}`}
         description="Cinema food ordering management"

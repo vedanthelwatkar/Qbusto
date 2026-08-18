@@ -122,7 +122,7 @@ describe('pos/providerRegistry', () => {
   it('keeps internal project detail out of client-facing error messages', () => {
     // errorHandler returns AppError.message to the caller verbatim, so these
     // messages are on the wire. They must not carry roadmap or source layout
-    // (CLAUDE.md §16).
+    // (error-handling rules).
     const messages = [POS_PROVIDERS.VISTA, POS_PROVIDERS.SHOWBIZZ, 'showbiz', null].map(
       (provider) => {
         try {
@@ -320,7 +320,7 @@ describe('pos/externalShow', () => {
 
     expect(show.externalScreenId).toBeNull();
     expect(show.externalFilmId).toBeNull();
-    // No silent data loss: the show itself is still here (CLAUDE.md §20).
+    // No silent data loss: the show itself is still here.
     expect(show.externalSessionId).toBe('SESSION-1');
   });
 

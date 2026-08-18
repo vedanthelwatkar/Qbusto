@@ -8,7 +8,7 @@ import PageHeader from '@/components/PageHeader';
  */
 export default function ComingSoonPage({ title }: { title: string }) {
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader title={title} />
       <Card>
         <Empty

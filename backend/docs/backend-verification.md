@@ -17,7 +17,7 @@ make setup
 
 1. `npm install` - installs backend dependencies
 2. `npx sequelize-cli db:create` - creates the database named by `DB_NAME`
-3. `npx sequelize-cli db:migrate` - applies all 27 migrations
+3. `npx sequelize-cli db:migrate` - applies all pending migrations
 4. `npx sequelize-cli db:seed:all` - loads the status master data
 5. `npm run verify-schema` - confirms the Sequelize layer is sound
 6. `npm run healthcheck` - confirms the deployment is ready
@@ -168,7 +168,7 @@ Not yet built: reports, POS integrations and settings, though their tables exist
 POS integration has no endpoint yet. Its `shows` table (B1) and its provider
 adapter boundary in `src/pos/` (B2) exist; no provider adapter is registered and
 nothing synchronizes. See [pos-integration.md](./pos-integration.md) and the
-phase tracker in [../phases.md](../phases.md).
+backend README.
 
 `/api/cinema-products` is what makes availability addressable: a window is attached to a `cinemaProductId`, and that id is resolved by listing `/api/cinema-products?cinemaId=&productId=`, which returns one row or none because the pair is unique.
 

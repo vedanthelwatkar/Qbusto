@@ -11,6 +11,8 @@ import type {
   Order,
   OrderDetail,
   OrderStatus,
+  PutApiOrdersIdStatusBody,
+  PutApiOrdersIdPaymentStatusBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { getOrders } from '@/api/generated/orders/orders';
 import { getOrderStatuses as getOrderStatusesApi } from '@/api/generated/order-statuses/order-statuses';
@@ -44,19 +46,46 @@ export async function getOrder(id: number): Promise<OrderDetail> {
   return data;
 }
 
-export async function updateOrderStatus(id: number, status: string): Promise<OrderDetail> {
+/**
+ * Move an order to a new fulfilment status.
+ *
+ * `status` is the generated union rather than a bare string, so a status the
+ * API does not accept is a compile error here instead of a 400 at runtime.
+ * The endpoint returns the order as it now stands; callers should render that
+ * rather than assuming the transition produced the status they asked for.
+ *
+ * @param reason Free text stored on the audit log entry. Optional.
+ */
+export async function updateOrderStatus(
+  id: number,
+  status: PutApiOrdersIdStatusBody['status'],
+  reason?: string
+): Promise<OrderDetail> {
   const { data } = await ordersApi.putApiOrdersIdStatus(id, {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    status: status as any,
+    status,
+    ...(reason ? { reason } : {}),
   });
   if (!data) throw MALFORMED;
   return data;
 }
 
-export async function updatePaymentStatus(id: number, paymentStatus: string): Promise<OrderDetail> {
+/**
+ * Move an order's payment to a new status.
+ *
+ * This is the staff-operated path only — cash taken at the counter, a refund
+ * granted, a failed attempt written off. It carries no gateway identifiers and
+ * performs no Razorpay verification; the backend owns that entirely.
+ *
+ * @param reason Free text stored on the audit log entry. Optional.
+ */
+export async function updatePaymentStatus(
+  id: number,
+  paymentStatus: PutApiOrdersIdPaymentStatusBody['paymentStatus'],
+  reason?: string
+): Promise<OrderDetail> {
   const { data } = await ordersApi.putApiOrdersIdPaymentStatus(id, {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    paymentStatus: paymentStatus as any,
+    paymentStatus,
+    ...(reason ? { reason } : {}),
   });
   if (!data) throw MALFORMED;
   return data;

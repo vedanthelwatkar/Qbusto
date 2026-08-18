@@ -86,7 +86,7 @@ export default function UserDetailsDrawer({ userId, onClose }: UserDetailsDrawer
       afterOpenChange={(open) => {
         if (!open) onClose();
       }}
-      width={520}
+      size={520}
       title={user ? displayName(user) : 'User'}
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}

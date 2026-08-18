@@ -568,7 +568,7 @@ ON shows(cinema_id, show_time);
 
 **The database does not enforce either relationship.** The foreign keys only require that the referenced cinema, screen and integration rows exist; nothing constrains them to the same tenant. `screen_pos_mappings` does not constrain its screen to the integration's cinema either, so a mapping row created against the wrong cinema can resolve to a foreign cinema's screen.
 
-**Application code MUST validate both before inserting or updating a show.** This is the responsibility of the Phase B5 synchronization service — the only component that writes this table. See [../phases.md](../phases.md) Phase B5.
+**Application code MUST validate both before inserting or updating a show.** This is the responsibility of the show synchronization service — the only component that writes this table.
 
 This validation prevents cross-cinema data leakage into the **public, unauthenticated** Consumer shows API. That endpoint (Phase B6) filters on `cinema_id` alone, so a row whose `cinema_id` disagrees with its integration would surface another cinema's show in this cinema's Show Time dropdown, and an order placed against it would carry a foreign cinema's `screen_id`.
 

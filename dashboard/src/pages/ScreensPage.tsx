@@ -242,7 +242,7 @@ export default function ScreensPage() {
     query.search !== undefined || query.cinemaId !== undefined || query.isActive !== undefined;
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Screens"
         description="Each belongs to one cinema, and orders are placed against it"

@@ -268,7 +268,7 @@ export default function UsersPage() {
   };
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Users"
         description="Accounts that can sign in to the dashboard, and what each of them may see"

@@ -299,7 +299,7 @@ export default function ProductsPage() {
     query.isActive !== undefined;
 
   return (
-    <Space direction="vertical" size="large" className="stack">
+    <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Products"
         description="Everything that can be ordered, and the add-ons that go with it"
