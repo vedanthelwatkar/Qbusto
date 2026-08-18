@@ -237,7 +237,7 @@ The existing POS credential pattern still uses `pos_integrations.credential_ref`
 
 ### Shows
 
-`shows` is the catalog of scheduled shows mirrored from the POS. It was added in backend Phase B1; the architecture behind it is in [pos-integration.md](./pos-integration.md).
+`shows` is the catalog of scheduled shows mirrored from the POS. The POS and show architecture is maintained separately by the development team.
 
 It exists because every earlier representation of a show is a *consequence of an order*. `orders.film_title`, `orders.show_time` and `order_pos_context.external_session_id` are per-order snapshots created at checkout and immutable afterwards. None of them can answer "what is playing at this cinema in the next three hours", because a show with no orders would not exist anywhere. The consumer Show Time dropdown needs exactly that question answered, so a catalog table is required.
 

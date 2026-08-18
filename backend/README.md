@@ -333,7 +333,4 @@ afterwards.
 | -------------------------------------------------------------- | ------------------------------------------------- |
 | [docs/schema.md](./docs/schema.md)                             | The database schema as it exists today            |
 | [docs/schema-explained.md](./docs/schema-explained.md)         | Why the schema is shaped the way it is            |
-| [docs/backend-verification.md](./docs/backend-verification.md) | Setup, verification and the API contract workflow |
-| [docs/pos-integration.md](./docs/pos-integration.md)           | POS and show architecture (Phase 2)               |
-| [docs/development-guide.md](./docs/development-guide.md)       | Backend engineering conventions                   |
 | [docs/schema.dbml](./docs/schema.dbml)                         | Schema in DBML form, for diagram tools            |

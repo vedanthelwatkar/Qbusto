@@ -215,10 +215,8 @@ flow, the Dashboard modules listed in its README, and the Kitchen Display
 System.
 
 Deferred: POS integration with Vista and Showbizz. The provider adapter
-boundary and show synchronisation architecture exist under `backend/src/pos/`
-and are documented in
-[backend/docs/pos-integration.md](./backend/docs/pos-integration.md), but the
-integration itself is not part of the current release. Reports and POS
+boundary and show synchronisation architecture exist under `backend/src/pos/`,
+but the integration itself is not part of the current release. Reports and POS
 Integrations appear in the Dashboard navigation as placeholders.
 
 ---
@@ -231,8 +229,6 @@ Integrations appear in the Dashboard navigation as placeholders.
 | [backend/README.md](./backend/README.md) | Backend setup, configuration and API overview |
 | [backend/docs/schema.md](./backend/docs/schema.md) | Database schema |
 | [backend/docs/schema-explained.md](./backend/docs/schema-explained.md) | Design rationale behind the schema |
-| [backend/docs/backend-verification.md](./backend/docs/backend-verification.md) | Setup verification and the API contract workflow |
-| [backend/docs/pos-integration.md](./backend/docs/pos-integration.md) | POS and show architecture |
 | [consumer/README.md](./consumer/README.md) | Consumer app |
 | [dashboard/README.md](./dashboard/README.md) | Dashboard |
 | [kitchen/README.md](./kitchen/README.md) | Kitchen Display System |

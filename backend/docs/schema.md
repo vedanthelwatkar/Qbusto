@@ -518,8 +518,7 @@ WHERE is_active = 1;
 
 ## shows
 
-Catalog of scheduled shows mirrored from the POS. Added in Phase B1; see
-[pos-integration.md](./pos-integration.md).
+Catalog of scheduled shows mirrored from the POS.
 
 | Column              | Type         | Constraints                              |
 | ------------------- | ------------ | ---------------------------------------- |
