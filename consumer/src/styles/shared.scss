@@ -1,0 +1,379 @@
+/**
+ * Shared UI primitives.
+ *
+ * These exist so buttons, spinners, surfaces and form fields are defined once
+ * instead of being re-declared in every page stylesheet. Page styles compose
+ * these classes and only add layout on top.
+ */
+
+/* Buttons -------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+
+  &:disabled {
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Press feedback is the primary affordance on touch. */
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.btn--primary {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-xs);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-primary-dark);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--color-primary-darker);
+  }
+
+  &:disabled {
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-light);
+  }
+}
+
+.btn--secondary {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-strong);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-bg-secondary);
+    border-color: var(--color-text-light);
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--color-bg-tertiary);
+  }
+
+  &:disabled {
+    color: var(--color-text-light);
+    border-color: var(--color-border);
+  }
+}
+
+.btn--ghost {
+  background-color: transparent;
+  color: var(--color-primary);
+  padding-left: var(--space-md);
+  padding-right: var(--space-md);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-primary-subtle);
+  }
+
+  &:disabled {
+    color: var(--color-text-light);
+  }
+}
+
+.btn--lg {
+  min-height: 56px;
+  padding: 16px 28px;
+  font-size: var(--font-size-lg);
+}
+
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* Spinner -------------------------------------------------------------- */
+
+@keyframes qb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: qb-spin 700ms linear infinite;
+}
+
+.spinner--sm {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+/* Sits inside a filled primary button, so it must read on the brand colour. */
+.spinner--on-primary {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: var(--color-text-inverse);
+}
+
+/* Surfaces ------------------------------------------------------------- */
+
+.surface {
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* Skeletons ------------------------------------------------------------ */
+
+@keyframes qb-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 0%,
+    var(--color-bg-secondary) 50%,
+    var(--color-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 200% 0;
+  animation: qb-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* Status messages ------------------------------------------------------ */
+
+/* Inline, non-blocking error. Copy must stay user-facing — never a stack trace. */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-snug);
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.alert--error {
+  background-color: var(--color-bg-error);
+  border: 1px solid var(--color-primary-muted);
+  color: var(--color-error);
+}
+
+/* Empty / error full-panel states -------------------------------------- */
+
+.state-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-3xl) var(--space-lg);
+  text-align: center;
+}
+
+/* Declared standalone, not nested, so they can also be used on their own —
+   the cart drawer's empty state reuses the icon without the panel wrapper. */
+.state-panel__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.state-panel__title {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.state-panel__body {
+  max-width: 34ch;
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+}
+
+/* Form fields ---------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+
+  .field__label {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
+  .field__optional {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--color-text-light);
+  }
+
+  /* Consistent required indicator. Hidden from assistive tech — the control
+     carries aria-required instead. */
+  .field__required {
+    color: var(--color-error);
+    font-weight: var(--font-weight-bold);
+    line-height: 1;
+  }
+
+  .field__error {
+    display: flex;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-error);
+  }
+
+  /* Bind the invalid state to the field, not to a one-off page rule. */
+  input[aria-invalid='true'],
+  textarea[aria-invalid='true'] {
+    border-color: var(--color-error);
+
+    &:focus {
+      box-shadow: var(--focus-ring-error);
+    }
+  }
+}
+
+/* Plate tone. Reserved for genuine failures — an empty search result is not
+   an error and must not be dressed as one. */
+.state-panel__icon--error {
+  background-color: var(--color-bg-error);
+  color: var(--color-error);
+}
+
+/* Actions stack full-width on phones so the primary action is a full-width
+   target, and sit side by side once there is room. */
+.state-panel__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 320px;
+
+  @media (min-width: 480px) {
+    flex-direction: row;
+    justify-content: center;
+    width: auto;
+    max-width: none;
+
+    .btn {
+      flex: 1;
+      min-width: 160px;
+    }
+  }
+}
+
+/* Boxed: an opaque surface for a state that sits on top of artwork, and a
+   panel that sizes to its content instead of filling the region. */
+.state-panel--boxed {
+  flex: 0 1 auto;
+  padding: var(--space-2xl) var(--space-lg);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+}
+
+/* Attention, not failure ------------------------------------------------ */
+
+/* For situations the customer must read and act on but that are not errors —
+   most importantly a payment that went through but is not yet confirmed.
+   Dressing that in the error palette tells the customer something broke when
+   the likeliest truth is that their money is fine. Uses --color-warning,
+   which the token set already defined. */
+.alert--warning {
+  background-color: var(--color-bg-warning);
+  border: 1px solid var(--color-warning-muted);
+  color: var(--color-warning-dark);
+}
+
+/* Two-step checkout progress ------------------------------------------- */
+
+/* Replaces the bare "Step 1 of 2" text on checkout and payment: same
+   information, but the customer can see how far along they are at a glance.
+   The text is kept for assistive tech rather than being dropped. */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.steps__track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.steps__dot {
+  width: 18px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-border-strong);
+  transition: background-color var(--transition-normal);
+}
+
+.steps__dot--done {
+  background-color: var(--color-primary);
+}
+
+.steps__label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
+}

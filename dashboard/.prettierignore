@@ -1,0 +1,7 @@
+node_modules
+dist
+package-lock.json
+
+# Written by `npm run gen:api` from shared/openapi.json. Formatting it would
+# produce a large diff that the next regeneration throws away.
+src/api/generated

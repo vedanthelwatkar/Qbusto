@@ -1,0 +1,309 @@
+/* Cart drawer. All rules scoped to .cart-drawer / .cart-overlay. */
+
+@keyframes qb-cart-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cart-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+  background-color: rgba(26, 22, 20, 0.5);
+  animation: qb-cart-fade-in var(--transition-normal);
+  /* Swallow scroll gestures that start on the overlay. Without it a drag over
+     the dimmed area scrolls the product list behind the open sheet, which
+     reads as the sheet having lost its place. */
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.cart-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  max-height: 88dvh;
+  background-color: var(--color-bg-primary);
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sheet);
+  transform: translateY(100%);
+  /* `visibility` keeps the closed panel out of the tab order and the
+     accessibility tree, and still animates. */
+  visibility: hidden;
+  transition:
+    transform var(--transition-sheet),
+    visibility var(--transition-sheet);
+
+  &.is-open {
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  /* Grabber ----------------------------------------------------------- */
+
+  &__grabber {
+    width: 40px;
+    height: 4px;
+    margin: var(--space-md) auto var(--space-sm);
+    border-radius: var(--radius-pill);
+    background-color: var(--color-border-strong);
+    flex-shrink: 0;
+  }
+
+  /* Header ------------------------------------------------------------ */
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-lg) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  &__heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+  }
+
+  &__title {
+    font-size: var(--font-size-h3);
+  }
+
+  &__count {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+  }
+
+  &__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    margin-right: calc(var(--space-sm) * -1);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    transition:
+      background-color var(--transition-fast),
+      color var(--transition-fast);
+
+    &:hover {
+      background-color: var(--color-bg-secondary);
+      color: var(--color-text-primary);
+    }
+  }
+
+  /* Empty state -------------------------------------------------------- */
+
+  /* Structure and copy now come from the shared StatePanel; the sheet only
+     adds the bottom inset, which the shared panel cannot know about. */
+  .state-panel {
+    padding-bottom: calc(var(--space-3xl) + env(safe-area-inset-bottom));
+  }
+
+  /* Items -------------------------------------------------------------- */
+
+  &__items {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-lg);
+
+    & + & {
+      border-top: 1px solid var(--color-border);
+    }
+  }
+
+  &__item-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  &__item-name {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-snug);
+    min-width: 0;
+  }
+
+  &__item-total {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__item-unit {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  &__item-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    margin-top: var(--space-md);
+  }
+
+  /* No `overflow: hidden` here: it clipped the focus ring on the buttons
+     inside. The children round their own outer corners instead. */
+  &__stepper {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+  }
+
+  /* Full 48px targets — the previous 32px controls were below the
+     documented minimum. */
+  &__step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    color: var(--color-text-primary);
+    transition: background-color var(--transition-fast);
+
+    &:first-child {
+      border-radius: var(--radius-inner) 0 0 var(--radius-inner);
+    }
+
+    &:last-child {
+      border-radius: 0 var(--radius-inner) var(--radius-inner) 0;
+    }
+
+    &:hover {
+      background-color: var(--color-bg-secondary);
+    }
+
+    &:active {
+      background-color: var(--color-bg-tertiary);
+    }
+  }
+
+  &__qty {
+    min-width: 40px;
+    text-align: center;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    border-left: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    transition:
+      background-color var(--transition-fast),
+      color var(--transition-fast);
+
+    &:hover {
+      background-color: var(--color-bg-error);
+      color: var(--color-error);
+    }
+
+    &:active {
+      background-color: var(--color-primary-muted);
+    }
+  }
+
+  /* Footer ------------------------------------------------------------- */
+
+  &__footer {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-lg);
+    padding-bottom: calc(var(--space-lg) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-border);
+    background-color: var(--color-bg-primary);
+  }
+
+  &__summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  &__summary-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-secondary);
+  }
+
+  &__summary-value {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__note {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+    margin-bottom: var(--space-sm);
+  }
+}
+
+/* On larger screens a bottom sheet anchored to one corner reads as broken.
+   Use a proper right-hand panel instead. */
+@media (min-width: 768px) {
+  .cart-drawer {
+    top: 0;
+    left: auto;
+    right: 0;
+    width: 420px;
+    max-height: none;
+    border-radius: 0;
+    transform: translateX(100%);
+    box-shadow: var(--shadow-lg);
+
+    &.is-open {
+      transform: translateX(0);
+    }
+
+    &__grabber {
+      display: none;
+    }
+
+    &__header {
+      padding-top: var(--space-lg);
+    }
+  }
+}

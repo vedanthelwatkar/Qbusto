@@ -1,0 +1,152 @@
+/* Confirmation. All rules scoped to .confirmation. */
+
+@keyframes qb-confirm-mark {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes qb-confirm-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.confirmation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-xl) var(--space-lg);
+  padding-top: max(var(--space-xl), env(safe-area-inset-top));
+  padding-bottom: max(var(--space-xl), env(safe-area-inset-bottom));
+  background-color: var(--color-bg-secondary);
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 420px;
+    padding: var(--space-2xl) var(--space-xl);
+    border-radius: var(--radius-xl);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+    text-align: center;
+    animation: qb-confirm-rise var(--transition-normal) both;
+  }
+
+  &__mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background-color: var(--color-bg-success);
+    color: var(--color-success);
+    /* A single, brief confirmation beat — not a celebration. */
+    animation: qb-confirm-mark 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+    animation-delay: 80ms;
+  }
+
+  &__title {
+    margin-top: var(--space-lg);
+    font-size: var(--font-size-h1);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  &__lede {
+    margin-top: var(--space-sm);
+    max-width: 32ch;
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-secondary);
+  }
+
+  /* Receipt ------------------------------------------------------------ */
+
+  &__receipt {
+    width: 100%;
+    margin-top: var(--space-xl);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+
+  &__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    text-align: left;
+
+    & + & {
+      border-top: 1px solid var(--color-border);
+    }
+
+    dt {
+      font-size: var(--font-size-small);
+      color: var(--color-text-secondary);
+    }
+  }
+
+  /* A numeric reference reads as data, not as a debug string: tabular
+     figures, no monospace, no mid-number wrapping. */
+  &__ref {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-tight);
+  }
+
+  &__amount {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__seat {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
+  &__next {
+    margin: var(--space-lg) 0 var(--space-xl);
+    max-width: 34ch;
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-light);
+  }
+}
+
+@media (min-width: 768px) {
+  .confirmation__card {
+    max-width: 460px;
+    padding: var(--space-3xl) var(--space-2xl);
+  }
+
+  .confirmation__mark {
+    width: 72px;
+    height: 72px;
+  }
+}

@@ -1,0 +1,86 @@
+# QBusto — single ignore file for the whole repository.
+#
+# Patterns without a leading slash match at any depth, so one rule here covers
+# backend/, consumer/, dashboard/ and kitchen/ alike. Per-application
+# .gitignore files were removed in favour of this one; add new rules here.
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Environment files
+#
+# Real configuration never enters the repository. The committed *.env.example
+# files are not matched by these patterns and are the documented template.
+# ---------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.bak
+*.local
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+dist/
+dist-ssr/
+build/
+coverage/
+
+# ---------------------------------------------------------------------------
+# Logs and caches
+# ---------------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.cache/
+.vite/
+
+# ---------------------------------------------------------------------------
+# Editor and OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------------------------------------------------------------------------
+# Local databases
+# ---------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+
+# ---------------------------------------------------------------------------
+# Local tooling and scratch work
+# ---------------------------------------------------------------------------
+.claude/
+scratchpad/
+
+# ---------------------------------------------------------------------------
+# Local-only developer scripts
+#
+# Kept on disk, never committed: this one writes real user rows with passwords
+# chosen on the command line.
+# ---------------------------------------------------------------------------
+backend/scripts/create-dev-user.js
+
+# ---------------------------------------------------------------------------
+# Internal engineering documentation
+#
+# Excluded from the repository by request. These stay on disk for the
+# development team but are not part of what is handed over.
+# ---------------------------------------------------------------------------
+backend/docs/pos-integration.md
+backend/docs/backend-verification.md
+backend/docs/development-guide.md

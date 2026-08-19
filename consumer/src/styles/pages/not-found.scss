@@ -1,0 +1,13 @@
+/* Not found. All rules scoped to .not-found. */
+
+.not-found {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-xl) var(--space-lg);
+  padding-top: max(var(--space-xl), env(safe-area-inset-top));
+  padding-bottom: max(var(--space-xl), env(safe-area-inset-bottom));
+  background-color: var(--color-bg-secondary);
+}

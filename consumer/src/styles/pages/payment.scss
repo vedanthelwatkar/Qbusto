@@ -1,0 +1,225 @@
+/* Payment. All rules scoped to .payment. */
+
+.payment {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--color-bg-secondary);
+
+  /* Sticky, matching checkout. The two pages sit either side of one flow and
+     the bar jumping from pinned to scrolling between them read as a glitch. */
+  &__topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top));
+    background-color: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--touch-target-min);
+    margin-left: calc(var(--space-sm) * -1);
+    padding: 0 var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-primary);
+    transition: background-color var(--transition-fast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--color-bg-secondary);
+    }
+
+    &:disabled {
+      color: var(--color-text-light);
+    }
+  }
+
+  /* Progress is the shared .steps component — see shared.scss. */
+
+  &__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-lg);
+    width: 100%;
+    max-width: var(--content-narrow);
+    margin: 0 auto;
+    padding: var(--space-xl) var(--space-lg);
+    padding-bottom: calc(var(--space-xl) + env(safe-area-inset-bottom));
+  }
+
+  &__intro {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  &__title {
+    font-size: var(--font-size-h1);
+  }
+
+  &__order-ref {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The amount is the single most important thing on this screen. */
+  &__amount-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xl) var(--space-lg);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    text-align: center;
+  }
+
+  &__amount-label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+
+  /* Fluid rather than fixed: at 40px a six-figure total (₹1,23,456.00) is
+     wider than a 320px screen's content box and was overflowing the card.
+     Scaling with the viewport fixes the whole range of totals instead of the
+     one that happened to be tested. */
+  &__amount {
+    font-size: clamp(28px, 9vw, 40px);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    /* Last resort if a currency format is wider still — break rather than
+       push the card sideways and start the page scrolling horizontally. */
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  &__amount-note {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  /* Order reference on the permanent verification-failure screen: the customer
+     reads this out to counter staff, so it must be unmissable and legible. */
+  &__reference {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-md) var(--space-xl);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-strong);
+  }
+
+  &__reference-label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+
+  &__reference-value {
+    font-size: var(--font-size-h2);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-tight);
+  }
+
+  /* Sits directly under the warning-toned alert for the same state, so it
+     carries the same colour rather than reading as a separate, unrelated
+     notice stacked below it. */
+  &__unverified {
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-warning);
+    border: 1px solid var(--color-warning-muted);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-snug);
+    color: var(--color-warning-dark);
+  }
+
+  &__unavailable {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-snug);
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+
+  &__processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-xl);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    text-align: center;
+  }
+
+  &__processing-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-primary);
+  }
+
+  &__processing-note {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  &__secure {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-sm);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-secondary);
+    text-align: left;
+    max-width: 42ch;
+    margin: 0 auto;
+
+    svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+  }
+}
+
+@media (min-width: 768px) {
+  .payment__amount {
+    font-size: 48px;
+  }
+}

@@ -1,0 +1,208 @@
+// Layout glue only. Anything antd already styles is left to antd; these rules
+// cover the shell, the login screen and a couple of spacing primitives.
+//
+// The palette below mirrors PALETTE in src/theme.ts, which is the source of
+// truth. It has to be repeated as literals rather than imported: antd derives
+// its hover and background shades by computing on the base colours, so it needs
+// real values at config time and cannot be handed a CSS variable. Change a
+// colour in theme.ts and change it here; nowhere else should carry a hex.
+
+:root {
+  --qb-primary-50: #fff4e9;
+  --qb-primary-100: #ffe2c8;
+  --qb-primary-500: #ff8c23;
+  --qb-primary-600: #e67e20;
+  --qb-ink: #0d0d0d;
+  --qb-text: #1a1a1a;
+  --qb-muted: #6b7280;
+  --qb-border: #e5e7eb;
+  --qb-page-bg: #f5f6f8;
+  --qb-surface: #ffffff;
+}
+
+$content-padding: 24px;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.app-shell {
+  min-height: 100vh;
+
+  &__header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 1px solid var(--qb-border);
+  }
+
+  &__content {
+    padding: $content-padding;
+  }
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+
+  &__user {
+    padding-inline: 8px;
+  }
+
+  &__user-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @media (max-width: 575px) {
+      display: none;
+    }
+  }
+}
+
+.user-menu__identity {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  padding-block: 4px;
+}
+
+.sidebar {
+  // The drawer that replaces the Sider below the lg breakpoint gets the same
+  // ink background, so the two presentations read as one component.
+  &--drawer {
+    background: var(--qb-ink);
+  }
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 56px;
+    padding-inline: 20px;
+    color: var(--qb-surface);
+    background: var(--qb-ink);
+  }
+
+  &__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--qb-primary-500);
+    color: var(--qb-surface);
+    font-weight: 700;
+  }
+
+  &__wordmark {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+}
+
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+  // A wash of the lightest brand tint over the page grey, so the sign-in screen
+  // is recognisably QBusto before any of the app has loaded.
+  background: linear-gradient(160deg, var(--qb-primary-50) 0%, var(--qb-page-bg) 55%);
+
+  &__card {
+    width: 100%;
+    max-width: 380px;
+    border-top: 3px solid var(--qb-primary-500);
+    box-shadow: 0 4px 24px rgba(13, 13, 13, 0.08);
+  }
+
+  &__heading {
+    margin-bottom: 24px;
+    text-align: center;
+
+    h3 {
+      margin-bottom: 4px;
+    }
+  }
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  &__title {
+    margin-bottom: 4px;
+  }
+}
+
+// Vertical page stack. antd's Space is inline-flex by default, which would
+// collapse the page to its content width.
+.stack {
+  display: flex;
+  width: 100%;
+}
+
+.form-alert {
+  margin-bottom: 16px;
+}
+
+// Filter row above a table. Wraps rather than scrolling, so a narrow screen
+// stacks the controls instead of hiding them.
+.filters {
+  margin-bottom: 16px;
+}
+
+// A table cell that is a link to the row's detail view: antd's link button
+// carries button padding, which would misalign it with the other columns.
+.table-link {
+  padding: 0;
+  height: auto;
+}
+
+.details-drawer__section {
+  margin-top: 24px;
+}
+
+// Free text in a drawer: the last paragraph's default bottom margin would push
+// the description row taller than the ones around it.
+.details-drawer__text {
+  margin-bottom: 0;
+  white-space: pre-wrap;
+}
+
+// Description cells hold up to 4000 characters. Capped so one long entry cannot
+// set the height of every row; the full text is in the cell's tooltip.
+.table-cell--clamped {
+  display: inline-block;
+  max-width: 320px;
+}
+
+.app-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+
+  &__target {
+    width: 120px;
+    height: 40px;
+  }
+}

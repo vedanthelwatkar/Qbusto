@@ -1,0 +1,1388 @@
+/**
+ * Kitchen Display System.
+ *
+ * Designed for a wall-mounted screen read from two to three metres away, in a
+ * room that is often bright. That drives every decision here: a deep, low-glare
+ * ground; white tickets that read like paper; large type; and touch targets
+ * sized for a gloved or greasy finger.
+ *
+ * Status is never carried by colour alone - every state also has a word and a
+ * glyph. A cook with a colour vision deficiency, or a display with a
+ * washed-out panel, must still be able to work the board.
+ *
+ * LAYOUT CONTRACT
+ *
+ * The board owns the viewport and never scrolls as a whole. The three active
+ * lanes stretch to equal height and scroll INTERNALLY, so a lane heading and
+ * its count stay visible however long the queue gets - a header that scrolls
+ * away is useless on a screen nobody is standing at. Delivered work sits in a
+ * short horizontal strip beneath them, and the summary bar is always the last
+ * line on the display.
+ */
+
+// ---------------------------------------------------------------------------
+// Tokens
+// ---------------------------------------------------------------------------
+
+:root {
+  // Surface ramp. Four steps rather than two, so panels, cards and controls
+  // can sit at genuinely different depths instead of all being "dark grey".
+  --ink-0: #04060a;
+  --ink-1: #0a0e14;
+  --ink-2: #111721;
+  --ink-3: #18202c;
+
+  // Hairlines are alpha, not opaque hex, so they read correctly over any of
+  // the surfaces above rather than being tuned to exactly one of them.
+  --line: rgb(255 255 255 / 8%);
+  --line-strong: rgb(255 255 255 / 14%);
+
+  --on-ink: #f2f6fa;
+  --on-ink-2: #aab6c4;
+  --on-ink-3: #6b7889;
+
+  // Ticket
+  --paper: #ffffff;
+  --paper-2: #f6f8fb;
+  --paper-line: #e4e9f0;
+  --on-paper: #0a1017;
+  --on-paper-2: #5a6675;
+
+  // Workflow. Orange is the QBusto accent and marks NEW - the state that wants
+  // a cook's attention first.
+  --new: #ff8a3d;
+  --preparing: #f5c11e;
+  --ready: #4d94ff;
+  --delivered: #34c759;
+
+  // Urgency
+  --warn: #f5a524;
+  --late: #f2453d;
+
+  // One spacing scale. Every gap and pad below comes from it, which is most of
+  // what "consistent" means in practice.
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 6px 16px rgb(0 0 0 / 22%);
+  --shadow-pop: 0 24px 64px rgb(0 0 0 / 55%);
+
+  --ease: 140ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ink-0);
+  color: var(--on-ink);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  overflow: hidden; // The board manages its own scrolling regions.
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+// Every number on this screen is either counted or compared at a glance, so
+// digits are tabular everywhere by default rather than case by case.
+.card__token,
+.card__time-value,
+.card__item-qty,
+.card__elapsed,
+.detail__token,
+.detail__clock-value,
+.detail__item-qty,
+.detail__fact-value,
+.lane__count,
+.stat__value,
+.summary__total-value,
+.topbar__time {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid #8ec5ff;
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+// Thin, dark scrollbars. The default light track is a bright rectangle on an
+// otherwise dark wall display.
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 16%) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 16%);
+  border-radius: 99px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  // A very slight lift towards the top keeps a large black panel from looking
+  // like a dead screen.
+  background: linear-gradient(180deg, var(--ink-1) 0%, var(--ink-0) 420px);
+}
+
+.boot,
+.signin {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  background: var(--ink-0);
+}
+
+.boot__text {
+  color: var(--on-ink-2);
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.app__board {
+  flex: 1;
+  min-height: 0; // Lets the lanes below own the overflow instead of the page.
+  // Safety valve for a genuinely short viewport: once the lane floor above no
+  // longer fits, the board scrolls rather than clipping a ticket.
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+
+.app__lanes {
+  flex: 1;
+  /*
+   * A floor, not just a share of what is left.
+   *
+   * Without it the Delivered strip could grow until the live lanes were
+   * shorter than a single ticket, and cards were cut off mid-item - the
+   * working queues squeezed by the reference material. 340px fits one full
+   * card plus its action button; below that the board scrolls instead.
+   */
+  min-height: 340px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  // Stretch, not start: three lanes of equal height read as one board. Ragged
+  // panel bottoms were the single biggest reason the old layout looked unfinished.
+  align-items: stretch;
+}
+
+.app__state {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--s2);
+  color: var(--on-ink-3);
+  font-size: 1.1rem;
+  text-align: center;
+  padding: var(--s6);
+}
+
+.app__error {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  background: rgb(245 165 36 / 12%);
+  color: #ffd9a3;
+  border-bottom: 1px solid rgb(245 165 36 / 28%);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+// ---------------------------------------------------------------------------
+// Top bar
+// ---------------------------------------------------------------------------
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s3) var(--s4);
+  background: var(--ink-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-shrink: 0;
+}
+
+.topbar__mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(145deg, #ffa15c, var(--new));
+  color: #2a1200;
+  font-weight: 800;
+  font-size: 1.35rem;
+  box-shadow: 0 2px 10px rgb(255 138 61 / 28%);
+}
+
+.topbar__name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.1;
+
+  strong {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+}
+
+.topbar__sub {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--on-ink-3);
+}
+
+.topbar__controls {
+  display: flex;
+  gap: var(--s2);
+  flex: 1;
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  min-width: 0;
+}
+
+.field__select,
+.field__input {
+  height: 40px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--on-ink);
+  font-size: 0.88rem;
+  font-family: inherit;
+  font-weight: 500;
+  transition: border-color var(--ease), background var(--ease);
+
+  &:hover {
+    border-color: var(--line-strong);
+  }
+}
+
+/*
+ * The native select arrow is drawn by the OS and ignores everything above it:
+ * on a dark field it renders as a pale system chevron at a size and offset we
+ * do not control, and it differed between the two dropdowns. So the native
+ * control is switched off and the chevron is drawn here as an inline SVG.
+ *
+ * `color-scheme: dark` is what makes the OPTION list itself dark. Without it
+ * the popup opens as white-on-white system chrome over a dark app - the one
+ * part of a native select that CSS on the element cannot reach.
+ */
+.field__select {
+  appearance: none;
+  color-scheme: dark;
+  // Space for the chevron, so a long label never runs underneath it.
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%23aab6c4' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--s3) center;
+  background-size: 11px 8px;
+  cursor: pointer;
+}
+
+.field--search {
+  flex: 1;
+  max-width: 420px;
+}
+
+.field__input {
+  width: 100%;
+
+  &::placeholder {
+    color: var(--on-ink-3);
+  }
+
+  // The native clear affordance is a light glyph on a dark field.
+  &::-webkit-search-cancel-button {
+    filter: invert(1);
+    opacity: 0.45;
+  }
+}
+
+.topbar__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-shrink: 0;
+}
+
+.topbar__sync {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--on-ink-3);
+  white-space: nowrap;
+}
+
+.topbar__sync--stale {
+  color: #ffb4b0;
+  font-weight: 600;
+}
+
+.topbar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--delivered);
+  box-shadow: 0 0 0 3px rgb(52 199 89 / 16%);
+  transition: background var(--ease), box-shadow var(--ease);
+}
+
+.topbar__dot--busy {
+  background: var(--preparing);
+  box-shadow: 0 0 0 3px rgb(245 193 30 / 16%);
+}
+
+.topbar__sync--stale .topbar__dot {
+  background: var(--late);
+  box-shadow: 0 0 0 3px rgb(242 69 61 / 18%);
+}
+
+// A hairline rather than a gap: it separates the live status from the wall
+// clock without another block of empty space.
+.topbar__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line);
+  line-height: 1.05;
+}
+
+.topbar__time {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.topbar__date {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--on-ink-3);
+}
+
+.topbar__cinema {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--on-ink-2);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar__signout {
+  height: 36px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--on-ink-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease), background var(--ease);
+
+  &:hover {
+    color: var(--on-ink);
+    border-color: var(--line-strong);
+    background: var(--ink-2);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lanes
+// ---------------------------------------------------------------------------
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.lane__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  background: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+// Fixed-width glyph cell. Without it the different icon widths shifted each
+// lane's title by a few pixels and the three headings never lined up.
+.lane__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.lane__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.lane__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 var(--s2);
+  border-radius: 99px;
+  background: rgb(255 255 255 / 8%);
+  color: var(--on-ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+// Colour is the third cue here, after the heading word and the glyph.
+.lane--confirmed .lane__head { color: var(--new); }
+.lane--preparing .lane__head { color: var(--preparing); }
+.lane--ready     .lane__head { color: var(--ready); }
+.lane--delivered .lane__head { color: var(--delivered); }
+
+.lane__cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--s3);
+  padding: var(--s3);
+}
+
+// An empty lane centres its message rather than pinning it to the top, which
+// reads as a deliberate "nothing here" instead of a list that failed to load.
+// Progressive enhancement: without :has support it simply sits at the top.
+.lane__cards:has(.lane__empty) {
+  align-content: center;
+}
+
+.lane__empty {
+  margin: 0;
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  color: var(--on-ink-3);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/*
+ * Delivered is a strip, not a fourth column.
+ *
+ * It is reference material - "did that go out?" - so it gets a fixed, short
+ * height and scrolls sideways. Given a full-width row of its own it left a
+ * large empty panel around one small card, which is what made the board look
+ * unfinished when the kitchen was quiet.
+ */
+/*
+ * Height comes from the card, not from a guess.
+ *
+ * This was capped at 210px, which is shorter than the ticket inside it - the
+ * status badge and elapsed time were sliced off the bottom. A fixed cap on a
+ * strip whose contents have an intrinsic height will always be wrong the
+ * moment the card changes, so the lane sizes to its content instead and the
+ * three active lanes flex around whatever is left.
+ */
+.lane--delivered {
+  flex: 0 0 auto;
+}
+
+.lane--delivered .lane__cards {
+  grid-auto-flow: column;
+  grid-auto-columns: 250px;
+  // Scrolls sideways through finished work; never vertically, which is what
+  // was doing the clipping.
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-content: start;
+}
+
+/*
+ * The condensed ticket used in the Delivered strip.
+ *
+ * Token, destination, an item count and the elapsed time - enough to answer
+ * "did that go out, and when?" at a glance. The full item list and any note
+ * are still one tap away in the focus view, so this condenses rather than
+ * discards. Keeping these full size made the strip taller than the live lanes.
+ */
+.card--compact .card__body {
+  padding: var(--s2) var(--s3) var(--s2) var(--s4);
+}
+
+.card--compact .card__token {
+  font-size: 1.35rem;
+}
+
+.card--compact .card__where {
+  margin-top: var(--s1);
+  padding-bottom: var(--s2);
+}
+
+.card--compact .card__summary {
+  margin: var(--s2) 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--on-paper-2);
+}
+
+.card--compact .card__foot {
+  margin-top: var(--s2);
+}
+
+.lane--delivered .lane__empty {
+  padding: var(--s4);
+}
+
+// ---------------------------------------------------------------------------
+// Ticket card
+// ---------------------------------------------------------------------------
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: transform var(--ease), box-shadow var(--ease);
+
+  // The status rail. Always paired with the badge text in the footer.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: var(--paper-line);
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 32%), 0 12px 28px rgb(0 0 0 / 30%);
+  }
+}
+
+.card--confirmed::before { background: var(--new); }
+.card--preparing::before { background: var(--preparing); }
+.card--ready::before     { background: var(--ready); }
+.card--delivered::before { background: var(--delivered); }
+
+// Urgency outranks status on the card frame: a late order must stand out from
+// across the room regardless of which lane it is in.
+.card--warning { box-shadow: 0 0 0 2px var(--warn), var(--shadow-card); }
+.card--late    { box-shadow: 0 0 0 3px var(--late), var(--shadow-card); }
+
+// The stretched hit target. Covers the card so a tap anywhere opens the focus
+// view, while the real workflow button sits above it on a higher layer.
+.card__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.card__body {
+  position: relative;
+  z-index: 2;
+  pointer-events: none; // Clicks fall through to the hit target.
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+}
+
+.card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.card__token {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.card__times {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.card__time-row {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: var(--s2);
+  justify-content: end;
+  align-items: baseline;
+  font-size: 0.68rem;
+}
+
+.card__time-label {
+  color: var(--on-paper-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.card__time-value {
+  font-weight: 700;
+}
+
+.card__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.card__source {
+  padding: 2px var(--s2);
+  border-radius: 99px;
+  background: #eaf1ff;
+  color: #1a56c4;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.card__destination {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.card__items {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s1);
+}
+
+.card__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s3);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.card__item-qty {
+  color: var(--on-paper-2);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.card__notes {
+  display: grid;
+  gap: 2px;
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm);
+  background: #fff6e0;
+  border-left: 3px solid #d99000;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b4400;
+}
+
+.card__notes-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #9a6500;
+}
+
+.card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 3px var(--s2);
+  border-radius: 99px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+// Darkened against white paper so the label clears contrast, while the rail
+// above keeps the brighter lane hue.
+.badge--confirmed { background: #c2540d; }
+.badge--preparing { background: #94700a; }
+.badge--ready     { background: #1a56c4; }
+.badge--delivered { background: #147a35; }
+
+.card__elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--on-paper-2);
+}
+
+.card__elapsed--warning { color: #9a6500; }
+.card__elapsed--late    { color: #c0201a; }
+
+.card__elapsed-flag {
+  font-weight: 900;
+}
+
+.card__action {
+  // Above the stretched hit target, so pressing it advances the order rather
+  // than opening the detail view.
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-top: 1px solid var(--paper-line);
+  background: var(--paper-2);
+  color: #0a1017;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+
+  &:hover:not(:disabled) {
+    background: #0f172a;
+    color: #fff;
+  }
+
+  &:active:not(:disabled) {
+    background: #050b16;
+  }
+
+  &:disabled {
+    color: var(--on-paper-2);
+    cursor: progress;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Focus view
+// ---------------------------------------------------------------------------
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(2 4 8 / 72%);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: var(--s5);
+  z-index: 40;
+}
+
+.detail {
+  width: min(920px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--on-paper);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  border-top: 5px solid var(--paper-line);
+}
+
+.detail--warning { border-top-color: var(--warn); }
+.detail--late    { border-top-color: var(--late); }
+
+.detail__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s5);
+  padding: var(--s5);
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.detail__identity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex: 1;
+  min-width: 0;
+}
+
+.detail__token {
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.detail__source {
+  padding: 3px var(--s2);
+  border-radius: 99px;
+  background: #eaf1ff;
+  color: #1a56c4;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detail__clocks {
+  display: flex;
+  gap: var(--s5);
+}
+
+.detail__clock {
+  display: grid;
+  gap: 2px;
+}
+
+.detail__clock-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--on-paper-2);
+}
+
+.detail__clock-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.detail__close {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--paper-line);
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--on-paper-2);
+  transition: background var(--ease), color var(--ease);
+
+  &:hover {
+    background: var(--paper-2);
+    color: var(--on-paper);
+  }
+}
+
+.detail__where {
+  display: flex;
+  gap: var(--s6);
+  flex-wrap: wrap;
+  padding: var(--s3) var(--s5);
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.detail__where-item {
+  display: grid;
+  gap: 2px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.detail__where-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--on-paper-2);
+}
+
+.detail__body {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--s5);
+  padding: var(--s5);
+}
+
+.detail__section-title {
+  margin: 0 0 var(--s3);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--on-paper-2);
+}
+
+.detail__items ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.detail__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--paper-line);
+  font-size: 1.2rem;
+  font-weight: 700;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.detail__item-qty {
+  color: var(--on-paper-2);
+}
+
+.detail__notes {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-sm);
+  background: #fff6e0;
+  border-left: 4px solid #d99000;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: #6b4400;
+}
+
+.detail__notes--empty {
+  background: var(--paper-2);
+  border-left-color: var(--paper-line);
+  color: var(--on-paper-2);
+  font-weight: 500;
+}
+
+.detail__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  padding: var(--s4) var(--s5);
+  border-top: 1px solid var(--paper-line);
+  background: var(--paper-2);
+}
+
+.detail__facts {
+  display: flex;
+  gap: var(--s6);
+  flex-wrap: wrap;
+}
+
+.detail__fact {
+  display: grid;
+  gap: var(--s1);
+}
+
+.detail__fact-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--on-paper-2);
+}
+
+.detail__fact-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.detail__fact-value--warning { color: #9a6500; }
+.detail__fact-value--late    { color: #c0201a; }
+
+.detail__action {
+  min-height: 56px;
+  min-width: 240px;
+  padding: 0 var(--s6);
+  border: 0;
+  border-radius: var(--r-md);
+  background: #0f172a;
+  color: #fff;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background var(--ease), transform var(--ease);
+
+  &:hover:not(:disabled) { background: #1c2740; }
+  &:active:not(:disabled) { transform: translateY(1px); }
+  &:disabled { background: #94a3b8; cursor: progress; }
+}
+
+.detail__done {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #147a35;
+}
+
+// ---------------------------------------------------------------------------
+// Summary
+// ---------------------------------------------------------------------------
+
+.summary {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  padding: 0 var(--s4);
+  background: var(--ink-1);
+  border-top: 1px solid var(--line);
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+  align-content: center;
+  // Equal cells with hairline dividers, so the row reads as one instrument
+  // rather than five labels floating at arbitrary intervals.
+  min-width: 104px;
+  padding: var(--s3) var(--s4);
+  border-right: 1px solid var(--line);
+
+  &:first-child {
+    padding-left: 0;
+  }
+}
+
+.stat__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--on-ink-3);
+}
+
+.stat__value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.stat--alert .stat__label { color: #ff9b96; }
+.stat--alert .stat__value { color: var(--late); }
+
+.summary__total {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) 0 var(--s3) var(--s5);
+}
+
+.summary__total-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--on-ink-3);
+}
+
+.summary__total-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.summary__total-of {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--on-ink-3);
+}
+
+// ---------------------------------------------------------------------------
+// Sign in
+// ---------------------------------------------------------------------------
+
+.signin__card {
+  width: min(400px, 100%);
+  display: grid;
+  gap: var(--s4);
+  padding: var(--s6);
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.signin__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+
+.signin__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #ffa15c, var(--new));
+  color: #2a1200;
+  font-weight: 800;
+  font-size: 1.45rem;
+  box-shadow: 0 2px 12px rgb(255 138 61 / 30%);
+}
+
+.signin__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+
+  span {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--on-ink-3);
+  }
+}
+
+.signin__field {
+  display: grid;
+  gap: var(--s2);
+}
+
+.signin__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--on-ink-3);
+}
+
+.signin__input {
+  height: 46px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--on-ink);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color var(--ease);
+
+  &:hover {
+    border-color: var(--line-strong);
+  }
+}
+
+.signin__error {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm);
+  background: rgb(242 69 61 / 12%);
+  border-left: 3px solid var(--late);
+  color: #ffb4b0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.signin__submit {
+  min-height: 48px;
+  margin-top: var(--s2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: linear-gradient(145deg, #ffa15c, var(--new));
+  color: #2a1200;
+  font-family: inherit;
+  font-size: 0.98rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: filter var(--ease), transform var(--ease);
+
+  &:hover:not(:disabled) { filter: brightness(1.06); }
+  &:active:not(:disabled) { transform: translateY(1px); }
+
+  &:disabled {
+    background: var(--ink-3);
+    color: var(--on-ink-3);
+    cursor: not-allowed;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Narrower screens
+//
+// The board is built for a large display, but a supervisor checking it on a
+// tablet or phone should still get a usable board rather than a broken one.
+// ---------------------------------------------------------------------------
+
+@media (max-width: 1280px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: var(--s3);
+  }
+
+  .topbar__controls {
+    order: 3;
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .field--search {
+    max-width: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .app__lanes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    overflow: auto;
+  }
+
+  .app__lanes {
+    grid-template-columns: 1fr;
+  }
+
+  // Internal lane scrolling stops making sense once lanes are stacked: the
+  // page itself becomes the scroll container.
+  .lane__cards {
+    overflow-y: visible;
+  }
+
+  .lane {
+    max-height: none;
+  }
+
+  .topbar__meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar__clock {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .summary {
+    overflow-x: auto;
+  }
+
+  .detail__token {
+    font-size: 2rem;
+  }
+
+  .detail__action {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

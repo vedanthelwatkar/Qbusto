@@ -1,0 +1,242 @@
+/**
+ * Global foundation for the QBusto consumer app.
+ * Mobile-first, touch-friendly, keyboard accessible.
+ */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  position: relative;
+  /* Prevent iOS rubber-banding from revealing the body behind fixed sheets. */
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The route-change focus target wraps every page, so it has to be invisible
+   to layout: pages rely on being a flex child of #root for their `flex: 1`
+   and full-height rules to work. It only ever receives focus programmatically
+   (tabIndex="-1"), so suppressing the ring here hides nothing from a keyboard
+   user — the page's own controls keep theirs. */
+.routed-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  /* No `min-height: 0` here: these pages scroll. The flex default of `auto`
+     is what lets a tall checkout grow the wrapper instead of being clipped by
+     it — the catalog sets its own fixed height and is unaffected either way. */
+
+  &:focus {
+    outline: none;
+    box-shadow: none;
+  }
+}
+
+/* Headings ------------------------------------------------------------- */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+}
+h2 {
+  font-size: var(--font-size-h2);
+}
+h3 {
+  font-size: var(--font-size-h3);
+}
+
+/* Links ---------------------------------------------------------------- */
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+
+  &:hover {
+    color: var(--color-primary-dark);
+  }
+}
+
+/* Forms ---------------------------------------------------------------- */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+input[type='text'],
+input[type='tel'],
+input[type='email'],
+input[type='number'],
+input[type='search'],
+input[type='datetime-local'],
+textarea {
+  width: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-primary);
+  padding: 12px 14px;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+
+  &::placeholder {
+    color: var(--color-text-light);
+  }
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-text-light);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: var(--focus-ring);
+  }
+
+  &:disabled {
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-light);
+    cursor: not-allowed;
+  }
+}
+
+/* Remove the spinner from number inputs; they read as clutter on mobile. */
+input[type='number'] {
+  appearance: textfield;
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+/* Date/time inputs are sized by the browser from their internal shadow-DOM
+   fields plus the picker button, and that intrinsic width acts as an automatic
+   minimum that `width: 100%` cannot shrink below. That is why this one control
+   overflows a narrow column while the text fields beside it behave.
+
+   `min-width: 0` releases the automatic minimum so the declared width wins.
+   Dropping the native appearance also drops the UA's own height, so the
+   min-height restores the same control height as its neighbours. */
+input[type='datetime-local'] {
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--touch-target-min);
+
+  /* WebKit centres the value and adds its own margin once appearance is
+     dropped; align it with every other field's text. */
+  &::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
+
+  &::-webkit-calendar-picker-indicator {
+    flex-shrink: 0;
+  }
+}
+
+/* Buttons -------------------------------------------------------------- */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* One consistent focus ring for every interactive element. Pointer users
+   never see it; keyboard users always do. */
+/* No border-radius here: the shadow already follows each element's own
+   radius, and setting one would reshape controls on focus. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Media ---------------------------------------------------------------- */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Lists ---------------------------------------------------------------- */
+ul,
+ol {
+  list-style: none;
+}
+
+/* Utilities ------------------------------------------------------------ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Respect the OS reduced-motion setting across every animation in the app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Exempt: a loading spinner is essential status feedback, not decoration.
+     Freezing it would leave a static ring that reads as a stalled UI. */
+  .spinner {
+    animation-duration: 1200ms !important;
+    animation-iteration-count: infinite !important;
+  }
+}

@@ -1,0 +1,503 @@
+/* Catalog. All rules scoped to .catalog.
+ *
+ * Layout is a fixed-height column: banner and search sit at the top, then the
+ * category rail and the product list fill the rest as two independent scroll
+ * regions. Tuned for phones and portrait kiosks first. */
+
+.catalog {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--color-bg-primary);
+  /* On the container, not on the banner: the banner is optional, and without
+     it the search bar became the topmost element and sat under the notch.
+     Safe with box-sizing: border-box — the inset comes out of the 100dvh. */
+  padding-top: env(safe-area-inset-top);
+
+  /* Header banner ------------------------------------------------------ */
+
+  &__banner {
+    flex-shrink: 0;
+    width: 100%;
+    background-color: var(--color-bg-secondary);
+
+    img {
+      width: 100%;
+      /* Capped so a tall banner can never squeeze the scroll regions below it,
+         which matters most on portrait kiosks. */
+      max-height: 22vh;
+      object-fit: cover;
+    }
+  }
+
+  /* Search ------------------------------------------------------------- */
+
+  &__searchbar {
+    flex-shrink: 0;
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  &__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  /* Holds either the magnifier or, while a search is running, the spinner —
+     hence the flex centring: the two glyphs are different sizes and must sit
+     on the same spot. */
+  &__search-icon {
+    position: absolute;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--color-text-light);
+    pointer-events: none;
+  }
+
+  /* Element+attribute selectors in global.scss outrank a bare class, so the
+     padding that clears the icon has to match that specificity. Without this
+     the placeholder sits underneath the search icon. */
+  input.catalog__search-input {
+    width: 100%;
+    min-height: var(--touch-target-min);
+    /* Right padding clears the 44px clear button at right:2px. */
+    padding: 12px 48px 12px 44px;
+    background-color: var(--color-bg-secondary);
+    border-color: transparent;
+    border-radius: var(--radius-pill);
+
+    &:focus {
+      background-color: var(--color-bg-primary);
+    }
+
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+
+  /* 44px rather than the 48px minimum: it sits inside a 48px-tall field, so
+     that is the largest target that fits. Meets README §6's 44px floor. */
+  &__search-clear {
+    position: absolute;
+    right: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: var(--color-text-secondary);
+    transition: background-color var(--transition-fast);
+
+    &:hover {
+      background-color: var(--color-bg-tertiary);
+    }
+  }
+
+  /* Two-pane layout ---------------------------------------------------- */
+
+  &__layout {
+    display: flex;
+    flex: 1;
+    /* min-height:0 lets the children own the overflow instead of the page. */
+    min-height: 0;
+  }
+
+  /* Category rail — its own scroll region. */
+  &__sidebar {
+    flex-shrink: 0;
+    width: 108px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background-color: var(--color-bg-secondary);
+    border-right: 1px solid var(--color-border);
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  &__category {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    width: 100%;
+    padding: var(--space-md) var(--space-sm);
+    border-left: 3px solid transparent;
+    color: var(--color-text-secondary);
+    text-align: center;
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast);
+
+    @media (hover: hover) {
+      &:hover:not(.is-active) {
+        background-color: var(--color-bg-tertiary);
+        color: var(--color-text-primary);
+      }
+    }
+
+    &.is-active {
+      background-color: var(--color-bg-primary);
+      border-left-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+  }
+
+  /* Category art is mostly transparent PNG — keep the plate white, never grey. */
+  &__category-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 62px;
+    height: 62px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    flex-shrink: 0;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  &__category-name {
+    font-size: 11px;
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-snug);
+    letter-spacing: 0;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  /* Product pane — its own scroll region, inner banner as the backdrop. */
+  &__products {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-lg) var(--space-md);
+    /* Clears the floating cart bar. */
+    padding-bottom: calc(104px + env(safe-area-inset-bottom));
+    background-color: var(--color-bg-primary);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+  }
+
+  /* Products wrap into whatever width is available. */
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--space-md);
+    align-items: start;
+  }
+
+  /* Results being narrowed by a search. The previous set is held rather than
+     swapped for skeletons — that would flash on every keystroke — but it is
+     dimmed so it reads as superseded, and pointer events are off so nothing
+     can be added from a list that is about to be replaced. */
+  &__grid.is-stale {
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+  }
+
+  /* Pagination --------------------------------------------------------- */
+
+  &__more {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-xl);
+  }
+
+  &__list-error {
+    margin-top: var(--space-lg);
+  }
+
+  /* Pane heading -------------------------------------------------------- */
+
+  /* Names what the grid is showing. The rail's highlight scrolls away with the
+     rail, so on a long list it was possible to lose track of the category. */
+  /* Opaque, because the pane's background may be the inner banner artwork and
+     dark heading text on an arbitrary photograph is unreadable. With no banner
+     the surface matches the pane and this degrades to plain text. */
+  &__pane-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-primary);
+  }
+
+  &__pane-title {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    min-width: 0;
+    /* A long search term must not push the count off the row. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__pane-count {
+    flex-shrink: 0;
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The empty state is the shared StatePanel; it only needs centring in the
+     pane's available height. */
+  .state-panel--boxed {
+    margin: 0 auto;
+    max-width: 420px;
+  }
+
+  /* Skeletons ---------------------------------------------------------- */
+
+  &__skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  &__skeleton-media {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--radius-md);
+  }
+
+  /* Matches the pane title's line box, so the heading does not shift when the
+     real one replaces it. */
+  &__skeleton-title {
+    height: calc(var(--font-size-h3) * 1.2);
+    width: 40%;
+    max-width: 180px;
+  }
+
+  &__skeleton-line {
+    height: 12px;
+    width: 100%;
+  }
+
+  &__skeleton-line--short {
+    width: 55%;
+  }
+
+  /* Floating cart bar --------------------------------------------------- */
+
+  &__cart-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    padding: var(--space-md) var(--space-lg);
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+
+  &__cart-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    min-height: 56px;
+    padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    box-shadow: var(--shadow-lg);
+    pointer-events: auto;
+    transition:
+      background-color var(--transition-fast),
+      transform var(--transition-fast);
+
+    @media (hover: hover) {
+      &:hover {
+        background-color: var(--color-primary-dark);
+      }
+    }
+
+    &:active {
+      transform: scale(0.99);
+    }
+  }
+
+  &__cart-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    min-width: 0;
+  }
+
+  &__cart-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  &__cart-count {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-bg-primary);
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: var(--font-weight-bold);
+  }
+
+  &__cart-label {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    color: rgba(255, 255, 255, 0.85);
+    /* A five-figure total on a 320px screen would otherwise push the CTA off
+       the bar. This is the one element here that is safe to lose. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__cart-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    /* Never compress the money or the CTA; the item label on the left gives
+       way instead — the count is already on the badge. */
+    flex-shrink: 0;
+  }
+
+  &__cart-total {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__cart-cta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 var(--space-lg);
+    border-radius: var(--radius-md);
+    background-color: rgba(255, 255, 255, 0.18);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+  }
+}
+
+/* Very narrow phones: reclaim width from the rail. */
+@media (max-width: 380px) {
+  .catalog__sidebar {
+    width: 92px;
+  }
+
+  .catalog__category-thumb {
+    width: 54px;
+    height: 54px;
+  }
+
+  .catalog__products {
+    padding-left: var(--space-sm);
+    padding-right: var(--space-sm);
+  }
+
+  .catalog__grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+}
+
+/* Tablets and portrait kiosks: bigger touch targets, roomier rail. */
+@media (min-width: 768px) {
+  .catalog__sidebar {
+    width: 150px;
+  }
+
+  .catalog__category {
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .catalog__category-thumb {
+    width: 86px;
+    height: 86px;
+  }
+
+  .catalog__category-name {
+    font-size: var(--font-size-small);
+  }
+
+  .catalog__products {
+    padding: var(--space-xl) var(--space-lg);
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+
+  .catalog__grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--space-lg);
+  }
+}
+
+/* Tall kiosk displays have the vertical room for a larger rail still. */
+@media (min-width: 1000px) and (min-height: 1200px) {
+  .catalog__sidebar {
+    width: 190px;
+  }
+
+  .catalog__category-thumb {
+    width: 118px;
+    height: 118px;
+  }
+
+  .catalog__grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  }
+}
+
+/* Desktop: cap the reading width so the grid doesn't sprawl. */
+@media (min-width: 1280px) {
+  .catalog__grid {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+}

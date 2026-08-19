@@ -1,0 +1,255 @@
+/* Product card. All rules scoped to .product-card. */
+
+/* One short beat when the count badge first appears, so adding an item is
+   acknowledged somewhere other than the button that was just tapped. Runs
+   once and does not delay the tap; the global reduced-motion rule collapses
+   it to nothing. */
+@keyframes qb-badge-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-md);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+
+  @media (hover: hover) {
+    &:hover {
+      border-color: var(--color-border-strong);
+      box-shadow: var(--shadow-md);
+    }
+  }
+
+  &--in-cart {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  /* Media ------------------------------------------------------------- */
+
+  /* Product art is almost always a transparent PNG, so the plate stays
+     transparent and the image is contained rather than cropped. */
+  &__media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    background-color: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  &__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-md);
+    color: var(--color-text-light);
+    background-color: var(--color-bg-secondary);
+  }
+
+  &__badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    box-shadow: var(--shadow-sm);
+    animation: qb-badge-pop 220ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  }
+
+  /* Body -------------------------------------------------------------- */
+
+  &__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding-top: var(--space-md);
+    text-align: center;
+  }
+
+  &__name {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-snug);
+    letter-spacing: 0;
+    color: var(--color-text-primary);
+    /* Two lines max keeps every card in a row the same height. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__description {
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-snug);
+    color: var(--color-text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__weight {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+  }
+
+  /* Price sits directly above a full-width action, as on the reference. */
+  &__footer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+    width: 100%;
+    margin-top: auto;
+    padding-top: var(--space-md);
+  }
+
+  &__price {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    letter-spacing: var(--tracking-tight);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__price--na {
+    color: var(--color-text-light);
+  }
+
+  /* Full 48px from the narrowest phone up: this and the stepper are the most
+     tapped controls in the app, and mobile is the primary target. They were
+     40px here and only reached 48px at the tablet breakpoint — backwards. */
+  &__add {
+    width: 100%;
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-md);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    transition:
+      background-color var(--transition-fast),
+      transform var(--transition-fast);
+
+    @media (hover: hover) {
+      &:hover {
+        background-color: var(--color-primary-dark);
+      }
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.98);
+      background-color: var(--color-primary-darker);
+    }
+
+    &:disabled {
+      background-color: var(--color-bg-tertiary);
+      color: var(--color-text-light);
+      cursor: not-allowed;
+    }
+  }
+
+  /* No `overflow: hidden` here: it clipped the focus ring on the buttons
+     inside. The children round their own outer corners instead. */
+  &__stepper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary-subtle);
+    border: 1px solid var(--color-primary-muted);
+  }
+
+  &__step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    flex-shrink: 0;
+    color: var(--color-primary);
+    transition: background-color var(--transition-fast);
+
+    &:first-child {
+      border-radius: var(--radius-inner) 0 0 var(--radius-inner);
+    }
+
+    &:last-child {
+      border-radius: 0 var(--radius-inner) var(--radius-inner) 0;
+    }
+
+    @media (hover: hover) {
+      &:hover {
+        background-color: var(--color-primary-muted);
+      }
+    }
+
+    &:active {
+      background-color: var(--color-primary-muted);
+    }
+  }
+
+  &__qty {
+    flex: 1;
+    text-align: center;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary-dark);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (min-width: 768px) {
+  .product-card {
+    padding: var(--space-lg);
+
+    &__name {
+      font-size: var(--font-size-body);
+    }
+
+    &__description {
+      font-size: var(--font-size-small);
+    }
+  }
+}

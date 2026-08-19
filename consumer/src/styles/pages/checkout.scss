@@ -1,0 +1,382 @@
+/* Checkout. All rules scoped to .checkout. */
+
+.checkout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--color-bg-secondary);
+
+  /* Top bar ------------------------------------------------------------ */
+
+  &__topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top));
+    background-color: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--touch-target-min);
+    margin-left: calc(var(--space-sm) * -1);
+    padding: 0 var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-primary);
+    transition: background-color var(--transition-fast);
+
+    &:hover:not(:disabled) {
+      background-color: var(--color-bg-secondary);
+    }
+
+    &:disabled {
+      color: var(--color-text-light);
+    }
+  }
+
+  /* Progress is the shared .steps component — see shared.scss. */
+
+  /* Layout -------------------------------------------------------------- */
+
+  &__layout {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-lg);
+    width: 100%;
+    max-width: var(--content-max);
+    margin: 0 auto;
+    padding: var(--space-lg);
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    min-width: 0;
+  }
+
+  &__intro {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  &__title {
+    font-size: var(--font-size-h1);
+  }
+
+  &__lede {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+    max-width: 46ch;
+  }
+
+  /* Form ---------------------------------------------------------------- */
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+
+  &__group {
+    /* fieldset needs its browser defaults cleared before it can be a card. */
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-bg-primary);
+    padding: var(--space-lg);
+    min-width: 0;
+  }
+
+  /* Floating the legend stops it notching the fieldset's top border, so the
+     group reads as a solid card. Following siblings must clear it. */
+  &__group-title {
+    float: left;
+    width: 100%;
+    padding: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+  }
+
+  &__group-hint {
+    clear: both;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-xs);
+  }
+
+  &__fields {
+    clear: both;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    margin-top: var(--space-lg);
+  }
+
+  /* Two controls that belong on one line: row and seat. The positional
+     `nth-child(3)` rule this replaces was left over from when screen and film
+     were still fields here, and would have caught whichever control happened
+     to land third. */
+  &__fields--pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-md);
+  }
+
+  /* Actions ------------------------------------------------------------- */
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    position: sticky;
+    bottom: 0;
+    padding: var(--space-md) 0;
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+    background: linear-gradient(
+      to top,
+      var(--color-bg-secondary) 70%,
+      var(--color-bg-secondary-fade)
+    );
+  }
+
+  &__secure {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  /* Summary ------------------------------------------------------------- */
+
+  &__aside {
+    min-width: 0;
+    /* Above the form on mobile, so the customer can confirm what they are
+       buying before entering details — collapsed by default so it costs no
+       scrolling. (The previous comment here claimed the opposite of what this
+       rule does.) */
+    order: -1;
+  }
+
+  &__summary {
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  /* Mobile disclosure header ------------------------------------------- */
+
+  &__summary-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    width: 100%;
+    min-height: var(--touch-target-min);
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--radius-lg);
+    text-align: left;
+  }
+
+  &__summary-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--color-text-secondary);
+  }
+
+  &__summary-amount {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__summary-chevron {
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+    transition: transform var(--transition-fast);
+  }
+
+  &__summary-toggle[aria-expanded='true'] &__summary-chevron {
+    transform: rotate(180deg);
+  }
+
+  &__summary-body {
+    display: none;
+    padding: 0 var(--space-lg) var(--space-lg);
+
+    &.is-open {
+      display: block;
+    }
+  }
+
+  /* Static head. Redundant with the toggle on mobile, so it only appears at
+     the desktop breakpoint where the toggle is hidden. */
+  &__summary-head {
+    display: none;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Used by both the mobile toggle (a span) and the desktop head (an h2), so
+     the weight is set here rather than inherited from the heading element. */
+  &__summary-title {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+    /* Yields to the count and total, which must never wrap or clip. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__summary-count {
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+  }
+
+  &__lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    padding: var(--space-md) 0;
+  }
+
+  &__line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-sm);
+    font-size: var(--font-size-small);
+  }
+
+  &__line-qty {
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__line-name {
+    color: var(--color-text-primary);
+    min-width: 0;
+  }
+
+  &__line-price {
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-border);
+  }
+
+  &__total-label {
+    font-size: var(--font-size-body);
+    color: var(--color-text-secondary);
+  }
+
+  &__total-value {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__total-note {
+    margin-top: var(--space-md);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-light);
+  }
+}
+
+@media (max-width: 400px) {
+  .checkout__fields--pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* On the narrowest phones the toggle row runs out of width. The total is the
+   number the customer is looking for, so the item count is what gives way —
+   it is still on the first line of the expanded summary. */
+@media (max-width: 360px) {
+  .checkout__summary-toggle .checkout__summary-count {
+    display: none;
+  }
+}
+
+/* Desktop: form and summary side by side, with the summary pinned so the
+   totals stay visible while the form is filled in. */
+@media (min-width: 900px) {
+  .checkout__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+    gap: var(--space-xl);
+    padding-top: var(--space-xl);
+  }
+
+  .checkout__aside {
+    order: 0;
+    position: sticky;
+    top: calc(72px + var(--space-lg));
+  }
+
+  /* The sidebar has room for the whole summary, so there is nothing for a
+     disclosure to save. The static head replaces the toggle and the body is
+     always open, regardless of the collapsed state the customer may have left
+     it in on a narrower screen. */
+  .checkout__summary-toggle {
+    display: none;
+  }
+
+  .checkout__summary-head {
+    display: flex;
+  }
+
+  .checkout__summary-body {
+    display: block;
+    padding-top: var(--space-lg);
+  }
+
+  .checkout__actions {
+    position: static;
+    align-items: stretch;
+    background: none;
+    padding-bottom: 0;
+  }
+
+  .checkout__secure {
+    justify-content: center;
+  }
+}
