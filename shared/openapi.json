@@ -727,6 +727,168 @@
           }
         }
       },
+      "Film": {
+        "type": "object",
+        "description": "A film as the source system supplies it. Read-only: the catalogue is synced, so QBusto does not write it.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "HO00012070",
+            "description": "The source system's film code. This is the primary key."
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "example": "Toxic: A Fairy Tale For Grown-ups"
+          },
+          "certification": {
+            "type": "string",
+            "nullable": true,
+            "example": "U/A"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "nullable": true,
+            "example": 125
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Poster art from the source system."
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "description": "The source system's lifecycle flag."
+          },
+          "nowShowingFlag": {
+            "type": "string",
+            "nullable": true,
+            "example": "N",
+            "description": "The source system's raw flag, passed through without interpretation - its vocabulary is not documented and the client's data has never contained a 'Y' value."
+          },
+          "openingDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "One screening as the source system supplies it. Read-only. The auditorium is named rather than referenced by id.",
+        "properties": {
+          "cinemaCode": {
+            "type": "string",
+            "example": "NOIDA"
+          },
+          "sessionId": {
+            "type": "integer",
+            "example": 18757,
+            "description": "The source system's session id, unique within a cinema."
+          },
+          "filmCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "HO00012070"
+          },
+          "screenNumber": {
+            "type": "integer",
+            "nullable": true,
+            "example": 5
+          },
+          "screenName": {
+            "type": "string",
+            "nullable": true,
+            "example": "IMAX"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsTotal": {
+            "type": "integer",
+            "nullable": true
+          },
+          "seatsAvailable": {
+            "type": "integer",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "example": "O",
+            "description": "The source system's status flag."
+          },
+          "filmTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "cinemaName": {
+            "type": "string",
+            "nullable": true
+          },
+          "cinemaId": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ConsumerSession": {
+        "type": "object",
+        "description": "A screening a customer can order against. Selecting one supplies the order's filmTitle and showTime.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 18757,
+            "description": "The source system's session id, unique within this cinema."
+          },
+          "screenName": {
+            "type": "string",
+            "nullable": true,
+            "example": "IMAX",
+            "description": "The auditorium as the source system names it. There is no screen id: the schedule does not reference one."
+          },
+          "filmCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "HO00012070"
+          },
+          "filmTitle": {
+            "type": "string",
+            "nullable": true,
+            "example": "Toxic: A Fairy Tale For Grown-ups",
+            "description": "Send this as the order's filmTitle."
+          },
+          "certification": {
+            "type": "string",
+            "nullable": true,
+            "example": "U/A"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "nullable": true,
+            "example": 125
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Send this as the order's showTime."
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "seatsAvailable": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
       "OrderStatus": {
         "type": "object",
         "description": "A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.",
@@ -1773,6 +1935,272 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/uploads/{entity}": {
+      "post": {
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "Upload an image for an entity",
+        "description": "Stores an image on the server and returns the application path to save in that entity's existing image column. The same column also accepts an external `https://` URL, so a record's image may come from either source and every client reads one field.\n\nThe returned `path` is an application path such as `/uploads/products/9f2c….webp`, served by `GET /uploads/...`. No filesystem location is exposed, and the storage root can differ between servers without changing stored values.\n\nThe file is accepted only if its leading bytes match a JPEG, PNG, GIF or WebP signature; the declared content type and the original filename are not trusted. The stored filename is generated by the server, so an upload cannot overwrite an existing file or influence its own location. SVG is rejected because it can carry script.\n\nRequires the `edit` permission for the module that owns the entity: `banners` → Banners, `categories` → Categories, `products` → Products, `chains` and `films` → Settings.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity",
+            "required": true,
+            "description": "Which entity the image belongs to. Determines the folder and the permission required.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "banners",
+                "categories",
+                "chains",
+                "films",
+                "products"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "JPEG, PNG, GIF or WebP. Maximum size is set by MAX_UPLOAD_SIZE_MB (default 5 MB)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "example": "/uploads/products/9f2c1a7b4d8e6f30a1b2c3d4e5f60718.webp",
+                              "description": "Save this in the entity's image column."
+                            },
+                            "mimeType": {
+                              "type": "string",
+                              "example": "image/webp"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "example": 48213
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "List sessions",
+        "description": "The screening schedule as the source system supplies it, earliest first. Scoped to the caller's chain through each session's cinema.\n\nThe auditorium is identified by `screenName` as the source system names it, not by a `screens.id`.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filmCode",
+            "schema": {
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Lower bound on startsAt."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Upper bound on startsAt."
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sessionId",
+                "startsAt",
+                "endsAt",
+                "filmCode",
+                "screenName",
+                "status"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Session"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Get one session by its source-system session id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The source system's session id, unique within a cinema."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Session"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -4270,6 +4698,161 @@
         }
       }
     },
+    "/api/films": {
+      "get": {
+        "tags": [
+          "Films"
+        ],
+        "summary": "List films",
+        "description": "The film catalogue as the source system supplies it. Shared across every cinema and not tenant-scoped. Read-only.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches the title."
+          },
+          {
+            "in": "query",
+            "name": "nowShowingFlag",
+            "schema": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "description": "Exact match on the source system's raw now-showing flag. Not interpreted - the client's data has never contained a 'Y' value, so no boolean meaning is assumed here. Pass the exact stored character to filter on it.\n"
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "code",
+                "title",
+                "certification",
+                "durationMinutes",
+                "openingDate"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Films",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Film"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/films/{code}": {
+      "get": {
+        "tags": [
+          "Films"
+        ],
+        "summary": "Get one film by its source-system code",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "description": "The source system's film code, e.g. HO00012070."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Film",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Film"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/consumer/cinemas/{id}": {
       "get": {
         "tags": [
@@ -4627,6 +5210,55 @@
                           "type": "array",
                           "items": {
                             "$ref": "#/components/schemas/Banner"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cinema not found"
+          }
+        }
+      }
+    },
+    "/api/consumer/cinemas/{cinemaId}/sessions": {
+      "get": {
+        "tags": [
+          "Consumer - Catalog"
+        ],
+        "summary": "Get bookable sessions for a cinema",
+        "description": "Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.\n\nThe Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenId`, `filmTitle` and `showTime` together, so the customer does not enter the three separately and they cannot disagree.\n\nSessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.\n",
+        "parameters": [
+          {
+            "name": "cinemaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ConsumerSession"
                           }
                         }
                       }

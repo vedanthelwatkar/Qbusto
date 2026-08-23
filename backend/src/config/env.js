@@ -15,7 +15,18 @@
 
 require('dotenv').config();
 
+const path = require('path');
+
 const Joi = require('joi');
+
+/**
+ * The directory containing `backend`, `shared` and the frontends.
+ *
+ * `shared/openapi.json` is already resolved from here by
+ * scripts/generate-openapi.js; uploaded images use the same anchor so that
+ * `shared/` is one shared location rather than two conventions.
+ */
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 const MIN_PRODUCTION_SECRET_LENGTH = 32;
 
@@ -72,6 +83,27 @@ const envSchema = Joi.object({
 
   // ---- Docs ----
   SWAGGER_ENABLED: Joi.boolean().default(true),
+
+  /**
+   * ---- Uploaded image storage ----
+   *
+   * Root directory for uploaded images. The default puts them in the shared
+   * directory that already holds openapi.json, so the platform has one shared
+   * storage location rather than a copy per application. Relative values are
+   * resolved against the repository root - the same anchor the OpenAPI
+   * generator uses - which keeps the default working whatever directory the
+   * service is started from.
+   *
+   * PRODUCTION sets an absolute path outside the source tree, so redeploying
+   * cannot delete uploaded images. An absolute value is used as given.
+   *
+   * The database stores `/uploads/<entity>/<file>`, never a path from here, so
+   * this value can differ between servers without touching a single row.
+   */
+  FILE_STORAGE_PATH: Joi.string().default('shared/uploads'),
+
+  /** Largest accepted upload, in megabytes. */
+  MAX_UPLOAD_SIZE_MB: Joi.number().integer().positive().max(50).default(5),
 
   // ---- Razorpay (Phase 2; not required to boot) ----
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
@@ -226,6 +258,21 @@ const env = {
      */
     webhookSecret: value.RAZORPAY_WEBHOOK_SECRET || '',
     webhooksEnabled: Boolean(value.RAZORPAY_WEBHOOK_SECRET),
+  },
+
+  uploads: {
+    /**
+     * Absolute from here on. Everything downstream joins onto this, so
+     * resolving once means no other module has to care whether the configured
+     * value was relative or where the process was started from.
+     *
+     * path.resolve returns an absolute FILE_STORAGE_PATH unchanged, so a
+     * production server pointing at a location off the deployment disk is not
+     * affected by the repository-relative default.
+     */
+    storagePath: path.resolve(REPO_ROOT, value.FILE_STORAGE_PATH),
+    maxBytes: value.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+    maxSizeMb: value.MAX_UPLOAD_SIZE_MB,
   },
 };
 

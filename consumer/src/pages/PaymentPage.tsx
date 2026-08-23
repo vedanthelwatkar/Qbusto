@@ -654,7 +654,10 @@ export default function PaymentPage() {
     setInitAttempt((n) => n + 1);
   };
 
-  const handleGoBack = () => navigate('/checkout');
+  // Checkout is a sheet over the catalogue rather than its own route, so
+  // "go back" returns to the menu. The cart still holds the order, so the
+  // customer can reopen it, correct something and try again.
+  const handleGoBack = () => navigate('/catalog');
 
   // --- Rendering ---------------------------------------------------------
 

@@ -377,6 +377,104 @@ const definition = {
           updatedAt: { type: 'string', format: 'date-time' },
         },
       },
+      Film: {
+        type: 'object',
+        description:
+          'A film as the source system supplies it. Read-only: the catalogue is ' +
+          'synced, so QBusto does not write it.',
+        properties: {
+          code: {
+            type: 'string',
+            example: 'HO00012070',
+            description: "The source system's film code. This is the primary key.",
+          },
+          title: { type: 'string', nullable: true, example: 'Toxic: A Fairy Tale For Grown-ups' },
+          certification: { type: 'string', nullable: true, example: 'U/A' },
+          durationMinutes: { type: 'integer', nullable: true, example: 125 },
+          imageUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Poster art from the source system.',
+          },
+          status: {
+            type: 'string',
+            nullable: true,
+            description: "The source system's lifecycle flag.",
+          },
+          nowShowingFlag: {
+            type: 'string',
+            nullable: true,
+            example: 'N',
+            description:
+              "The source system's raw flag, passed through without interpretation - " +
+              "its vocabulary is not documented and the client's data has never " +
+              "contained a 'Y' value.",
+          },
+          openingDate: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      Session: {
+        type: 'object',
+        description:
+          'One screening as the source system supplies it. Read-only. The ' +
+          'auditorium is named rather than referenced by id.',
+        properties: {
+          cinemaCode: { type: 'string', example: 'NOIDA' },
+          sessionId: {
+            type: 'integer',
+            example: 18757,
+            description: "The source system's session id, unique within a cinema.",
+          },
+          filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
+          screenNumber: { type: 'integer', nullable: true, example: 5 },
+          screenName: { type: 'string', nullable: true, example: 'IMAX' },
+          startsAt: { type: 'string', format: 'date-time' },
+          endsAt: { type: 'string', format: 'date-time' },
+          seatsTotal: { type: 'integer', nullable: true },
+          seatsAvailable: { type: 'integer', nullable: true },
+          status: { type: 'string', example: 'O', description: "The source system's status flag." },
+          filmTitle: { type: 'string', nullable: true },
+          cinemaName: { type: 'string', nullable: true },
+          cinemaId: { type: 'integer', nullable: true },
+        },
+      },
+      ConsumerSession: {
+        type: 'object',
+        description:
+          'A screening a customer can order against. Selecting one supplies the ' +
+          "order's filmTitle and showTime.",
+        properties: {
+          id: {
+            type: 'integer',
+            example: 18757,
+            description: "The source system's session id, unique within this cinema.",
+          },
+          screenName: {
+            type: 'string',
+            nullable: true,
+            example: 'IMAX',
+            description:
+              'The auditorium as the source system names it. There is no screen id: ' +
+              'the schedule does not reference one.',
+          },
+          filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
+          filmTitle: {
+            type: 'string',
+            nullable: true,
+            example: 'Toxic: A Fairy Tale For Grown-ups',
+            description: "Send this as the order's filmTitle.",
+          },
+          certification: { type: 'string', nullable: true, example: 'U/A' },
+          durationMinutes: { type: 'integer', nullable: true, example: 125 },
+          startsAt: {
+            type: 'string',
+            format: 'date-time',
+            description: "Send this as the order's showTime.",
+          },
+          endsAt: { type: 'string', format: 'date-time', nullable: true },
+          seatsAvailable: { type: 'integer', nullable: true },
+        },
+      },
       OrderStatus: {
         type: 'object',
         description:

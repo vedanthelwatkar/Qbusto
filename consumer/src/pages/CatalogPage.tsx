@@ -6,11 +6,13 @@ import {
   fetchAllCategories,
   fetchProducts,
   fetchBanners,
+  fetchCinema,
 } from '@/services/catalog.service';
 import ProductCard from '@/components/ProductCard';
-import CartDrawer from '@/components/CartDrawer';
+import CheckoutDrawer from '@/components/CheckoutDrawer';
 import StatePanel from '@/components/StatePanel';
 import Thumbnail from '@/components/Thumbnail';
+import { resolveImageUrl } from '@/utils/imageUrl';
 import { formatApiError, isNotFoundError } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
 import { AlertIcon, BagIcon, CloseIcon, SearchIcon } from '@/components/icons';
@@ -33,6 +35,9 @@ const PAGE_SIZE = 24;
 /** Matches the previous debounce. Long enough to skip most keystrokes. */
 const SEARCH_DEBOUNCE_MS = 250;
 
+/** How long each header banner stays on screen before the next one. */
+const BANNER_ROTATE_MS = 3000;
+
 export default function CatalogPage() {
   const cinemaId = useContextStore((state) => state.cinemaId) as number;
   const itemCount = useCartStore((state) => state.itemCount());
@@ -42,8 +47,17 @@ export default function CatalogPage() {
 
   // Page chrome: the category rail and the banners. Loaded once per cinema.
   const [categories, setCategories] = useState<Category[]>([]);
-  const [headerBanner, setHeaderBanner] = useState<Banner | null>(null);
+  /**
+   * All active header banners, in `sequence` order as the API returned them.
+   *
+   * Previously only the first was kept and the rest were discarded, so a
+   * cinema running several promotions could only ever show one of them.
+   */
+  const [headerBanners, setHeaderBanners] = useState<Banner[]>([]);
+  const [bannerIndex, setBannerIndex] = useState(0);
   const [innerBanner, setInnerBanner] = useState<Banner | null>(null);
+  /** For the "Welcome to <cinema>" strip shown above the menu search. */
+  const [cinemaName, setCinemaName] = useState<string | null>(null);
   /**
    * Fatal for the page: without the rail there is nothing to browse. Held
    * locally rather than in the shared UI store, which was global state written
@@ -83,15 +97,22 @@ export default function CatalogPage() {
 
     const loadChrome = async () => {
       try {
-        const [allCategories, headerBanners, innerBanners] = await Promise.all([
+        const [allCategories, headerBanners, innerBanners, cinema] = await Promise.all([
           fetchAllCategories(cinemaId),
           fetchBanners(cinemaId, { type: 'H' }),
           fetchBanners(cinemaId, { type: 'I' }),
+          fetchCinema(cinemaId),
         ]);
 
         if (!active) return;
         setCategories(allCategories);
-        setHeaderBanner(headerBanners.data[0] ?? null);
+        setCinemaName(cinema.name ?? null);
+        // A banner with no artwork cannot be a slide; keeping it would show a
+        // blank frame in the rotation.
+        setHeaderBanners(headerBanners.data.filter((banner) => banner.imageUrl));
+        // Back to the first promotion: the previous index belonged to the
+        // cinema that was on screen before this one.
+        setBannerIndex(0);
         setInnerBanner(innerBanners.data[0] ?? null);
         setPageError(null);
       } catch (error) {
@@ -182,6 +203,37 @@ export default function CatalogPage() {
     loadProducts(1, { append: false });
   }, [loadProducts, selectedCategoryId]);
 
+  /**
+   * Which slide is showing.
+   *
+   * Clamped rather than used directly: switching cinema replaces the list, and
+   * an index left over from a longer one would otherwise mark nothing active
+   * and leave the strip blank.
+   */
+  const activeBanner = bannerIndex < headerBanners.length ? bannerIndex : 0;
+
+  /**
+   * Cycle through the header banners.
+   *
+   * A cinema schedules several promotions and expects each to be seen, so the
+   * strip runs as a loop. Stopped for a single banner - there is nothing to
+   * cycle - and for customers who have asked for reduced motion, who get the
+   * first banner and the dots to move through the rest themselves.
+   */
+  useEffect(() => {
+    if (headerBanners.length < 2) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const timerId = window.setTimeout(() => {
+      setBannerIndex((index) => (index + 1) % headerBanners.length);
+    }, BANNER_ROTATE_MS);
+
+    return () => window.clearTimeout(timerId);
+    // Re-armed for each slide rather than left running as one interval, so
+    // picking a promotion with the dots gives it a full turn on screen instead
+    // of whatever was left of the previous slide's.
+  }, [headerBanners.length, activeBanner]);
+
   const loadedAll = products.length >= total;
 
   const activeCategoryName =
@@ -226,11 +278,44 @@ export default function CatalogPage() {
 
   return (
     <div className="catalog">
-      {headerBanner?.imageUrl && (
+      {headerBanners.length > 0 && (
         <div className="catalog__banner">
-          <img src={headerBanner.imageUrl} alt="" />
+          {/* Every slide stays mounted and stacked, and only opacity changes.
+              Rendering one at a time meant each change unmounted the visible
+              image and mounted the next, which then had to be fetched - so the
+              strip went blank between promotions instead of crossing from one
+              to the next. Here they are all loaded up front and the swap is a
+              fade with nothing underneath it. */}
+          {headerBanners.map((banner, index) => (
+            <img
+              key={banner.id}
+              src={resolveImageUrl(banner.imageUrl)}
+              alt=""
+              className={`catalog__banner-slide${index === activeBanner ? ' is-active' : ''}`}
+              // The inactive slides are still in the document, so they have to
+              // be hidden from assistive tech rather than merely faded out.
+              aria-hidden={index !== activeBanner}
+            />
+          ))}
+
+          {headerBanners.length > 1 && (
+            <div className="catalog__banner-dots" role="group" aria-label="Promotions">
+              {headerBanners.map((banner, index) => (
+                <button
+                  key={banner.id}
+                  type="button"
+                  className={`catalog__banner-dot${index === activeBanner ? ' is-active' : ''}`}
+                  aria-label={`Show promotion ${index + 1} of ${headerBanners.length}`}
+                  aria-current={index === activeBanner}
+                  onClick={() => setBannerIndex(index)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
+
+      {cinemaName && <div className="catalog__welcome">Welcome to {cinemaName}</div>}
 
       <div className="catalog__searchbar">
         <div className="catalog__search">
@@ -302,7 +387,9 @@ export default function CatalogPage() {
           className="catalog__products"
           style={
             innerBanner?.imageUrl
-              ? { backgroundImage: `url(${innerBanner.imageUrl})` }
+              ? {
+                  backgroundImage: `url(${resolveImageUrl(innerBanner.imageUrl)})`,
+                }
               : undefined
           }
         >
@@ -456,7 +543,7 @@ export default function CatalogPage() {
         </main>
       </div>
 
-      <CartDrawer />
+      <CheckoutDrawer />
 
       {itemCount > 0 && !cartOpen && (
         <div className="catalog__cart-bar">

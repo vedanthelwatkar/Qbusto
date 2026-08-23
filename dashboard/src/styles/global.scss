@@ -206,3 +206,27 @@ body {
     height: 40px;
   }
 }
+
+// Image chooser used by every form that stores a picture. The preview is a
+// fixed box so a portrait and a landscape image do not resize the modal.
+.image-field__preview {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgb(0 0 0 / 8%);
+  background: rgb(0 0 0 / 3%);
+}
+
+.image-field__preview--empty {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-size: 12px;
+  padding: 4px;
+}
+
+.image-field__source {
+  font-size: 12px;
+}

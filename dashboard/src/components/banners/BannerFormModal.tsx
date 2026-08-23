@@ -21,7 +21,6 @@ import {
   App,
   DatePicker,
   Form,
-  Input,
   InputNumber,
   Modal,
   Select,
@@ -41,6 +40,7 @@ import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import { toApiError } from '@/services/api';
 import * as bannersService from '@/services/banners.service';
 import { fieldErrorsFrom } from '@/utils/validation';
+import ImageField from '@/components/ImageField';
 
 const { Text } = Typography;
 
@@ -236,14 +236,16 @@ export default function BannerFormModal({
 
           <Form.Item
             name="imageUrl"
-            label="Image URL"
+            label="Image"
             extra="One banner carries one image. Add another row to show a second."
             rules={[
-              { required: true, message: 'Enter an image URL' },
+              // banners.image_url is NOT NULL, unlike the other image columns,
+              // so an empty value has to be caught here rather than sent.
+              { required: true, message: 'Add an image URL or upload an image' },
               { max: 500, message: 'Use at most 500 characters' },
             ]}
           >
-            <Input placeholder="https://..." />
+            <ImageField entity="banners" />
           </Form.Item>
 
           <Form.Item

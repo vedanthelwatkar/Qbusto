@@ -5,11 +5,22 @@ interface CartItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /**
+   * Snapshot of the product's image, so the cart can show what was added
+   * without refetching the catalogue. Either an external URL or an
+   * `/uploads/...` path - resolveImageUrl handles both at render time.
+   */
+  imageUrl?: string | null;
 }
 
 interface CartState {
   items: CartItem[];
-  addItem(productId: number, productName: string, unitPrice: number): void;
+  addItem(
+    productId: number,
+    productName: string,
+    unitPrice: number,
+    imageUrl?: string | null
+  ): void;
   updateQuantity(productId: number, quantity: number): void;
   removeItem(productId: number): void;
   clear(): void;
@@ -20,7 +31,7 @@ interface CartState {
 
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
-  addItem: (productId, productName, unitPrice) => {
+  addItem: (productId, productName, unitPrice, imageUrl = null) => {
     set((state) => {
       const existing = state.items.find((i) => i.productId === productId);
       if (existing) {
@@ -31,7 +42,10 @@ export const useCartStore = create<CartState>((set, get) => ({
         };
       }
       return {
-        items: [...state.items, { productId, productName, quantity: 1, unitPrice }],
+        items: [
+          ...state.items,
+          { productId, productName, quantity: 1, unitPrice, imageUrl },
+        ],
       };
     });
   },

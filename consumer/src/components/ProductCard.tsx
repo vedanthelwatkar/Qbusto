@@ -117,7 +117,7 @@ export default function ProductCard({
             <button
               type="button"
               className="product-card__add"
-              onClick={() => addItem(id, name, price)}
+              onClick={() => addItem(id, name, price, imageUrl)}
               aria-label={`Add ${name} to cart`}
             >
               Add

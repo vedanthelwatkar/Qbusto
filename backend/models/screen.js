@@ -27,6 +27,27 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(50),
         allowNull: false,
       },
+      /**
+       * Seat class this row of the auditorium belongs to, e.g. "Platinum" or
+       * "Recliner". Free text: cinemas name their own seating tiers.
+       *
+       * Supplied by the client's data. Nullable, because the rows that predate
+       * it do not carry one.
+       */
+      category: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
+      /**
+       * Seat-row label, e.g. "A". Two characters, so "AA" is possible.
+       *
+       * Matches the row half of the seat string an order stores: the Consumer
+       * joins row and seat into `orders.seat_number` as e.g. "A5".
+       */
+      seatRow: {
+        type: DataTypes.STRING(2),
+        allowNull: true,
+      },
       isActive: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

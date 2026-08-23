@@ -65,6 +65,18 @@ src/api/generated/
 Generated client code is never edited by hand. When an endpoint changes,
 regenerate the specification and then the affected clients.
 
+### Shared storage
+
+`shared/` is the one storage location the platform shares. Alongside the
+generated `openapi.json` it holds uploaded images, under `shared/uploads/`
+grouped by entity. Only the backend reads or writes it — the Dashboard uploads
+through `POST /api/uploads/{entity}` and the Consumer and Kitchen read images
+through `GET /uploads/...`, so no frontend has an upload directory of its own.
+
+The location is configurable with `FILE_STORAGE_PATH`; on a server it is set to
+a persistent, backed-up path outside the source tree. `openapi.json` is
+unaffected by that setting and stays where it is.
+
 ---
 
 ## Technology
@@ -210,6 +222,16 @@ verified by TypeScript and ESLint (`npm run typecheck`, `npm run lint`,
 - Set a `JWT_SECRET` of at least 32 characters; this is enforced in production.
 - Configure `RAZORPAY_WEBHOOK_SECRET`; it is required in production.
 - Apply migrations and seeders on the target database before starting.
+- Uploaded images have one shared storage location for the whole platform,
+  named by `FILE_STORAGE_PATH` and defaulting to `shared/uploads` beside the
+  generated `shared/openapi.json`. Only the backend touches it; the frontends
+  upload and read through its API.
+- Set `FILE_STORAGE_PATH` to a directory **outside the application directory**,
+  create it, give the backend service account read and write access, and add it
+  to the backup schedule. Staff-uploaded images live only there — a redeploy
+  that replaces the application directory would otherwise delete them, and the
+  database holds only the path, never the file. See the backend README for the
+  full requirements.
 - The frontends bake `VITE_API_URL` in at build time, so pointing a deployment
   at a different backend requires a rebuild.
 - Serve the frontend bundles with an `index.html` fallback so client-side

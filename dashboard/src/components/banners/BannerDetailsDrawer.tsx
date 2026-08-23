@@ -14,6 +14,7 @@ import { Alert, Descriptions, Drawer, Image, Skeleton, Tag } from 'antd';
 import type { Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as bannersService from '@/services/banners.service';
+import { resolveImageUrl } from '@/utils/imageUrl';
 
 interface BannerDetailsDrawerProps {
   bannerId: number;
@@ -78,7 +79,7 @@ export default function BannerDetailsDrawer({
         <>
           {banner.imageUrl ? (
             <Image
-              src={banner.imageUrl}
+              src={resolveImageUrl(banner.imageUrl)}
               alt=""
               width="100%"
               style={{ marginBottom: 16, borderRadius: 8 }}

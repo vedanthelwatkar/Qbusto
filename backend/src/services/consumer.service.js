@@ -3,16 +3,17 @@
 /**
  * Consumer API service - public, unauthenticated endpoints.
  *
- * Implements all 9 consumer endpoints:
+ * Implements all 10 consumer endpoints:
  * 1. GET /api/consumer/cinemas/{id}
  * 2. GET /api/consumer/cinemas/{cinemaId}/screens/{id}
  * 3. GET /api/consumer/cinemas/{cinemaId}/categories
  * 4. GET /api/consumer/cinemas/{cinemaId}/products
  * 5. GET /api/consumer/cinemas/{cinemaId}/products/{id}
  * 6. GET /api/consumer/cinemas/{cinemaId}/banners
- * 7. POST /api/consumer/orders (idempotent)
- * 8. POST /api/consumer/orders/{orderId}/payment-init (idempotent)
- * 9. POST /api/consumer/orders/{orderId}/payment-verify (idempotent)
+ * 7. GET /api/consumer/cinemas/{cinemaId}/sessions
+ * 8. POST /api/consumer/orders (idempotent)
+ * 9. POST /api/consumer/orders/{orderId}/payment-init (idempotent)
+ * 10. POST /api/consumer/orders/{orderId}/payment-verify (idempotent)
  *
  * Reuses pricing logic from pricing.service for consistency with staff orders.
  */
@@ -23,6 +24,40 @@ const { models, sequelize } = require('../config/database');
 const logger = require('../config/logger');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { PAGINATION, ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } = require('../constants');
+const { sqlDateTimeLiteral } = require('../utils/sqlDate');
+
+/**
+ * When a cinema's programming day begins, in hours past local midnight.
+ *
+ * A 01:00 screening belongs to the night before, not to the morning it
+ * technically falls in, so the day runs 06:00 to 06:00 rather than midnight to
+ * midnight. Matches the window the client's own scheduling query uses.
+ */
+const PROGRAMMING_DAY_START_HOUR = 6;
+
+/**
+ * How many upcoming screenings to offer per screen.
+ *
+ * A customer ordering food is choosing between the show they are about to sit
+ * in and possibly the next one; a full day's listings for every auditorium is
+ * a scroll, not a choice. The client's requirement is the next two per screen.
+ */
+const SESSIONS_PER_SCREEN = 2;
+
+/**
+ * `session.Session_strStatus`, as the client defines it:
+ *
+ *   O = Open      - selling, and the only status a customer may order against
+ *   C = Closed    - no longer selling
+ *   I = Inactive  - not in service
+ *
+ * Only Open is offered to customers. Closed and Inactive are excluded in SQL
+ * rather than in the mapping below, so a screening that is not selling never
+ * leaves the database - the filter cannot be bypassed by a client, and it
+ * cannot be lost by a later refactor of the response shape.
+ */
+const SESSION_STATUS_OPEN = 'O';
+
 const pricingService = require('./pricing.service');
 const { applyPaidTransition } = require('./paymenttransition.service');
 
@@ -1083,6 +1118,107 @@ async function buildOrderLines(cinema, payload, now, transaction) {
   return lines;
 }
 
+/**
+ * Sessions a customer can still order for, at one cinema.
+ *
+ * Reads the client's `session` table, which their source system syncs.
+ *
+ * WHAT IS OFFERED
+ *
+ * The rest of the current programming day, and at most the next two screenings
+ * per auditorium. The day runs from 06:00 to 06:00 so a late-night show belongs
+ * to the evening it follows rather than to the next morning, and screenings
+ * that have already started are excluded - a customer cannot order food against
+ * a film that is half over.
+ *
+ * Capping per auditorium rather than overall keeps every screen represented: a
+ * flat limit would fill the picker with one busy screen's listings and hide the
+ * others entirely.
+ *
+ * SCREEN
+ *
+ * The source system names the auditorium rather than referencing `screens.id`,
+ * so `screenName` is what is returned. No screen id is derived: `screens`
+ * currently holds several rows per auditorium, and picking one of them would
+ * put an arbitrary id on the customer's order.
+ *
+ * STATUS
+ *
+ * Only Open (`Session_strStatus = 'O'`) sessions are offered. Closed ('C') and
+ * Inactive ('I') are excluded - both mean the screening is not selling, so
+ * there is nothing for a customer to order food against. The vocabulary is the
+ * client's, confirmed by them; see SESSION_STATUS_OPEN above.
+ *
+ * The exclusion is a SQL predicate, not a step in the mapping below, so a
+ * non-Open session never leaves the database at all.
+ */
+async function getSessions(cinemaId) {
+  const cinema = await models.Cinema.findByPk(cinemaId, {
+    where: { isActive: true },
+    attributes: ['id', 'code'],
+  });
+
+  if (!cinema) throw new NotFoundError('Cinema');
+
+  // From now, not from the start of the day: a screening already under way is
+  // not something food can be ordered against.
+  const now = new Date();
+
+  const dayEnds = new Date(now);
+  dayEnds.setHours(PROGRAMMING_DAY_START_HOUR, 0, 0, 0);
+  // Before 06:00 the programming day that is running started yesterday, so the
+  // window still closes at 06:00 today rather than a day later.
+  if (dayEnds <= now) dayEnds.setDate(dayEnds.getDate() + 1);
+
+  const sessions = await models.Session.findAll({
+    where: {
+      cinemaCode: cinema.code,
+      // Open only. A Closed or Inactive screening is not selling, so food
+      // cannot be ordered against it.
+      status: SESSION_STATUS_OPEN,
+      // Formatted, because the source system's column is `datetime`.
+      startsAt: { [Op.gte]: sqlDateTimeLiteral(now), [Op.lt]: sqlDateTimeLiteral(dayEnds) },
+    },
+    attributes: ['sessionId', 'filmCode', 'screenName', 'startsAt', 'endsAt', 'seatsAvailable'],
+    include: [
+      {
+        association: 'film',
+        attributes: ['code', 'title', 'certification', 'durationMinutes'],
+        required: true,
+      },
+    ],
+    order: [
+      ['startsAt', 'ASC'],
+      ['sessionId', 'ASC'],
+    ],
+  });
+
+  // Capped here rather than in SQL: the window already bounds this to one
+  // cinema's remaining day, so the set is small, and a per-group limit costs a
+  // window function that Sequelize would not express any more clearly.
+  const perScreen = new Map();
+
+  const offered = sessions.filter((session) => {
+    const key = session.screenName || '';
+    const taken = perScreen.get(key) || 0;
+    if (taken >= SESSIONS_PER_SCREEN) return false;
+    perScreen.set(key, taken + 1);
+    return true;
+  });
+
+  return offered.map((session) => ({
+    id: session.sessionId,
+    screenName: session.screenName,
+    filmCode: session.filmCode,
+    filmTitle: session.film ? session.film.title : null,
+    certification: session.film ? session.film.certification : null,
+    durationMinutes: session.film ? session.film.durationMinutes : null,
+    startsAt: session.startsAt,
+    endsAt: session.endsAt,
+    seatsAvailable: session.seatsAvailable,
+  }));
+}
+
 module.exports = {
   getCinema,
   getScreen,
@@ -1090,6 +1226,7 @@ module.exports = {
   getProducts,
   getProductDetail,
   getBanners,
+  getSessions,
   createOrder,
   paymentInit,
   paymentVerify,

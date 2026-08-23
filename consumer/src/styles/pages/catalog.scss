@@ -19,17 +19,83 @@
   /* Header banner ------------------------------------------------------ */
 
   &__banner {
+    position: relative;
     flex-shrink: 0;
     width: 100%;
+    /* The slides are stacked, so none of them contributes height and the strip
+       has to size itself. Banner artwork is authored at 3:1; the cap keeps a
+       wide screen from letting that push the scroll regions below it off the
+       page, which matters most on portrait kiosks. */
+    aspect-ratio: 3 / 1;
+    max-height: 22vh;
+    overflow: hidden;
     background-color: var(--color-bg-secondary);
+  }
 
-    img {
-      width: 100%;
-      /* Capped so a tall banner can never squeeze the scroll regions below it,
-         which matters most on portrait kiosks. */
-      max-height: 22vh;
-      object-fit: cover;
+  &__banner-slide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    /* Only opacity animates, and every slide is already decoded, so the strip
+       crosses from one promotion to the next with nothing showing through. */
+    transition: opacity var(--transition-banner);
+
+    &.is-active {
+      opacity: 1;
     }
+  }
+
+  /* Only rendered when a cinema is running more than one promotion. Sits on
+     the artwork rather than below it so the banner keeps its height and the
+     panes underneath do not move. */
+  &__banner-dots {
+    position: absolute;
+    left: 50%;
+    bottom: var(--space-sm);
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  &__banner-dot {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    /* Fixed light tones, not theme colours: these sit on arbitrary artwork,
+       not on the page background. The shadow keeps them visible on a pale
+       image, where a white dot alone would disappear. */
+    background-color: rgb(255 255 255 / 55%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+    cursor: pointer;
+    transition:
+      width var(--transition-fast),
+      background-color var(--transition-fast);
+
+    &.is-active {
+      width: 20px;
+      background-color: rgb(255 255 255 / 100%);
+    }
+  }
+
+  /* Welcome strip --------------------------------------------------------
+     Fixed for every customer at this cinema: the name comes from the venue
+     record, not from anything the customer chose, so it reads the same for
+     everyone who scans in here. Sits directly above search, below the header
+     banner if one is running. */
+  &__welcome {
+    flex-shrink: 0;
+    padding: var(--space-sm) var(--space-lg);
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    text-align: center;
   }
 
   /* Search ------------------------------------------------------------- */
@@ -205,10 +271,15 @@
     background-position: center;
   }
 
-  /* Products wrap into whatever width is available. */
+  /* Products wrap into whatever width is available, but never below two
+     columns: `auto-fill` with a fixed minmax collapsed to one column on most
+     phone widths once the sidebar and padding were subtracted, which is why
+     the grid was showing a single product per row. A fixed two-column floor
+     removes that collapse; wider breakpoints below opt into `auto-fill` once
+     there is reliably enough room for more than two. */
   &__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-md);
     align-items: start;
   }
@@ -444,7 +515,7 @@
   }
 
   .catalog__grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: var(--space-sm);
   }
 }
 
@@ -499,5 +570,14 @@
   .catalog__grid {
     max-width: 1180px;
     margin: 0 auto;
+  }
+}
+
+/* Customers who ask for reduced motion still get every promotion, and the dots
+   to move through them by hand - the slide simply changes rather than fades,
+   and the timer that advances it is not started. */
+@media (prefers-reduced-motion: reduce) {
+  .catalog__banner-slide {
+    transition: none;
   }
 }

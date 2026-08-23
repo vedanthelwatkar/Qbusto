@@ -24,8 +24,8 @@ is a staff function handled by the Dashboard and the Kitchen Display System.
 ## User flow
 
 ```
-Screensaver  →  Catalogue  →  Checkout  →  Payment  →  Confirmation
-    /            /catalog      /checkout    /payment    /confirmation/:orderId
+Screensaver  →  Catalogue + checkout sheet  →  Payment  →  Confirmation
+    /                    /catalog              /payment    /confirmation/:orderId
 ```
 
 1. **Screensaver** — an idle attract screen with a call to action.
@@ -33,10 +33,11 @@ Screensaver  →  Catalogue  →  Checkout  →  Payment  →  Confirmation
    search and category filtering. Listing, searching and paging are all
    performed by the server; the app never loads the whole catalogue and filters
    it locally.
-3. **Checkout** — cart review and customer details: mobile, optional email,
-   row and seat, screen, film and show time. Every field is prefilled from the
-   QR context where it supplied a value, and all are editable so a generic
-   lobby code can be corrected to the right auditorium and film.
+3. **Checkout** — a sheet over the catalogue rather than its own route, opened
+   from the cart. It holds the cart itself, one show picker, row and seat,
+   mobile and an optional email. The menu stays mounted and visible behind it,
+   so the customer never loses sight of what they are buying, and closing the
+   sheet leaves the cart exactly as it was.
 4. **Payment** — Razorpay checkout, opened from the page.
 5. **Confirmation** — the order reference and a summary.
 
@@ -124,7 +125,7 @@ together as a single value such as `A5`.
 The checkout form splits that into two inputs, because two short fields are
 easier to fill on a phone than one combined one:
 
-- **Prefill** — `splitSeat("A5")` in `CheckoutPage.tsx` matches letters then
+- **Prefill** — `splitSeat("A5")` in `CheckoutDrawer.tsx` matches letters then
   digits and fills Row `A` and Seat `5`.
 - **Submit** — the two inputs are rejoined as `` `${row}${seat}` `` and sent as
   a single `seatNumber`.
@@ -141,25 +142,37 @@ If the customer enters a seat different from the one in the QR, the context
 store is updated with the value they entered, so the confirmation and the
 kitchen ticket both show where the food is actually going.
 
-### Screen and film
+### Choosing a show
 
-Screen and film are collected the same way: prefilled from the QR context when
-it carried them, and required at checkout otherwise.
+An order carries three separate values for the show — `orders.screen_id`,
+`orders.film_title` and `orders.show_time` — but they are not three decisions.
+A customer knows which show they are sitting in, not which auditorium id it
+maps to, so checkout asks once:
 
-- **Film** is free text, stored on `orders.film_title` (`VARCHAR(200)`).
-- **Screen** is entered as the screen's **number**, because the order carries
-  `orders.screen_id`, a foreign key, rather than a name.
+```
+Show   [ Interstellar — 23 Aug — 7:30 PM (Audi 3)   ▾ ]
+```
 
-The backend resolves the screen against the current cinema and answers
-**404 Screen not found** if it does not belong there, so a wrong number fails
-clearly instead of attaching the order to another cinema's auditorium. The
-whole order is rolled back in that case — nothing is written.
+The options come from `GET /api/consumer/cinemas/:cinemaId/sessions`, and the
+selected session supplies all three values at submit time. Because they are read
+off one object they cannot drift apart, and a customer cannot pair a film with
+a screen that is not showing it.
 
-A picker listing the cinema's screens by name is the intended replacement for
-the number field. It needs a public endpoint that lists screens for a cinema,
-which the Consumer API does not currently provide: only
-`GET /api/consumer/cinemas/:cinemaId/screens/:id`, which fetches one screen
-that is already known.
+The backend still validates each value and answers **404 Screen not found** if
+the screen does not belong to this cinema; the whole order is rolled back in
+that case and nothing is written. Since there is no longer a screen input of
+its own, that failure — and any about the film or the time — is shown against
+the show picker, which is the control the customer can actually act on.
+
+If a cinema has no upcoming shows the picker says so rather than presenting an
+empty dropdown. The schedule comes from the cinema's own source system and is
+read-only in QBusto - the Dashboard shows it under **Settings → Films** and
+**Settings → Sessions** but does not edit it.
+
+The selected session supplies the film and the show time. It does **not** supply
+a screen: the schedule names its auditorium rather than referencing a screen id,
+so the order takes `screenId` from the entry context instead - the QR the
+customer scanned is physically at their screen.
 
 ### Kiosk behaviour
 
@@ -293,6 +306,13 @@ never edited by hand — regenerate them instead.
 The app calls the public `/api/consumer/*` endpoints, which require no
 authentication. Server-side validation is authoritative: the backend calculates
 every price and total, and a price sent by the client is discarded.
+
+Product, category and banner images arrive as one field that holds either an
+external address or a path on the QBusto server, such as
+`/uploads/products/9f2c….webp`. `src/utils/imageUrl.ts` prefixes the second
+form with `VITE_API_URL` and leaves the first alone, so both display the same
+way. This is why `VITE_API_URL` has to be reachable from the customer's phone
+and not only from the venue network.
 
 ---
 

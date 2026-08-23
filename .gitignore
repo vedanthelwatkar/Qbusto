@@ -84,3 +84,18 @@ backend/scripts/create-dev-user.js
 backend/docs/pos-integration.md
 backend/docs/backend-verification.md
 backend/docs/development-guide.md
+
+# ---------------------------------------------------------------------------
+# Uploaded images
+#
+# Files staff upload through the Dashboard are user data, not source. They live
+# under the directory named by FILE_STORAGE_PATH, which defaults to
+# `shared/uploads` - the same shared directory that holds the generated
+# openapi.json. Only the uploads subtree is ignored; shared/openapi.json is
+# committed and stays committed.
+#
+# These files belong in the server's backups, never in git. On a production
+# server FILE_STORAGE_PATH is normally an absolute path outside the source
+# tree, in which case this rule is simply inert.
+# ---------------------------------------------------------------------------
+shared/uploads/

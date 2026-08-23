@@ -12,6 +12,8 @@ const express = require('express');
 const authRoutes = require('./auth.routes');
 const availabilityRoutes = require('./availability.routes');
 const bannerRoutes = require('./banner.routes');
+const filmRoutes = require('./film.routes');
+const sessionRoutes = require('./session.routes');
 const categoryRoutes = require('./category.routes');
 const chainRoutes = require('./chain.routes');
 const cinemaRoutes = require('./cinema.routes');
@@ -23,6 +25,7 @@ const { orderStatusRouter, paymentStatusRouter } = require('./orderstatus.routes
 const pricingRoutes = require('./pricing.routes');
 const productRoutes = require('./product.routes');
 const screenRoutes = require('./screen.routes');
+const uploadRoutes = require('./upload.routes');
 const userRoutes = require('./user.routes');
 const { success } = require('../utils/response');
 
@@ -57,8 +60,11 @@ router.use('/cinema-products', cinemaProductRoutes);
 router.use('/product-availability-hours', availabilityRoutes);
 router.use('/product-pricing', pricingRoutes);
 router.use('/banners', bannerRoutes);
+router.use('/films', filmRoutes);
+router.use('/sessions', sessionRoutes);
 router.use('/orders', orderRoutes);
 router.use('/kitchen', kitchenRoutes);
+router.use('/uploads', uploadRoutes);
 router.use('/order-statuses', orderStatusRouter);
 router.use('/payment-statuses', paymentStatusRouter);
 

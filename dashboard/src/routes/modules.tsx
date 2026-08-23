@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import {
   AppstoreOutlined,
   BarChartOutlined,
+  CalendarOutlined,
   ClusterOutlined,
   DashboardOutlined,
   DesktopOutlined,
@@ -21,6 +22,7 @@ import {
   ShoppingCartOutlined,
   TagsOutlined,
   TeamOutlined,
+  VideoCameraOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
 
@@ -116,6 +118,8 @@ export const NAV_MODULES: NavModule[] = [
       { path: '/settings/chains', label: 'Chains', icon: <ClusterOutlined /> },
       { path: '/settings/cinemas', label: 'Cinemas', icon: <ShopOutlined /> },
       { path: '/settings/screens', label: 'Screens', icon: <DesktopOutlined /> },
+      { path: '/settings/films', label: 'Films', icon: <VideoCameraOutlined /> },
+      { path: '/settings/sessions', label: 'Sessions', icon: <CalendarOutlined /> },
     ],
   },
 ];

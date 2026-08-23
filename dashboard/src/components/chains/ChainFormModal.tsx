@@ -21,6 +21,7 @@ import type {
 import { toApiError } from '@/services/api';
 import * as chainsService from '@/services/chains.service';
 import { fieldErrorsFrom } from '@/utils/validation';
+import ImageField from '@/components/ImageField';
 
 interface FormValues {
   name: string;
@@ -165,10 +166,10 @@ export default function ChainFormModal({ chain, onClose, onSaved }: ChainFormMod
 
           <Form.Item
             name="logoImageUrl"
-            label="Logo URL"
+            label="Logo"
             rules={[{ max: 500, message: 'Use at most 500 characters' }]}
           >
-            <Input placeholder="https://..." />
+            <ImageField entity="chains" />
           </Form.Item>
 
           <Form.Item

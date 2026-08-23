@@ -41,9 +41,114 @@ Order data keeps operational snapshots like seat number, screen, film title, and
 
 ## 3. Cinema and catalog data
 
-### Chain logo
+### Image columns
 
-`chains.logo_image_url` stores the chain logo image URL requested by the client.
+Four columns hold an image: `chains.logo_image_url` (the chain logo requested
+by the client), `categories.image_url`, `products.image_url` and
+`banners.image_url`. All are `varchar(500)`, and only `banners.image_url` is
+NOT NULL.
+
+Each holds one of two things:
+
+- an external address, stored exactly as entered — `https://example.com/a.jpg`
+- an application path to a file uploaded to the QBusto server —
+  `/uploads/products/9f2c….webp`
+
+There is deliberately no second column and no discriminator: the leading
+`/uploads/` distinguishes them, and every reader treats the column as one
+value. No filesystem path is ever stored, so the server-side storage directory
+can be changed or moved without touching a row, and no image bytes are stored
+in SQL Server.
+
+### Films and sessions
+
+`film` and `session` are the client's tables, renamed from `Film` and `Session`
+in 20260823001000 so that every table in this schema reads the same way. Only
+the identifiers changed - not one row, type, key or constraint moved.
+
+```
+film --< session >-- cinemas   (by code, not by id)
+```
+
+They are the source system's, and QBusto reads them **read-only**. Their columns
+keep the provider's names (`Film_strCode`, `Session_dtmRealShow`, and so on)
+because the client syncs against those names; renaming them would break that
+mapping for no benefit here. The models give the application its own vocabulary
+for the handful of columns it reads, so services and API responses never carry a
+`Film_str…` prefix.
+
+Two consequences worth knowing:
+
+- **Keys are the source system's.** A film is addressed by `Film_strCode`, a
+  varchar, not an integer id of ours. A session has a composite key of
+  `(Code, Session_lngSessionId)`, and its cinema is joined by `cinemas.code`.
+- **A session does not reference a screen.** It names the auditorium in
+  `Screen_strName`. Matching that against `screens` is currently ambiguous - the
+  client's `screens` data holds several rows per auditorium - so nothing
+  attempts it, and an order takes its screen from the customer's entry context
+  instead.
+
+The date columns are `datetime` rather than `datetime2`. Sequelize's DATE
+serializer emits an offset-bearing literal that `datetime` rejects, so
+comparisons go through `src/utils/sqlDate.js`.
+
+`screen_layout` is the client's seat map, one row per seat, currently empty. Its
+mixed-case columns were lowered to snake_case at the same time. It identifies a
+screen by name rather than by `screens.id`, which is the client's structure and
+is left as they built it.
+
+**Provisioning.** None of `film`, `session`, `screen_layout` or
+`screens.category`/`seat_row` were ever created by a migration - they reached
+this database only because the client's own backup was restored into it (see
+docs/client-database-changes.md). `20260824000100-provision-client-schema`
+closes that gap: it creates each of them, matching the client's exact shapes,
+but only where they are absent. Every step is existence-guarded, so applying
+it to the client's own database is a verified no-op - confirmed by identical
+row counts, identical foreign-key counts and an identical `film` table
+checksum before and after.
+
+**`Session_strStatus` vocabulary**, as confirmed by the client:
+
+| Value | Meaning  | Offered to customers |
+| ----- | -------- | -------------------- |
+| `O`   | Open     | **Yes**              |
+| `C`   | Closed   | No                   |
+| `I`   | Inactive | No                   |
+
+The Consumer's session picker (`consumer.service.js#getSessions`) returns
+**Open sessions only**. Closed and Inactive both mean the screening is not
+selling, so there is nothing for a customer to order food against.
+
+The exclusion is a SQL predicate (`where.status = 'O'`), not a step in the
+response mapping: a non-Open session never leaves the database, so the filter
+cannot be bypassed by a client and cannot be lost if the response shape is
+later rewritten. `tests/consumer.sessions.test.js` pins both the behaviour and
+the fact that it happens in SQL.
+
+Staff-facing endpoints are deliberately unfiltered - `GET /api/sessions` and
+the Dashboard's Sessions list show every status with its raw value, because
+staff need to see a closed screening in order to understand the schedule.
+
+**Known limitation - the `screens` grain is ambiguous.** The client's
+`screens` data holds several rows per auditorium (seat-row bands: one
+`Category`/`seat_row` pair per row of seats), not one row per auditorium as
+QBusto's own model assumes. A session's `Screen_strName` cannot be resolved to
+a single `screens.id` as a result - see "A session does not reference a
+screen" above - and a customer submitting an order can currently choose any
+`screenId` that belongs to their own cinema, including one representing a
+different auditorium or a different seat-row band of the same auditorium the
+public API has no way to tell apart. This is not a cross-cinema or
+cross-tenant issue (that boundary is enforced), but it is a real ambiguity in
+what a `screenId` on an order actually identifies. Resolving it requires a
+client decision on what a `screens` row is meant to represent and is out of
+scope for the current work.
+
+**Historical note.** Two earlier internal implementations preceded this. A
+single `cinema_shows` table repeated the film title on every screening; it was
+replaced by QBusto-owned `films` and `sessions` tables. Both were superseded
+once the client's own `Film`/`Session` data arrived, and neither exists: their
+migrations were removed before ever being applied, so no database has carried
+them and no data was lost.
 
 ### Cinema profile data
 

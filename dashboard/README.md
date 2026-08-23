@@ -25,13 +25,21 @@ backend, and the interface reflects what the current user is permitted to do.
 | Pricing    | Price per cinema, product and day of week, with per-source discounts |
 | Banners    | Cinema-specific promotional banners                                  |
 | Users      | Staff accounts and their per-module permissions                      |
-| Settings   | Chains, cinemas and screens                                          |
+| Settings   | Chains, cinemas, screens, films and sessions                          |
 
 Reports and POS Integrations appear in the navigation as placeholders and are
 not implemented.
 
-Chains, cinemas and screens live under Settings because the permission model
-defines no separate modules for them.
+Chains, cinemas, screens, films and sessions live under Settings because the
+permission model defines no separate modules for them. Its module list mirrors
+a CHECK constraint on the database, so adding one is a schema change rather
+than a configuration change.
+
+**Films** and **Sessions** are **read-only**. Both live in the client's own
+tables and are synced from their source system, so the Dashboard lists them but
+does not create or edit them - a write here would not survive the next sync.
+Sessions are chain-scoped through their cinema; films are shared across every
+cinema.
 
 ---
 
@@ -163,6 +171,33 @@ promote another owner, and a user may only grant permissions they already hold.
 **Interface permission checks are presentation only.** Authorisation is enforced
 by the backend on every request; a hidden or disabled control is a usability
 measure, never a security boundary.
+
+---
+
+## Images
+
+Banners, categories, products and the chain logo each have one image field, and
+it accepts either of two things:
+
+- **Image URL** — an external address, saved exactly as typed. Nothing is
+  downloaded or copied; the image stays wherever it is hosted.
+- **Upload image** — a file sent to the QBusto server. The server stores it and
+  returns a path such as `/uploads/products/9f2c….webp`, which is saved into
+  the same field.
+
+The form shows both as tabs with a preview beneath. Editing a record opens on
+whichever mode matches what is already stored, and switching between them —
+replacing an uploaded image with a URL or the reverse — is just a different
+value in the one field. Remove clears it.
+
+Uploading requires **edit** permission on the module that owns the record, the
+same permission as saving the change. A file that is not a JPEG, PNG, GIF or
+WebP is rejected by the server, as is one over the configured size limit; the
+reason is shown against the field.
+
+Because uploaded images are served by the backend, the value is displayed by
+prefixing `VITE_API_URL` — `src/utils/imageUrl.ts` does this, and everything
+that renders an image goes through it. External URLs pass through untouched.
 
 ---
 

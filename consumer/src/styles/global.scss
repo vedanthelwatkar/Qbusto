@@ -107,6 +107,10 @@ input[type='email'],
 input[type='number'],
 input[type='search'],
 input[type='datetime-local'],
+/* Dropdowns share the text controls' box so a form does not read as two
+   different form systems. The native control is kept - it is the accessible,
+   familiar picker on a phone, which is where most orders are placed. */
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--color-border-strong);

@@ -5,7 +5,13 @@
  */
 
 import { getConsumerCatalog } from '@/api/generated/consumer-catalog/consumer-catalog';
-import type { Category, Product, Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
+import type {
+  Category,
+  Product,
+  Banner,
+  Cinema,
+  ConsumerSession,
+} from '@/api/generated/cinemaOrderingAPI.schemas';
 
 export interface CategoriesResponse {
   data: Category[];
@@ -74,7 +80,10 @@ const MAX_CATEGORY_PAGES = 10;
  * way to know it did.
  */
 export async function fetchAllCategories(cinemaId: number): Promise<Category[]> {
-  const first = await fetchCategories(cinemaId, { limit: MAX_PAGE_SIZE, page: 1 });
+  const first = await fetchCategories(cinemaId, {
+    limit: MAX_PAGE_SIZE,
+    page: 1,
+  });
   const total = first.meta?.pagination?.total ?? first.data.length;
 
   const all = [...first.data];
@@ -84,7 +93,10 @@ export async function fetchAllCategories(cinemaId: number): Promise<Category[]> 
   // an empty page while still reporting a larger total, hence the page bound
   // and the empty-page break below.
   while (all.length < total && page <= MAX_CATEGORY_PAGES) {
-    const next = await fetchCategories(cinemaId, { limit: MAX_PAGE_SIZE, page });
+    const next = await fetchCategories(cinemaId, {
+      limit: MAX_PAGE_SIZE,
+      page,
+    });
     if (next.data.length === 0) break;
     all.push(...next.data);
     page += 1;
@@ -125,10 +137,7 @@ export async function fetchProducts(
 /**
  * Fetch a single product detail.
  */
-export async function fetchProductDetail(
-  cinemaId: number,
-  productId: number
-): Promise<Product> {
+export async function fetchProductDetail(cinemaId: number, productId: number): Promise<Product> {
   const response = await catalogClient.getApiConsumerCinemasCinemaIdProductsId(cinemaId, productId);
   return response.data.data || {};
 }
@@ -146,4 +155,24 @@ export async function fetchBanners(
   return {
     data: response.data.data || [],
   };
+}
+
+/**
+ * Scheduled screenings that have not started yet, earliest first.
+ *
+ * Backs the checkout picker. One selected session carries the screen, the film
+ * and the start time together, which is why checkout asks for a session rather
+ * than for those three values separately.
+ */
+export async function fetchSessions(cinemaId: number): Promise<ConsumerSession[]> {
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdSessions(cinemaId);
+  return response.data.data || [];
+}
+
+/**
+ * The cinema itself, for the welcome banner shown above the menu search.
+ */
+export async function fetchCinema(cinemaId: number): Promise<Cinema> {
+  const response = await catalogClient.getApiConsumerCinemasId(cinemaId);
+  return response.data.data ?? {};
 }

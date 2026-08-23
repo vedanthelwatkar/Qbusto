@@ -8,11 +8,11 @@
 
 ## Active table count
 
-27 active tables.
+30 active tables.
 
 Active tables:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, razorpay_webhook_events.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, razorpay_webhook_events.
 
 Deferred and not in the active schema:
 
@@ -98,16 +98,29 @@ In normal operation this is not exercised: soft deletion (`is_active = 0`) is th
 
 | Column     | Type        | Constraints                                  |
 | ---------- | ----------- | -------------------------------------------- |
-| id         | int         | PK auto                                      |
-| cinema_id  | int         | FK -> cinemas.id, NOT NULL                   |
-| name       | varchar(50) | NOT NULL                                     |
-| is_active  | bit         | NOT NULL, default 1                          |
+| id         | int          | PK auto                                      |
+| cinema_id  | int          | FK -> cinemas.id, NOT NULL                   |
+| name       | varchar(50)  | NOT NULL                                     |
+| category   | nvarchar(50) | nullable                                     |
+| seat_row   | nvarchar(2)  | nullable                                     |
+| is_active  | bit          | NOT NULL, default 1                          |
 | created_by | int         | nullable, FK -> users.id, ON DELETE SET NULL |
 | updated_by | int         | nullable, FK -> users.id, ON DELETE SET NULL |
 | created_at | datetime2   | NOT NULL                                     |
 | updated_at | datetime2   | NOT NULL                                     |
 
 Screen names are freeform: Screen 1, IMAX, Gold Class, and so on.
+
+`category` is the seat class ("Platinum", "Recliner") and `seat_row` the row
+label ("A"). Both come from the client's data and are nullable, because the rows
+that predate them do not carry one.
+
+**Grain caveat.** The client's data holds one row per seat row rather than one
+per auditorium: 82 rows cover 27 distinct (cinema, name) pairs, and one
+auditorium at cinema 8 spans ten rows. QBusto's own concept is one row per
+auditorium, and `orders.screen_id` and `screen_pos_mappings.screen_id` are
+foreign keys to it. The data is the client's and is left exactly as they
+supplied it; reconciling the two grains is an open question with them.
 
 ---
 
@@ -492,6 +505,98 @@ Supported module names: Dashboard, Orders, Products, Categories, Pricing, Banner
 `type` values are H for Header and I for Inner. V1 uses Header banners only.
 
 The application retrieves active banner rows ordered by `sequence`.
+
+---
+
+## film
+
+The client's film catalogue, renamed from `Film` in 20260823001000. **44
+columns**, all supplied by their source system and left exactly as they are;
+only the columns QBusto reads are listed here.
+
+| Column                 | Type         | Constraints |
+| ---------------------- | ------------ | ----------- |
+| Film_strCode           | varchar(20)  | **PK**      |
+| Film_strTitle          | varchar(500) | nullable    |
+| Film_strCensor         | varchar(10)  | nullable    |
+| Film_intDuration       | smallint     | nullable    |
+| Film_strURLforGraphic  | varchar(255) | nullable    |
+| Film_strStatus         | varchar(1)   | nullable    |
+| Film_strNowShowingFlag | varchar(1)   | nullable    |
+| Film_dtmOpeningDate    | datetime     | nullable    |
+
+The primary key is the source system's own film code, not an integer of ours.
+The `Film` model maps these to `code`, `title`, `certification`,
+`durationMinutes`, `imageUrl`, `status`, `nowShowingFlag` and `openingDate`, so
+the provider's prefixes do not leak into services or API responses.
+
+Read-only in QBusto: the catalogue is synced, so a write made here would not
+survive the next sync.
+
+`test_column nchar(1000)` also exists and appears to be debris from the client's
+side; nothing reads it.
+
+---
+
+## session
+
+The client's screening schedule, renamed from `Session` in 20260823001000. **24
+columns**; only those QBusto reads are listed.
+
+| Column                | Type         | Constraints                        |
+| --------------------- | ------------ | ---------------------------------- |
+| Code                  | varchar(10)  | **PK (1/2)**, FK -> cinemas.code   |
+| Session_lngSessionId  | int          | **PK (2/2)**                       |
+| Film_strCode          | varchar(20)  | FK -> film.Film_strCode            |
+| Screen_bytNum         | int          | nullable                           |
+| Screen_strName        | varchar(25)  | nullable                           |
+| Session_dtmRealShow   | datetime     | NOT NULL                           |
+| Session_dtmFinishShow | datetime     | NOT NULL                           |
+| Session_intSeatsAvail | int          | NOT NULL                           |
+| Session_intSeatsTotal | int          | nullable                           |
+| Session_strStatus     | varchar(1)   | NOT NULL, `O`=Open `C`=Closed `I`=Inactive |
+
+The primary key is composite, and the cinema is joined by `code` rather than
+`id`.
+
+**There is no `screens.id` here.** The source system names the auditorium
+(`Screen_strName`) instead, so a session cannot be joined to a screen by key.
+Matching on (cinema, name) against the current `screens` data multiplies 133
+sessions into 1119 rows, because `screens` is not unique per auditorium - which
+is why nothing in the application attempts that resolution.
+
+The date columns are `datetime`, not `datetime2`. Comparisons against them go
+through `src/utils/sqlDate.js`, because Sequelize's DATE serializer emits an
+offset-bearing literal that `datetime` rejects.
+
+Read-only in QBusto, for the same reason as `film`.
+
+---
+
+## screen_layout
+
+The client's seat map: one row per physical seat. Currently **empty**.
+
+| Column      | Type         | Constraints                                  |
+| ----------- | ------------ | -------------------------------------------- |
+| id          | int          | PK auto                                      |
+| cinema_id   | int          | FK -> cinemas.id, NOT NULL                   |
+| screen_name | varchar(50)  | NOT NULL                                     |
+| category    | varchar(50)  | NOT NULL                                     |
+| seat_row    | varchar(2)   | NOT NULL                                     |
+| seat_no     | varchar(3)   | NOT NULL                                     |
+| is_active   | bit          | NOT NULL                                     |
+| created_by  | int          | nullable, FK -> users.id                     |
+| updated_by  | int          | nullable, FK -> users.id                     |
+| created_at  | datetime2    | NOT NULL                                     |
+| updated_at  | datetime2    | NOT NULL                                     |
+
+The mixed-case columns were lowered to snake_case in 20260823001000 so the table
+reads like the rest of the schema; it was already half snake_case.
+
+It identifies its screen by `screen_name` text rather than by `screens.id` -
+the client's structure, left as they built it. Nothing in the application reads
+it yet: QBusto neither sells nor allocates seats.
 
 ---
 

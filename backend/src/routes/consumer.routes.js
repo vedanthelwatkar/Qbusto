@@ -228,6 +228,48 @@ router.get('/cinemas/:cinemaId/products/:id', consumerController.getProductDetai
  *         description: Cinema not found
  */
 router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
+/**
+ * @openapi
+ * /api/consumer/cinemas/{cinemaId}/sessions:
+ *   get:
+ *     tags: [Consumer - Catalog]
+ *     summary: Get bookable sessions for a cinema
+ *     description: >
+ *       Scheduled screenings at this cinema that have not started yet,
+ *       earliest first. Each session joins a film to an auditorium at a time.
+ *
+ *
+ *       The Consumer offers these as a single picker at checkout, and the
+ *       selected session supplies the order's `screenId`, `filmTitle` and
+ *       `showTime` together, so the customer does not enter the three
+ *       separately and they cannot disagree.
+ *
+ *
+ *       Sessions whose film or auditorium is no longer active are excluded, so
+ *       every option offered can actually be ordered against.
+ *     parameters:
+ *       - name: cinemaId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Sessions list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/ConsumerSession'
+ *       404:
+ *         description: Cinema not found
+ */
+router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
 
 // Order endpoints
 

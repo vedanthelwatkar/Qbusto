@@ -278,6 +278,7 @@
 
   /* Bind the invalid state to the field, not to a one-off page rule. */
   input[aria-invalid='true'],
+  select[aria-invalid='true'],
   textarea[aria-invalid='true'] {
     border-color: var(--color-error);
 

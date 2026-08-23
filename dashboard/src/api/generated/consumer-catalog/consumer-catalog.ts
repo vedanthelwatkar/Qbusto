@@ -14,6 +14,7 @@ import type {
   GetApiConsumerCinemasCinemaIdProductsId200,
   GetApiConsumerCinemasCinemaIdProductsParams,
   GetApiConsumerCinemasCinemaIdScreensId200,
+  GetApiConsumerCinemasCinemaIdSessions200,
   GetApiConsumerCinemasId200
 } from '../cinemaOrderingAPI.schemas';
 
@@ -96,10 +97,27 @@ const getApiConsumerCinemasCinemaIdBanners = (
     },
       );
     }
-  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners}};
+  /**
+ * Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.
+ *
+ * The Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenId`, `filmTitle` and `showTime` together, so the customer does not enter the three separately and they cannot disagree.
+ *
+ * Sessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.
+ * @summary Get bookable sessions for a cinema
+ */
+const getApiConsumerCinemasCinemaIdSessions = (
+    cinemaId: number,
+ ) => {
+      return customInstance<GetApiConsumerCinemasCinemaIdSessions200>(
+      {url: `/api/consumer/cinemas/${cinemaId}/sessions`, method: 'GET'
+    },
+      );
+    }
+  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners,getApiConsumerCinemasCinemaIdSessions}};
 export type GetApiConsumerCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasId']>>>
 export type GetApiConsumerCinemasCinemaIdScreensIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdScreensId']>>>
 export type GetApiConsumerCinemasCinemaIdCategoriesResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdCategories']>>>
 export type GetApiConsumerCinemasCinemaIdProductsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdProducts']>>>
 export type GetApiConsumerCinemasCinemaIdProductsIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdProductsId']>>>
 export type GetApiConsumerCinemasCinemaIdBannersResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdBanners']>>>
+export type GetApiConsumerCinemasCinemaIdSessionsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdSessions']>>>

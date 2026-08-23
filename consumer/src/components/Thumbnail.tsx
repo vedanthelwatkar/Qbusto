@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ImageIcon } from '@/components/icons';
+import { resolveImageUrl } from '@/utils/imageUrl';
 
 interface ThumbnailProps {
   src?: string | null;
@@ -30,7 +31,11 @@ export default function Thumbnail({
 }: ThumbnailProps) {
   const [failed, setFailed] = useState(false);
 
-  if (!src || failed) {
+  // An `/uploads/...` value is a path on the backend, not on this origin.
+  // Resolving here covers every product and category image in one place.
+  const resolved = resolveImageUrl(src);
+
+  if (!resolved || failed) {
     return (
       <span className={placeholderClassName} aria-hidden="true">
         <ImageIcon size={iconSize} />
@@ -40,7 +45,7 @@ export default function Thumbnail({
 
   return (
     <img
-      src={src}
+      src={resolved}
       alt={alt}
       className={imgClassName}
       loading="lazy"

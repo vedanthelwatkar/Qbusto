@@ -68,8 +68,9 @@ exist.
 | Availability hours       | Per-cinema, per-day serving windows                            |
 | Pricing                  | Per cinema, product and day of week, with per-source discounts |
 | Banners                  | Cinema-specific promotional images                             |
+| Image uploads            | Authenticated image upload, storage and serving                |
 | Orders                   | Staff-facing order listing, creation and status transitions    |
-| Consumer API             | Public, unauthenticated catalogue and ordering endpoints       |
+| Consumer API             | Public, unauthenticated catalogue, sessions and ordering       |
 | Kitchen API              | Kitchen Display System board and fulfilment transitions        |
 | Webhooks                 | Razorpay payment notifications                                 |
 | POS integration          | Adapter contract and schema only — not implemented (Phase 2)   |
@@ -180,6 +181,10 @@ Production-only rules enforced at startup:
 - A Razorpay **live** key outside production produces a warning.
 - `CORS_ALLOWED_ORIGINS=*` produces a warning; set an explicit origin list.
 
+Image uploads are configured by `FILE_STORAGE_PATH` and `MAX_UPLOAD_SIZE_MB`;
+both have defaults that work for local development. See
+[Images and uploads](#images-and-uploads) for what production requires.
+
 See `.env.example` for the full list.
 
 ---
@@ -288,6 +293,144 @@ server-side on every endpoint.
 
 ---
 
+## Images and uploads
+
+Banners, categories, products and the chain logo each carry a single image. The
+column that holds it accepts either of two things, and every application reads
+that one column the same way:
+
+| Stored value                      | Meaning                                      |
+| --------------------------------- | -------------------------------------------- |
+| `https://example.com/popcorn.jpg` | An external address, kept exactly as entered |
+| `/uploads/products/9f2c….webp`    | A file uploaded to this server               |
+
+Nothing is ever downloaded or copied from an external address; it is stored
+verbatim and served by whoever hosts it. Existing records that use external
+URLs are unaffected by uploads existing.
+
+### Where the files live
+
+There is **one shared storage location for the whole platform**, and only the
+backend touches it. `FILE_STORAGE_PATH` names it. A relative value is resolved
+against the repository root — the same anchor `scripts/generate-openapi.js`
+uses for `shared/openapi.json` — so the default, `shared/uploads`, puts images
+in the shared directory that already holds the generated specification:
+
+```
+shared/
+├── openapi.json          ← unchanged, still generated here
+└── uploads/
+    ├── banners/
+    ├── categories/
+    ├── chains/
+    └── products/
+```
+
+Resolving from the repository root rather than the working directory means
+running the backend as a Windows service or a systemd unit behaves the same as
+running it by hand. An absolute `FILE_STORAGE_PATH` is used exactly as given,
+which is what a production server sets.
+
+The Dashboard, Consumer and Kitchen have **no upload directory of their own**
+and no filesystem access. The Dashboard uploads through
+`POST /api/uploads/{entity}`; the Consumer and Kitchen read images through
+`GET /uploads/...`. A frontend rebuild touches none of this, because the files
+are not inside any frontend.
+
+Each entity subdirectory is created on first use. Filenames are 16 random bytes
+plus the extension, so two staff members uploading at the same moment cannot
+collide and no upload can overwrite an existing file.
+
+**On a production server:**
+
+- Set `FILE_STORAGE_PATH` to an absolute path **outside the source tree**.
+  Deploying a new version replaces the application directory; images kept
+  inside it would be destroyed. The repository-relative default is a
+  development convenience, not a deployment layout.
+- Create the directory before starting the backend, and give the service
+  account read and write access to it. The backend creates the per-entity
+  subdirectories itself, but not the root.
+- Put it on persistent storage — not a container layer, a RAM disk, or a
+  temporary volume.
+- **Include it in the backup schedule.** These files exist in exactly one
+  place. The database holds only the path, so a database restore alongside a
+  lost uploads directory produces records pointing at images that are gone.
+- The path is not recorded in the database, so it may be changed later by
+  moving the directory and updating the variable. Nothing needs to be migrated.
+
+`MAX_UPLOAD_SIZE_MB` caps a single upload; the default is 5 and the maximum
+accepted is 50.
+
+### Uploading
+
+`POST /api/uploads/{entity}` where `{entity}` is `banners`, `categories`,
+`chains` or `products`. The body is `multipart/form-data` with the image in a
+`file` field.
+
+It requires a valid token and the **edit** permission for the module that owns
+the entity — Banners, Categories, Products, and Settings for the chain logo.
+Uploading an image for a product is treated as editing products, because that
+is what it is for.
+
+The response is the value to store:
+
+```json
+{
+  "success": true,
+  "data": {
+    "path": "/uploads/products/9f2c1a7b4d8e6f30a1b2c3d4e5f60718.webp",
+    "mimeType": "image/webp",
+    "bytes": 48213
+  }
+}
+```
+
+Uploading and assigning are separate steps. The client saves the returned
+`path` into the record through the normal update endpoint, so an image can be
+chosen while a form is still being filled in and a failed save does not lose
+the file.
+
+### What is accepted
+
+JPEG, PNG, GIF and WebP, identified by the leading bytes of the file itself.
+The declared content type and the submitted filename are both ignored for this
+decision, so renaming a script or an executable to `.png` and declaring it
+`image/png` does not get it stored. SVG is rejected outright: it is XML and can
+carry script.
+
+The file is validated in memory and only reaches the disk once it has passed,
+so a rejected upload never exists as a file at all.
+
+### Serving
+
+`GET /uploads/<entity>/<filename>` serves the stored files. Only the four
+entity directories are reachable, dotfiles are refused, directory listing is
+off, and anything else — a traversal attempt, a missing file — returns the
+standard `404` envelope without revealing whether a path exists. Responses
+carry `X-Content-Type-Options: nosniff` and a restrictive
+`Content-Security-Policy`, so an uploaded file is delivered as data and cannot
+execute.
+
+### Replacing and removing
+
+Changing a record's image replaces the value in its column. Clearing it empties
+the column.
+
+The previous file is **left on disk**. Nothing in the schema records which
+records reference which file, so deleting on replacement could remove a file
+another record — or a restored backup, or an audit trail — still points at. An
+orphaned image costs disk space; a wrongly deleted one is unrecoverable, and
+the safe choice is taken deliberately.
+
+External URLs are never touched. Removing a banner that pointed at
+`https://example.com/a.jpg` does not attempt to delete anything anywhere.
+
+Reclaiming space, when it is ever needed, is an operational task: compare the
+filenames under `FILE_STORAGE_PATH` with the values in the four image columns
+and remove what nothing references, with a backup taken first.
+
+---
+
 ## Payments
 
 Razorpay is integrated for customer payments placed through the Consumer app.
@@ -362,3 +505,37 @@ afterwards.
 | [docs/schema.md](./docs/schema.md)                     | The database schema as it exists today |
 | [docs/schema-explained.md](./docs/schema-explained.md) | Why the schema is shaped the way it is |
 | [docs/schema.dbml](./docs/schema.dbml)                 | Schema in DBML form, for diagram tools |
+
+---
+
+## Films and sessions
+
+`GET /api/consumer/cinemas/{cinemaId}/sessions` returns the screenings a cinema
+has scheduled that have not started yet, earliest first, capped at two per
+auditorium and bounded by the 06:00-to-06:00 programming day. The Consumer
+offers them as a single picker at checkout.
+
+```
+film --< session >-- cinemas   (joined by code, not by id)
+```
+
+**These are the client's tables**, renamed from `Film` and `Session` for naming
+consistency. They are synced from the client's source system, so QBusto reads
+them and never writes them: `GET /api/films`, `GET /api/films/{code}`,
+`GET /api/sessions` and `GET /api/sessions/{id}` are the whole surface, all
+authorised against the **Settings** module. The Dashboard shows them under
+Settings as read-only lists.
+
+A film is addressed by the source system's `code`, not an integer id. A session
+is addressed by its numeric session id, which is unique within a cinema.
+
+**A session does not carry a screen id.** It names the auditorium instead, so
+the Consumer takes the order's `screenId` from the customer's entry context -
+the QR they scanned is physically at their screen - and takes only the film and
+show time from the session.
+
+Orders are unaffected by any of this: an order snapshots `screenId`,
+`filmTitle` and `showTime` when it is placed, so a schedule change cannot
+rewrite what a customer bought.
+
+There is no seed command for this data; the client's sync is its source.

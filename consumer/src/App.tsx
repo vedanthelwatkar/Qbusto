@@ -9,11 +9,12 @@ import {
 } from 'react-router-dom';
 import { useContextStore } from '@/stores/context.store';
 import { useCartStore } from '@/stores/cart.store';
+import { useUIStore } from '@/stores/ui.store';
 import { clearCheckoutSession } from '@/utils/checkoutSession';
 import { parseUrlParams } from '@/utils/parseUrlParams';
+import { armKioskFullscreen } from '@/utils/kioskFullscreen';
 import ScreensaverPage from '@/pages/ScreensaverPage';
 import CatalogPage from '@/pages/CatalogPage';
-import CheckoutPage from '@/pages/CheckoutPage';
 import PaymentPage from '@/pages/PaymentPage';
 import ConfirmationPage from '@/pages/ConfirmationPage';
 import NotFoundPage from '@/pages/NotFoundPage';
@@ -27,6 +28,25 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
   }
   return <>{children}</>;
+}
+
+/**
+ * Sends a legacy `/checkout` link to the catalogue with the sheet open.
+ *
+ * Opening it here rather than leaving the customer on the bare menu keeps the
+ * old link meaning what it always did. The cart is untouched, so whatever was
+ * in it is still there.
+ */
+function CheckoutRedirect() {
+  useEffect(() => {
+    // Read through getState rather than subscribing: this component exists
+    // only to open the sheet on the way past, and reacting to `cartOpen` would
+    // reopen it the moment the customer closed it.
+    const { cartOpen, toggleCart } = useUIStore.getState();
+    if (!cartOpen) toggleCart();
+  }, []);
+
+  return <Navigate to="/catalog" replace />;
 }
 
 /** Idle before the session is abandoned and handed back to the next customer. */
@@ -46,9 +66,9 @@ const ACTIVITY_EVENTS = [
   'touchstart',
   'wheel',
   'scroll',
-  // Checkout's Show Time is a datetime-local control, which opens a native
-  // picker. Time spent in that picker produces no pointer or key events on the
-  // page, so without these a customer choosing a show time could be reset
+  // Checkout's show picker is a native select, which opens its own overlay.
+  // Time spent choosing in it produces no pointer or key events on the page,
+  // so without these a customer picking their show could be reset
   // mid-checkout. `focusin` covers autofill and tabbing for the same reason.
   'input',
   'change',
@@ -168,45 +188,55 @@ export default function App() {
     }
   }, [setContext, loadFromLocalStorage]);
 
+  // Kiosk deployments must not show the browser's address bar or tabs. See
+  // kioskFullscreen.ts for why this has to wait for the first tap rather than
+  // firing immediately on load.
+  useEffect(() => armKioskFullscreen(), []);
+
   return (
     <Router>
       <IdleReset />
       <RoutedView>
         <Routes>
-        <Route path="/" element={<ScreensaverPage />} />
-        <Route
-          path="/catalog"
-          element={
-            <ProtectedRoute>
-              <CatalogPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/checkout"
-          element={
-            <ProtectedRoute>
-              <CheckoutPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/payment"
-          element={
-            <ProtectedRoute>
-              <PaymentPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/confirmation/:orderId"
-          element={
-            <ProtectedRoute>
-              <ConfirmationPage />
-            </ProtectedRoute>
-          }
-        />
-        {/* Catch-all. Not wrapped in ProtectedRoute: an unknown URL should say
+          <Route path="/" element={<ScreensaverPage />} />
+          <Route
+            path="/catalog"
+            element={
+              <ProtectedRoute>
+                <CatalogPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Checkout is a sheet over the catalogue now, not a page. The route
+            is kept rather than deleted: it is in browser histories and on any
+            card a customer has already been shown, and a bare 404 there would
+            look like the order was lost. It opens the sheet on the catalogue
+            instead, which is where checkout actually is. */}
+          <Route
+            path="/checkout"
+            element={
+              <ProtectedRoute>
+                <CheckoutRedirect />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payment"
+            element={
+              <ProtectedRoute>
+                <PaymentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/confirmation/:orderId"
+            element={
+              <ProtectedRoute>
+                <ConfirmationPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Catch-all. Not wrapped in ProtectedRoute: an unknown URL should say
             so, not silently bounce to the screensaver, which reads as the link
             having worked. */}
           <Route path="*" element={<NotFoundPage />} />

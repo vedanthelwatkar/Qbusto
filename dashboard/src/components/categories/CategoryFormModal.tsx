@@ -22,6 +22,7 @@ import { toApiError } from '@/services/api';
 import * as categoriesService from '@/services/categories.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { fieldErrorsFrom } from '@/utils/validation';
+import ImageField from '@/components/ImageField';
 
 interface FormValues {
   name: string;
@@ -185,10 +186,10 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
 
           <Form.Item
             name="imageUrl"
-            label="Image URL"
+            label="Image"
             rules={[{ max: 500, message: 'Use at most 500 characters' }]}
           >
-            <Input placeholder="https://..." />
+            <ImageField entity="categories" />
           </Form.Item>
 
           {isEdit || actor?.role !== 'owner' ? null : (

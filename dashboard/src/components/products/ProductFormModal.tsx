@@ -26,6 +26,7 @@ import AddonParentSelect from '@/components/products/AddonParentSelect';
 import { toApiError } from '@/services/api';
 import * as productsService from '@/services/products.service';
 import { fieldErrorsFrom } from '@/utils/validation';
+import ImageField from '@/components/ImageField';
 
 interface FormValues {
   categoryId: number;
@@ -235,10 +236,10 @@ export default function ProductFormModal({ product, onClose, onSaved }: ProductF
 
           <Form.Item
             name="imageUrl"
-            label="Image URL"
+            label="Image"
             rules={[{ max: 500, message: 'Use at most 500 characters' }]}
           >
-            <Input placeholder="https://..." />
+            <ImageField entity="products" />
           </Form.Item>
 
           <Form.Item

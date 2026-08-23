@@ -123,6 +123,10 @@
   --transition-fast: 150ms cubic-bezier(0.2, 0, 0.2, 1);
   --transition-normal: 240ms cubic-bezier(0.2, 0, 0.2, 1);
   --transition-sheet: 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* Slower than the interaction transitions on purpose: the banner strip
+     changes on a timer rather than in response to a tap, so a quick swap reads
+     as a glitch where a gentle cross-fade reads as a slideshow. */
+  --transition-banner: 700ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Z-index scale */
   --z-sticky: 100;

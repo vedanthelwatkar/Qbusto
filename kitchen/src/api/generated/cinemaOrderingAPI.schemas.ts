@@ -294,6 +294,96 @@ export interface Banner {
 }
 
 /**
+ * A film as the source system supplies it. Read-only: the catalogue is synced, so QBusto does not write it.
+ */
+export interface Film {
+  /** The source system's film code. This is the primary key. */
+  code?: string;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  certification?: string | null;
+  /** @nullable */
+  durationMinutes?: number | null;
+  /**
+     * Poster art from the source system.
+     * @nullable
+     */
+  imageUrl?: string | null;
+  /**
+     * The source system's lifecycle flag.
+     * @nullable
+     */
+  status?: string | null;
+  /**
+     * The source system's raw flag, passed through without interpretation - its vocabulary is not documented and the client's data has never contained a 'Y' value.
+     * @nullable
+     */
+  nowShowingFlag?: string | null;
+  /** @nullable */
+  openingDate?: string | null;
+}
+
+/**
+ * One screening as the source system supplies it. Read-only. The auditorium is named rather than referenced by id.
+ */
+export interface Session {
+  cinemaCode?: string;
+  /** The source system's session id, unique within a cinema. */
+  sessionId?: number;
+  /** @nullable */
+  filmCode?: string | null;
+  /** @nullable */
+  screenNumber?: number | null;
+  /** @nullable */
+  screenName?: string | null;
+  startsAt?: string;
+  endsAt?: string;
+  /** @nullable */
+  seatsTotal?: number | null;
+  /** @nullable */
+  seatsAvailable?: number | null;
+  /** The source system's status flag. */
+  status?: string;
+  /** @nullable */
+  filmTitle?: string | null;
+  /** @nullable */
+  cinemaName?: string | null;
+  /** @nullable */
+  cinemaId?: number | null;
+}
+
+/**
+ * A screening a customer can order against. Selecting one supplies the order's filmTitle and showTime.
+ */
+export interface ConsumerSession {
+  /** The source system's session id, unique within this cinema. */
+  id?: number;
+  /**
+     * The auditorium as the source system names it. There is no screen id: the schedule does not reference one.
+     * @nullable
+     */
+  screenName?: string | null;
+  /** @nullable */
+  filmCode?: string | null;
+  /**
+     * Send this as the order's filmTitle.
+     * @nullable
+     */
+  filmTitle?: string | null;
+  /** @nullable */
+  certification?: string | null;
+  /** @nullable */
+  durationMinutes?: number | null;
+  /** Send this as the order's showTime. */
+  startsAt?: string;
+  /** @nullable */
+  endsAt?: string | null;
+  /** @nullable */
+  seatsAvailable?: number | null;
+}
+
+/**
  * A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.
  */
 export interface OrderStatus {
@@ -774,6 +864,70 @@ export type PutApiUsersId200 = SuccessResponse & {
 
 export type DeleteApiUsersId200 = SuccessResponse & {
   data?: User;
+};
+
+export type PostApiUploadsEntityBody = {
+  /** JPEG, PNG, GIF or WebP. Maximum size is set by MAX_UPLOAD_SIZE_MB (default 5 MB). */
+  file: Blob;
+};
+
+export type PostApiUploadsEntity201Data = {
+  /** Save this in the entity's image column. */
+  path?: string;
+  mimeType?: string;
+  bytes?: number;
+};
+
+export type PostApiUploadsEntity201 = SuccessResponse & {
+  data?: PostApiUploadsEntity201Data;
+};
+
+export type GetApiSessionsParams = {
+page?: number;
+limit?: number;
+cinemaId?: number;
+/**
+ * @maxLength 20
+ */
+filmCode?: string;
+/**
+ * Lower bound on startsAt.
+ */
+from?: string;
+/**
+ * Upper bound on startsAt.
+ */
+to?: string;
+sort?: GetApiSessionsSort;
+order?: GetApiSessionsOrder;
+};
+
+export type GetApiSessionsSort = typeof GetApiSessionsSort[keyof typeof GetApiSessionsSort];
+
+
+export const GetApiSessionsSort = {
+  sessionId: 'sessionId',
+  startsAt: 'startsAt',
+  endsAt: 'endsAt',
+  filmCode: 'filmCode',
+  screenName: 'screenName',
+  status: 'status',
+} as const;
+
+export type GetApiSessionsOrder = typeof GetApiSessionsOrder[keyof typeof GetApiSessionsOrder];
+
+
+export const GetApiSessionsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type GetApiSessions200 = SuccessResponse & {
+  data?: Session[];
+};
+
+export type GetApiSessionsId200 = SuccessResponse & {
+  data?: Session;
 };
 
 export type GetApiScreensParams = {
@@ -1525,6 +1679,49 @@ export type GetVersion200 = SuccessResponse & {
   data?: GetVersion200Data;
 };
 
+export type GetApiFilmsParams = {
+page?: number;
+limit?: number;
+/**
+ * Matches the title.
+ */
+search?: string;
+/**
+ * Exact match on the source system's raw now-showing flag. Not interpreted - the client's data has never contained a 'Y' value, so no boolean meaning is assumed here. Pass the exact stored character to filter on it.
+ * @maxLength 1
+ */
+nowShowingFlag?: string;
+sort?: GetApiFilmsSort;
+order?: GetApiFilmsOrder;
+};
+
+export type GetApiFilmsSort = typeof GetApiFilmsSort[keyof typeof GetApiFilmsSort];
+
+
+export const GetApiFilmsSort = {
+  code: 'code',
+  title: 'title',
+  certification: 'certification',
+  durationMinutes: 'durationMinutes',
+  openingDate: 'openingDate',
+} as const;
+
+export type GetApiFilmsOrder = typeof GetApiFilmsOrder[keyof typeof GetApiFilmsOrder];
+
+
+export const GetApiFilmsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type GetApiFilms200 = SuccessResponse & {
+  data?: Film[];
+};
+
+export type GetApiFilmsCode200 = SuccessResponse & {
+  data?: Film;
+};
+
 export type GetApiConsumerCinemasId200 = SuccessResponse & {
   data?: Cinema;
 };
@@ -1593,6 +1790,10 @@ export const GetApiConsumerCinemasCinemaIdBannersType = {
 
 export type GetApiConsumerCinemasCinemaIdBanners200 = SuccessResponse & {
   data?: Banner[];
+};
+
+export type GetApiConsumerCinemasCinemaIdSessions200 = SuccessResponse & {
+  data?: ConsumerSession[];
 };
 
 export type PostApiConsumerOrdersBodySource = typeof PostApiConsumerOrdersBodySource[keyof typeof PostApiConsumerOrdersBodySource];
