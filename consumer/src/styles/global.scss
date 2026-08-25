@@ -117,6 +117,16 @@ textarea {
   border-radius: var(--radius-sm);
   background-color: var(--color-bg-primary);
   padding: 12px 14px;
+  /* iOS Safari zooms the whole page in when a focused form control's
+     computed font-size is under 16px - including `select`, which opens its
+     native picker on the same focus event a text field would show a keyboard
+     for. The zoom/pan it leaves behind afterwards is what was being reported
+     as fields "cut off" on both edges: it is not a text-overflow or width
+     problem, the browser had zoomed past 100% and never fully reset. This
+     overrides `--font-size-body` (15px on mobile) with the hard 16px CSS
+     threshold, which is a fixed browser behaviour, not part of the type
+     scale, so it is a plain px value rather than a design token. */
+  font-size: 16px;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);

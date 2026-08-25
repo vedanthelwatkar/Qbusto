@@ -251,7 +251,6 @@ export default function PricingFormModal({
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{

@@ -214,7 +214,6 @@ export default function BannerFormModal({
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{ isActive: true, type: 'H', sequence: 0, cinemaId: defaultCinemaId }}

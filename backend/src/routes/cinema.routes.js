@@ -132,13 +132,23 @@ router.get(
  *       their own chain. The referenced chain must exist and be active. `code` appears in QR
  *       ordering URLs, is stored upper case, and is unique across the whole
  *       system. Requires the Settings module edit permission.
+ *
+ *
+ *       Cashfree credentials (`gatewayId`/`secretKey`/`environment`) are
+ *       MANDATORY here and created in the same transaction as the cinema -
+ *       without them, payment-init for this cinema falls through to the
+ *       deployment-wide fallback credentials (or fails outright if none are
+ *       configured). `secretKey` is encrypted before it is ever written and is
+ *       never returned in any response. To replace credentials on an
+ *       existing cinema, use `PUT /api/payment-gateway-config` - not this
+ *       endpoint, which does not accept them on update.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [code, name]
+ *             required: [code, name, gatewayId, secretKey]
  *             properties:
  *               chainId:         { type: integer, description: Owners only; ignored otherwise. }
  *               code:            { type: string, minLength: 2, maxLength: 10, pattern: '^[A-Z0-9-]+$' }
@@ -151,6 +161,9 @@ router.get(
  *               smsEnabled:      { type: boolean, default: false }
  *               whatsappEnabled: { type: boolean, default: false }
  *               isActive:        { type: boolean, default: true }
+ *               gatewayId:       { type: string, maxLength: 255, description: "Cashfree's APP_ID." }
+ *               secretKey:       { type: string, maxLength: 500, description: "Cashfree's SECRET_KEY. Encrypted at rest; never returned." }
+ *               environment:     { type: string, enum: [test, sandbox, prod, production], default: test }
  *     responses:
  *       201:
  *         description: Cinema created

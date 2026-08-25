@@ -66,7 +66,8 @@ const { models, sequelize } = require('../config/database');
 const logger = require('../config/logger');
 const env = require('../config/env');
 const { toPaise } = require('./pricing.service');
-const { rupeesToPaise } = require('./cashfree.client');
+const cashfree = require('./cashfree.client');
+const { rupeesToPaise } = cashfree;
 const { applyPaidTransition } = require('./paymenttransition.service');
 
 /** Events that mean "this gateway order has been paid". */
@@ -117,10 +118,17 @@ const OUTCOMES = Object.freeze({
  * @param {string} timestamp `x-webhook-timestamp` header.
  * @returns {boolean}
  */
-function verifyWebhookSignature(rawBody, signature, timestamp) {
-  const secret = env.cashfree.secretKey;
-
-  // No secret configured means nothing can be verified. Refusing is the only
+/**
+ * @param {Buffer} rawBody
+ * @param {string} signature
+ * @param {string} timestamp
+ * @param {string} secret The CINEMA this delivery claims to be about's
+ *   Cashfree secret key - see `resolveSigningSecret`. No longer a single
+ *   global value: each cinema may run its own Cashfree merchant account, so
+ *   there is no one secret that could verify every delivery.
+ */
+function verifyWebhookSignature(rawBody, signature, timestamp, secret) {
+  // No secret resolved means nothing can be verified. Refusing is the only
   // safe answer: accepting would let anyone who can reach the URL mark orders
   // paid.
   if (!secret) return false;
@@ -141,6 +149,119 @@ function verifyWebhookSignature(rawBody, signature, timestamp) {
   if (expectedBuffer.length !== receivedBuffer.length) return false;
 
   return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+/**
+ * Read `data.order.order_id` out of an UNVERIFIED body, tolerating anything
+ * malformed by returning null.
+ *
+ * This is the one deliberate exception to "never read the body before the
+ * signature verifies" (see the header note on `processWebhookEvent`, and the
+ * webhook route's own comment on raw-body mounting). It exists because
+ * verification itself now needs a piece of the body first: WHICH cinema's
+ * secret to try is no longer knowable without knowing which QBusto order the
+ * delivery claims to be about.
+ *
+ * This is safe specifically because the value is used ONLY to pick a
+ * candidate secret, never as a fact acted upon. An attacker can put any
+ * `order_id` they like in a forged body - real or invented - and it buys
+ * them nothing: they still cannot produce a valid signature over it without
+ * that specific cinema's secret key, which forging the field does not reveal.
+ * If the guess is wrong, or the order does not exist, verification simply
+ * fails the same way it would for any other unverifiable delivery.
+ */
+function readUnverifiedGatewayOrderId(rawBody) {
+  try {
+    const body = JSON.parse(rawBody.toString('utf8'));
+    const orderId = body && body.data && body.data.order && body.data.order.order_id;
+    return typeof orderId === 'string' && orderId ? orderId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Cashfree secret key to verify a delivery against, resolved from the
+ * (unverified) gateway order id it claims to be about.
+ *
+ * TWO FALLBACK LAYERS, NOT ONE
+ *
+ * If the order IS found, `cashfree.resolveCredentials` already falls back
+ * from that cinema's own `payment_gateway_config` to the global
+ * `CASHFREE_*` env vars on its own (see its own header note) - nothing
+ * extra needed here for that case.
+ *
+ * If the order is NOT found - an unreadable/invented/genuinely-unknown
+ * `order_id` - there is no cinema to resolve credentials FOR at all, so
+ * `resolveCredentials` is never reached. Without a fallback here, EVERY
+ * unknown-order delivery would be unverifiable and refused outright as a
+ * signature failure, which would swallow the legitimate "record this as
+ * `unknown_gateway_order` and move on" case `processWebhookEvent` exists to
+ * handle. The global secret is tried directly as a last resort instead - the
+ * same value a wholly single-tenant deployment (no per-cinema configs at
+ * all) would have used for everything before per-cinema credentials existed.
+ *
+ * @returns {Promise<string|null>} null only when no secret is resolvable by
+ *   either path - every other case still yields something to check the
+ *   signature against, even if it later turns out to be the wrong one.
+ */
+async function resolveSigningSecret(gatewayOrderId) {
+  if (gatewayOrderId) {
+    const order = await models.Order.findOne({
+      where: { gatewayOrderId },
+      attributes: ['id', 'cinemaId'],
+    });
+
+    if (order) {
+      try {
+        const resolved = await cashfree.resolveCredentials(order.cinemaId);
+        return resolved.secretKey || null;
+      } catch (error) {
+        logger.warn('Could not resolve Cashfree credentials while verifying a webhook', {
+          cinemaId: order.cinemaId,
+          reason: error && error.message ? error.message : 'unknown',
+        });
+        return null;
+      }
+    }
+  }
+
+  return env.cashfree.configured ? env.cashfree.secretKey : null;
+}
+
+/**
+ * Verifies one incoming delivery end to end: resolves which cinema it claims
+ * to belong to, resolves that cinema's secret, and checks the signature
+ * against it.
+ *
+ * Returns the ALREADY-PARSED body on success, so the controller never parses
+ * the raw bytes a second time - the parse that happened here to read
+ * `order_id` produced a value that, once the signature has verified, is now
+ * trustworthy in full, not just in the one field that was read from it early.
+ *
+ * @returns {Promise<{verified: boolean, body: object|null}>}
+ */
+async function verifyIncomingWebhook(rawBody, signature, timestamp) {
+  const gatewayOrderId = readUnverifiedGatewayOrderId(rawBody);
+  const secret = await resolveSigningSecret(gatewayOrderId);
+
+  if (!verifyWebhookSignature(rawBody, signature, timestamp, secret)) {
+    return { verified: false, body: null };
+  }
+
+  // The signature is now known good, so this parse - unlike the one inside
+  // readUnverifiedGatewayOrderId - produces a body every field of which can
+  // be trusted. A parse failure here would be a contradiction (the bytes just
+  // verified against a valid HMAC), but is handled rather than assumed
+  // impossible.
+  let body;
+  try {
+    body = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return { verified: false, body: null };
+  }
+
+  return { verified: true, body };
 }
 
 /**
@@ -364,6 +485,7 @@ async function processWebhookEvent({ event, body }) {
 
 module.exports = {
   verifyWebhookSignature,
+  verifyIncomingWebhook,
   isTimestampFresh,
   processWebhookEvent,
   SUCCESS_EVENTS,

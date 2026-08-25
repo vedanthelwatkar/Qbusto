@@ -65,7 +65,7 @@ const SESSION_STATUS_OPEN = 'O';
 
 const pricingService = require('./pricing.service');
 const cashfree = require('./cashfree.client');
-const env = require('../config/env');
+const couponService = require('./coupon.service');
 const { applyPaidTransition } = require('./paymenttransition.service');
 
 /**
@@ -94,6 +94,18 @@ const GATEWAY_PAYMENT_PENDING = 'PENDING';
 
 /** Orders are created in INR only. */
 const GATEWAY_CURRENCY = 'INR';
+
+/**
+ * Whether a thrown error is `cashfree.client`'s specific "no credentials for
+ * this cinema" refusal, as opposed to a genuine network/provider failure.
+ * Matched on message rather than a custom error class, to keep
+ * cashfree.client free of a dependency on this module's error types - it
+ * throws a plain Error deliberately, since which cinema is "not configured"
+ * is business-layer framing, not something the provider boundary should own.
+ */
+function isCashfreeNotConfiguredError(error) {
+  return Boolean(error && error.message === 'Cashfree is not configured for this cinema');
+}
 
 const {
   toPaise,
@@ -546,8 +558,55 @@ async function createOrder(payload, idempotencyKey) {
 
     // Calculate totals
     const subtotalPaise = lines.reduce((sum, line) => sum + line.grossPaise, 0);
-    const discountPaise = lines.reduce((sum, line) => sum + line.discountPaise, 0);
+    const productDiscountPaise = lines.reduce((sum, line) => sum + line.discountPaise, 0);
+
+    // Coupon, if one was applied. Validated and computed ENTIRELY here, from
+    // QBusto's own just-computed subtotal - never a client-supplied amount -
+    // so the discounted total handed to payment-init is already final by the
+    // time Cashfree is ever involved. See services/coupon.service for why
+    // this replaced routing coupons through Cashfree's own offer system.
+    let couponDiscountPaise = 0;
+    let offerId = null;
+
+    if (payload.couponCode) {
+      const result = await couponService.validateCoupon({
+        cinemaId: cinema.id,
+        code: payload.couponCode,
+        subtotalPaise,
+      });
+
+      if (!result.valid) {
+        throw new ValidationError(result.message, [
+          { field: 'couponCode', message: result.message },
+        ]);
+      }
+
+      couponDiscountPaise = result.discountPaise;
+      offerId = result.offer.id;
+    }
+
+    // Product/source pricing discounts and a coupon discount are each capped
+    // independently against the GROSS subtotal (see pricing.service
+    // .unitDiscountPaise and coupon.service.computeDiscountPaise), so their
+    // SUM is not - a 100%-off promotional price plus a generous coupon can
+    // otherwise add up to more than the cart is worth. Capped here, at the
+    // one place they are combined, rather than negative-total math being
+    // caught downstream by orders.total's `min: 0` model validation: that
+    // validation exists to protect data integrity, not to be the mechanism
+    // that turns a normal discount combination into a customer-facing error.
+    const discountPaise = Math.min(productDiscountPaise + couponDiscountPaise, subtotalPaise);
     const totalPaise = subtotalPaise - discountPaise;
+
+    // Belt-and-suspenders: the cap above makes this unreachable today, but a
+    // future change to either discount source should fail as a clean,
+    // named validation error - never as Sequelize's generic "Validation min
+    // on total failed", which names a column the customer never touched and
+    // gives staff nothing to act on.
+    if (totalPaise < 0) {
+      throw new ValidationError('This order could not be priced correctly', [
+        { field: 'items', message: 'The applied discounts exceed the order subtotal' },
+      ]);
+    }
 
     // Resolve status IDs
     const [statusId, paymentStatusId] = await Promise.all([
@@ -572,6 +631,7 @@ async function createOrder(payload, idempotencyKey) {
         subtotal: toDecimalString(subtotalPaise),
         discount: toDecimalString(discountPaise),
         total: toDecimalString(totalPaise),
+        offerId,
       },
       { transaction }
     );
@@ -679,6 +739,7 @@ async function createOrder(payload, idempotencyKey) {
       paymentStatus: PAYMENT_STATUSES.PENDING,
       subtotal: parseFloat(toDecimalString(subtotalPaise)),
       discount: parseFloat(toDecimalString(discountPaise)),
+      couponDiscount: parseFloat(toDecimalString(couponDiscountPaise)),
       total: parseFloat(toDecimalString(totalPaise)),
       currency: 'INR',
       items: lines.map((line) => ({
@@ -693,6 +754,52 @@ async function createOrder(payload, idempotencyKey) {
       createdAt: new Date().toISOString(),
     };
   });
+}
+
+/**
+ * POST /api/consumer/cinemas/{cinemaId}/coupons/validate
+ *
+ * Lets the Consumer app's "Apply coupon" control show a customer the
+ * discount BEFORE they submit the order, without creating anything. The
+ * subtotal it checks the coupon against is computed the exact same way order
+ * creation computes it - from `items`/`source` against live
+ * product_pricing, never trusted from the client - so the discount previewed
+ * here is guaranteed to match what `createOrder` would actually apply for
+ * the identical cart a moment later.
+ *
+ * No transaction: this is read-only, and `buildOrderLines` accepts an
+ * undefined transaction just as happily as a real one.
+ *
+ * @returns {Promise<{valid: boolean, message: string|null, discount: number|null, subtotal: number}>}
+ */
+async function validateCouponPreview(cinemaId, { code, items, source }) {
+  const cinema = await models.Cinema.findByPk(cinemaId, {
+    attributes: ['id', 'isActive'],
+  });
+
+  if (!cinema) throw new NotFoundError('Cinema');
+
+  const now = new Date();
+  const lines = await buildOrderLines(cinema, { items, source }, now, undefined);
+  const subtotalPaise = lines.reduce((sum, line) => sum + line.grossPaise, 0);
+
+  const result = await couponService.validateCoupon({ cinemaId: cinema.id, code, subtotalPaise });
+
+  if (!result.valid) {
+    return {
+      valid: false,
+      message: result.message,
+      discount: null,
+      subtotal: parseFloat(toDecimalString(subtotalPaise)),
+    };
+  }
+
+  return {
+    valid: true,
+    message: null,
+    discount: parseFloat(toDecimalString(result.discountPaise)),
+    subtotal: parseFloat(toDecimalString(subtotalPaise)),
+  };
 }
 
 /**
@@ -741,7 +848,7 @@ async function reconcilePaymentFromGateway(order) {
   let payments;
 
   try {
-    payments = await cashfree.fetchOrderPayments(order.gatewayOrderId);
+    payments = await cashfree.fetchOrderPayments(order.gatewayOrderId, order.cinemaId);
   } catch (error) {
     // Cashfree unreachable, credentials wrong, order unknown to them. Not
     // knowing is the status quo for payment-init, which carries on rather than
@@ -760,6 +867,13 @@ async function reconcilePaymentFromGateway(order) {
 
   // Integer paise on both sides; no floating-point money comparison. The
   // client converted Cashfree's rupee decimal on the way in.
+  //
+  // Strict exact-match ONLY. QBusto is the sole source of truth for what an
+  // order costs - `order.total` already reflects any coupon a customer
+  // applied (see applyCoupon), computed and validated entirely within
+  // QBusto before payment-init ever ran. Cashfree has no discount/offer
+  // concept in this flow at all, so a payment short of `expectedPaise` for
+  // ANY reason is refused as a mismatch, never explained away.
   const settled = payments.find(
     (payment) =>
       payment &&
@@ -822,7 +936,17 @@ async function reconcilePaymentFromGateway(order) {
  */
 async function paymentInit(orderId) {
   const order = await models.Order.findByPk(orderId, {
-    attributes: ['id', 'paymentStatusId', 'total', 'gatewayOrderId', 'customerMobile', 'customerEmail'],
+    attributes: [
+      'id',
+      'paymentStatusId',
+      'total',
+      'gatewayOrderId',
+      'customerMobile',
+      'customerEmail',
+      // Which cinema's Cashfree credentials apply - resolved per cinema via
+      // payment_gateway_config, not from one global configuration.
+      'cinemaId',
+    ],
     include: [
       {
         association: 'paymentStatus',
@@ -840,11 +964,42 @@ async function paymentInit(orderId) {
     });
   }
 
-  if (!env.cashfree.configured) {
-    throw new Error('Cashfree API unavailable', {
-      cause: new Error('Cashfree credentials are not configured'),
+  // A coupon can discount an order down to nothing - computeDiscountPaise
+  // caps a coupon's discount at the cart subtotal, so this is "fully
+  // covered", never negative. There is nothing left to ask Cashfree to
+  // collect (its own create-order API refuses order_amount 0 outright,
+  // verified live), and there should not be: a customer whose coupon paid
+  // for the whole order should never be shown a payment screen at all.
+  // Settled the same way every other source settles a payment - through the
+  // one compare-and-set every discovery path shares - so this cannot race a
+  // webhook or a browser verify into a double confirmation, and it drives
+  // the same kitchen-ticket side effect a real payment would.
+  if (toPaise(order.total) === 0) {
+    await sequelize.transaction(async (transaction) => {
+      await applyPaidTransition(
+        {
+          orderId: order.id,
+          reason: 'Order fully covered by coupon - no payment required',
+        },
+        transaction
+      );
     });
+
+    return {
+      orderId,
+      gatewayOrderId: null,
+      paymentSessionId: null,
+      amount: 0,
+      currency: GATEWAY_CURRENCY,
+      paymentStatus: PAYMENT_STATUSES.PAID,
+    };
   }
+
+  // Deliberately no upfront "is Cashfree configured" gate here any more:
+  // credentials are resolved per cinema, inside cashfree.client, and a cinema
+  // with no active payment_gateway_config (and no global env fallback) is
+  // reported as unavailable at the point a call is actually attempted below -
+  // see the catch around cashfree.createOrder.
 
   // An attempt already exists for this order.
   if (order.gatewayOrderId) {
@@ -885,6 +1040,7 @@ async function paymentInit(orderId) {
   try {
     created = await cashfree.createOrder({
       orderId: order.id,
+      cinemaId: order.cinemaId,
       amountPaise: toPaise(order.total),
       customerMobile: order.customerMobile,
       customerEmail: order.customerEmail,
@@ -898,7 +1054,19 @@ async function paymentInit(orderId) {
         gatewayOrderId: cashfree.buildGatewayOrderId(order.id),
         paymentSessionId: null,
       };
-    } else if (cashfree.isTransientError(error)) {
+    } else if (
+      cashfree.isTransientError(error) ||
+      cashfree.isAuthError(error) ||
+      isCashfreeNotConfiguredError(error)
+    ) {
+      // Not configured, wrong/revoked credentials, and a transient outage are
+      // all folded into the same 503: to the customer standing at a kiosk,
+      // "this cinema has no working Cashfree credentials right now" and
+      // "Cashfree is briefly unreachable" both mean the same thing - try
+      // again shortly, or ask staff. A bad credential is an operator error in
+      // that cinema's payment_gateway_config row, not a bug, and it must not
+      // leak a raw provider auth failure to a customer-facing endpoint - see
+      // isAuthError's own note for how this was found.
       throw new Error('Cashfree API unavailable', { cause: error });
     } else {
       throw error;
@@ -919,7 +1087,11 @@ async function paymentInit(orderId) {
       gatewayOrderId: created.gatewayOrderId,
       paymentSessionId:
         created.paymentSessionId ||
-        (await resumePaymentSession({ id: orderId, gatewayOrderId: created.gatewayOrderId })),
+        (await resumePaymentSession({
+          id: orderId,
+          cinemaId: order.cinemaId,
+          gatewayOrderId: created.gatewayOrderId,
+        })),
       amount: toPaise(order.total),
       currency: GATEWAY_CURRENCY,
     };
@@ -927,7 +1099,7 @@ async function paymentInit(orderId) {
 
   // Another request won the race; reload and return theirs.
   const reloadedOrder = await models.Order.findByPk(orderId, {
-    attributes: ['id', 'gatewayOrderId', 'total'],
+    attributes: ['id', 'gatewayOrderId', 'total', 'cinemaId'],
   });
 
   return {
@@ -950,7 +1122,7 @@ async function paymentInit(orderId) {
  */
 async function resumePaymentSession(order) {
   try {
-    const fetched = await cashfree.fetchOrder(order.gatewayOrderId);
+    const fetched = await cashfree.fetchOrder(order.gatewayOrderId, order.cinemaId);
     return fetched && fetched.paymentSessionId ? fetched.paymentSessionId : null;
   } catch (error) {
     logger.warn('Could not obtain a Cashfree payment session', {
@@ -983,7 +1155,7 @@ async function resumePaymentSession(order) {
  */
 async function paymentVerify(orderId) {
   const order = await models.Order.findByPk(orderId, {
-    attributes: ['id', 'gatewayOrderId', 'paymentStatusId', 'total'],
+    attributes: ['id', 'gatewayOrderId', 'paymentStatusId', 'total', 'cinemaId'],
     include: [
       {
         association: 'paymentStatus',
@@ -1286,6 +1458,7 @@ module.exports = {
   getBanners,
   getSessions,
   createOrder,
+  validateCouponPreview,
   paymentInit,
   paymentVerify,
 };

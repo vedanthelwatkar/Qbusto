@@ -26,6 +26,14 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(255),
         allowNull: false,
       },
+      // 'test' | 'sandbox' | 'prod' | 'production' - mirrors CASHFREE_ENVIRONMENT's
+      // own accepted vocabulary. Which Cashfree SDK environment this
+      // cinema's credentials are issued for.
+      environment: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'test',
+      },
       // Ciphertext only. The encryption key lives outside the database (server
       // config or a secret manager), never in this table.
       gatewaySecretEncrypted: {

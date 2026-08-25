@@ -13,7 +13,7 @@ import Thumbnail from '@/components/Thumbnail';
 import { formatMoney } from '@/utils/formatMoney';
 import { mapCheckoutError } from '@/utils/checkoutErrors';
 import { fetchSessions } from '@/services/catalog.service';
-import { placeOrder } from '@/services/orders.service';
+import { placeOrder, previewCoupon } from '@/services/orders.service';
 import type { ConsumerSession } from '@/api/generated/cinemaOrderingAPI.schemas';
 import {
   AlertIcon,
@@ -22,6 +22,7 @@ import {
   LockIcon,
   MinusIcon,
   PlusIcon,
+  TagIcon,
   TrashIcon,
 } from '@/components/icons';
 import '../styles/components/cart-drawer.scss';
@@ -152,6 +153,19 @@ export default function CheckoutDrawer() {
   const [placed, setPlaced] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Coupon: validated ENTIRELY server-side (see previewCoupon) - this state
+  // only remembers the last accepted answer to show it back to the customer.
+  // The order itself re-validates the same code at creation, so a stale
+  // `appliedCoupon` here can never actually apply a discount that is no
+  // longer valid; it can only, at worst, show a discount on screen for a
+  // moment before the cart is corrected.
+  const [couponInput, setCouponInput] = useState('');
+  const [couponChecking, setCouponChecking] = useState(false);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(
+    null
+  );
+
   const panelRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   /** The control that opened the sheet, so focus can be handed back to it. */
@@ -160,6 +174,25 @@ export default function CheckoutDrawer() {
   const subtotal = estimatedSubtotal();
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const prefilledSeat = splitSeat(seatNumber);
+
+  const couponDiscount = appliedCoupon?.discount ?? 0;
+  // Display only - the backend recomputes this independently at order
+  // creation from the same items/coupon, and that computation is the one
+  // that actually decides what the customer pays.
+  const estimatedTotal = Math.max(0, subtotal - couponDiscount);
+
+  /**
+   * The cart fingerprint an applied coupon's discount was validated against.
+   * A discount computed for one cart is not necessarily still correct for a
+   * different one (min/max cart value rules, a different subtotal for a
+   * percentage coupon), so a coupon is cleared the moment the cart it was
+   * checked against changes - never silently kept and shown against a total
+   * it was never actually validated for. The order itself re-validates the
+   * code again regardless, so this is a display correctness concern, not a
+   * security one.
+   */
+  const itemsFingerprint = items.map((item) => `${item.productId}:${item.quantity}`).join(',');
+  const appliedCouponFingerprintRef = useRef<string | null>(null);
 
   const {
     register,
@@ -307,6 +340,57 @@ export default function CheckoutDrawer() {
     (session) => String(session.id) === watch('sessionId')
   );
 
+  // See the fingerprint comment above `itemsFingerprint`: a coupon applied
+  // against a cart that has since changed is cleared rather than shown
+  // against a total it was never actually checked for.
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    if (appliedCouponFingerprintRef.current === itemsFingerprint) return;
+
+    setAppliedCoupon(null);
+    setCouponMessage('Your cart changed — please re-apply your coupon.');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to
+    // external state (the cart store) changing, not a plain render; see the
+    // consumer eslint config's note on this rule for the project's stance.
+  }, [itemsFingerprint, appliedCoupon]);
+
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) return;
+
+    setCouponChecking(true);
+    setCouponMessage(null);
+
+    try {
+      const result = await previewCoupon(
+        cinemaId,
+        code,
+        items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        source
+      );
+
+      if (result.valid && result.discount != null) {
+        appliedCouponFingerprintRef.current = itemsFingerprint;
+        setAppliedCoupon({ code, discount: result.discount });
+        setCouponInput('');
+      } else {
+        setAppliedCoupon(null);
+        setCouponMessage(result.message || 'This coupon is not valid');
+      }
+    } catch {
+      setAppliedCoupon(null);
+      setCouponMessage('Could not check this coupon right now. Please try again.');
+    } finally {
+      setCouponChecking(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    appliedCouponFingerprintRef.current = null;
+    setAppliedCoupon(null);
+    setCouponMessage(null);
+  };
+
   const onSubmit = async (data: CheckoutFormData) => {
     const session = sessions.find((candidate) => String(candidate.id) === data.sessionId);
 
@@ -354,6 +438,7 @@ export default function CheckoutDrawer() {
             quantity: item.quantity,
           })),
           source,
+          couponCode: appliedCoupon?.code ?? null,
         },
         uuidv4
       );
@@ -533,6 +618,64 @@ export default function CheckoutDrawer() {
                 ))}
               </ul>
 
+              <div className="cart-drawer__coupon">
+                {appliedCoupon ? (
+                  <div className="cart-drawer__coupon-applied">
+                    <span className="cart-drawer__coupon-applied-text">
+                      <TagIcon size={16} />
+                      <strong>{appliedCoupon.code}</strong> applied · −{formatMoney(couponDiscount)}
+                    </span>
+                    <button
+                      type="button"
+                      className="cart-drawer__coupon-remove"
+                      onClick={handleRemoveCoupon}
+                      disabled={busy}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="cart-drawer__coupon-input">
+                    <div className="field cart-drawer__coupon-field">
+                      <label className="sr-only" htmlFor="checkout-coupon">
+                        Coupon code
+                      </label>
+                      <input
+                        id="checkout-coupon"
+                        type="text"
+                        placeholder="Have a coupon code?"
+                        autoCapitalize="characters"
+                        value={couponInput}
+                        disabled={busy || couponChecking}
+                        onChange={(event) => {
+                          setCouponInput(event.target.value);
+                          if (couponMessage) setCouponMessage(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void handleApplyCoupon();
+                          }
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn--secondary cart-drawer__coupon-apply"
+                      disabled={busy || couponChecking || !couponInput.trim()}
+                      onClick={() => void handleApplyCoupon()}
+                    >
+                      {couponChecking ? <span className="spinner spinner--sm" /> : 'Apply'}
+                    </button>
+                  </div>
+                )}
+                {couponMessage && (
+                  <span className="cart-drawer__coupon-message" role="alert">
+                    {couponMessage}
+                  </span>
+                )}
+              </div>
+
               <form
                 className="cart-drawer__form"
                 id="checkout-drawer-form"
@@ -682,16 +825,35 @@ export default function CheckoutDrawer() {
             </div>
 
             <footer className="cart-drawer__footer">
-              <div className="cart-drawer__summary">
-                <span className="cart-drawer__summary-label">Total</span>
-                <span className="cart-drawer__summary-value">{formatMoney(subtotal)}</span>
-              </div>
-              {selectedSession && (
-                <p className="cart-drawer__note">{sessionLabel(selectedSession)}</p>
+              {appliedCoupon && (
+                <div className="cart-drawer__summary cart-drawer__summary--muted">
+                  <span className="cart-drawer__summary-label">Subtotal</span>
+                  <span>{formatMoney(subtotal)}</span>
+                </div>
               )}
+              {appliedCoupon && (
+                <div className="cart-drawer__summary cart-drawer__summary--muted">
+                  <span className="cart-drawer__summary-label">Coupon ({appliedCoupon.code})</span>
+                  <span>−{formatMoney(couponDiscount)}</span>
+                </div>
+              )}
+              <div className="cart-drawer__summary">
+                <span className="cart-drawer__summary-label">
+                  Total <span className="cart-drawer__summary-count">· {itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+                </span>
+                <span className="cart-drawer__summary-value">{formatMoney(estimatedTotal)}</span>
+              </div>
+              {/*
+                One line, not two: the show and the tax disclaimer used to be
+                separate paragraphs, each carrying its own margin, which is
+                what was pushing the Pay button out of view on a short phone
+                screen. Combined into one line, and led with the session -
+                real, already-computed data - rather than opening on the
+                generic disclaimer.
+              */}
               <p className="cart-drawer__note">
-                Taxes and discounts are applied by the cinema. The final amount is
-                shown on the payment screen.
+                {selectedSession && `${sessionLabel(selectedSession)} · `}
+                Taxes may apply — final amount shown at payment.
               </p>
 
               <button

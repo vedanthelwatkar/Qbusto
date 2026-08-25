@@ -11,6 +11,7 @@
 const Joi = require('joi');
 
 const { id, idParam, optionalText, paginationQuery } = require('./common.validators');
+const gatewayValidators = require('./paymentgatewayconfig.validators');
 
 /** See chain.validators for why this is a whitelist. */
 const SORTABLE_FIELDS = ['id', 'code', 'name', 'city', 'isActive', 'createdAt', 'updatedAt'];
@@ -54,6 +55,16 @@ const create = {
     smsEnabled: Joi.boolean().default(false),
     whatsappEnabled: Joi.boolean().default(false),
     isActive: Joi.boolean().default(true),
+    // Mandatory on creation: without a Cashfree credential, payment-init for
+    // this cinema falls through to the deployment-wide env fallback (or, if
+    // that is not configured either, fails outright) - requiring it here
+    // means a cinema is never left payable-by-accident-shared-account. Same
+    // field shapes as PUT /api/payment-gateway-config (see that validator's
+    // header note) so there is one definition of what a valid credential
+    // looks like, not two.
+    gatewayId: gatewayValidators.gatewayId.required(),
+    secretKey: gatewayValidators.secretKey.required(),
+    environment: gatewayValidators.environment.default('test'),
   }),
 };
 

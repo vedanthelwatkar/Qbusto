@@ -39,6 +39,12 @@ jest.mock('../src/config/database', () => {
     OrderStatus: { findOne: jest.fn() },
     OrderStatusLog: { create: jest.fn() },
     PaymentWebhookEvent: { findOne: jest.fn(), create: jest.fn() },
+    // Credentials are now resolved per cinema (verifyIncomingWebhook looks
+    // this order's cinema's config up BEFORE the signature can even be
+    // checked). No active row here on purpose: resolveCredentials then falls
+    // back to the global CASHFREE_* env vars these tests already sign
+    // against, so every existing fixture keeps working unchanged.
+    PaymentGatewayConfig: { findOne: jest.fn() },
   };
 
   return {
@@ -56,6 +62,7 @@ const app = createApp();
 const WEBHOOK_PATH = '/api/webhooks/cashfree';
 
 const ORDER_ID = 77;
+const CINEMA_ID = 5;
 const GATEWAY_ORDER_ID = 'qbusto_order_77';
 const GATEWAY_PAYMENT_ID = '5114910151';
 const ORDER_TOTAL = '250.00';
@@ -166,10 +173,14 @@ beforeEach(() => {
   );
   models.Order.findOne.mockResolvedValue({
     id: ORDER_ID,
+    cinemaId: CINEMA_ID,
     total: ORDER_TOTAL,
     paymentStatusId: PENDING_STATUS_ID,
   });
   models.Order.update.mockResolvedValue([1]);
+  // No active per-cinema config - resolveCredentials falls back to the
+  // global CASHFREE_SECRET_KEY these tests sign every fixture with.
+  models.PaymentGatewayConfig.findOne.mockResolvedValue(null);
   models.PaymentStatusLog.create.mockResolvedValue({});
   // The seam's fulfilment side effect. Ids differ from the payment ones so a
   // test cannot pass by confusing the two tables.

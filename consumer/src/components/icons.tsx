@@ -84,6 +84,15 @@ export function CheckIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function TagIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M20.59 13.41 11 3.83 3.83 11l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </svg>
+  );
+}
+
 export function LockIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>

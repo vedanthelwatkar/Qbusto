@@ -484,12 +484,32 @@ specifically. UPI Intent (mobile) and UPI QR (desktop) are prioritised.
 ### Endpoints
 
 ```
-POST /api/consumer/orders                          (Idempotency-Key required)
-POST /api/consumer/orders/:orderId/payment-init    (idempotent)
-POST /api/consumer/orders/:orderId/payment-verify  (idempotent)
-POST /api/webhooks/cashfree                         (raw body, HMAC-authed, no JWT)
-PUT  /api/orders/:id/payment-status                (staff only)
+POST /api/consumer/orders                                    (Idempotency-Key required)
+POST /api/consumer/cinemas/:cinemaId/coupons/validate         (read-only preview, no order created)
+POST /api/consumer/orders/:orderId/payment-init              (idempotent)
+POST /api/consumer/orders/:orderId/payment-verify             (idempotent)
+POST /api/webhooks/cashfree                                   (raw body, HMAC-authed, no JWT)
+PUT  /api/orders/:id/payment-status                           (staff only)
+GET/PUT/DELETE /api/payment-gateway-config                    (staff, Settings module - per-cinema Cashfree credentials)
+GET/POST/PUT/DELETE /api/offers                                (staff, Offers module - coupons)
 ```
+
+**POST-REVERT ADDITIONS (2026-08-25), superseding parts of §8.6/§8.13 below as
+written:** two things were added on the same day as the Cashfree migration
+work, described in full in their own new subsections (§8.14, §8.15) rather
+than rewriting every paragraph below in place:
+
+1. **Per-cinema Cashfree credentials** (§8.14) — `payment_gateway_config` is
+   no longer "unused" (§8.13 below says otherwise; that line is now wrong).
+2. **Coupons** (§8.15) — a pure-QBusto coupon system. An EARLIER version of
+   this tried mirroring coupons into Cashfree's own offer system
+   (`order_meta.offer_filters`, `CASHFREE_APPROVED_OFFER_CODES`, the whole
+   "offer handling" paragraph in §8.6 below) and was **deliberately
+   reverted** before ever reaching production — §8.6's offer-matching
+   paragraph documents a design that no longer exists in the code. Left in
+   place below, marked, rather than deleted outright: it is a real design
+   that was tried, tested live, and rejected for a specific reason (a third
+   party deciding what a customer owed), which is itself worth remembering.
 
 ### 8.1 Money units — the one thing that differs mechanically from Razorpay
 
@@ -603,10 +623,50 @@ checkout finished, please look."
 
 - Calls `cashfree.client.fetchOrderPayments()` (`PGOrderFetchPayments`,
   server-to-server), bounded by `CASHFREE_TIMEOUT_MS` (default 4000ms).
-- A payment settles the order only when `status === 'SUCCESS'` **and**
-  `amountPaise === toPaise(order.total)` exactly **and** currency matches (or is
-  absent). Integer paise both sides — Cashfree's rupee decimal is converted on
-  the way in.
+- A payment settles the order when `status === 'SUCCESS'` **and** currency
+  matches (or is absent) **and** `amountPaise === toPaise(order.total)`
+  **exactly, with no exceptions.** Integer paise both sides — Cashfree's
+  rupee decimal is converted on the way in. `order.total` already reflects
+  any coupon a customer applied (§8.15) — computed and subtracted entirely
+  within QBusto before `payment-init` ever ran — so there is no second,
+  gateway-side reason a payment could legitimately fall short; anything short
+  of `expectedPaise` is refused as a mismatch, full stop.
+- **[SUPERSEDED - kept for history, does not describe current code] Offer
+  handling (added after a Cashfree sandbox demo offer,
+  `testRetoolTPAPUPIoffer`/code `abcd15`, was found configured nowhere in the
+  merchant's own Offers dashboard yet still redeemable at checkout).**
+  `cashfree.client.fetchOrderPayments()` also returns each payment's
+  `offers: [{offerCode, redemptionStatus, discountAmountPaise}]`, read from
+  `PGOrderFetchPayments`'s `payment_offers[].offer_meta.offer_code` /
+  `.offer_redemption.{redemption_status,discount_amount}` — **verified against
+  a live sandbox response**, not assumed. `approvedOfferDiscountPaise(payment)`
+  sums only offers with `redemptionStatus === 'SUCCESS'` **and** whose
+  `offerCode` is in `env.cashfree.approvedOfferCodes` (a `Set` built once at
+  boot from `CASHFREE_APPROVED_OFFER_CODES`, default empty — so by default NO
+  offer is trusted and behaviour is unchanged from before offers were
+  handled). The exact-amount match is checked FIRST and unconditionally: a
+  payment already equal to the expected amount settles on that alone, so an
+  offer redemption attached to it (even an approved one) is never applied.
+  When an approved offer's discount is what closes the gap,
+  `orders.discount`/`orders.total` are updated (via `toDecimalString`) to
+  match what was actually collected, inside the same transaction as
+  `applyPaidTransition` — `total` keeps meaning "what this order is worth";
+  `subtotal` is untouched. The reason string on the resulting
+  `payment_status_logs` row names the discount for audit.
+  **Deliberately NOT extended to the webhook path**: the official `cashfree-pg`
+  SDK's documented webhook `payment_offers` shape (flat `redemption_amount`/
+  `offer_status`, no `offer_redemption` sub-object) **disagrees with** the REST
+  shape actually observed live — the two API surfaces are inconsistent with
+  each other, and only the REST shape has been directly verified, so offer
+  matching only runs where that verified shape is used. A payment settled only
+  via an approved offer and only ever confirmed by webhook (no browser
+  return, no later `payment-init`/`payment-verify` retry) would not be
+  recognised until reconciliation runs some other way — a known, accepted gap,
+  not an oversight. **[END SUPERSEDED SECTION]** This entire design -
+  `env.cashfree.approvedOfferCodes`, `CASHFREE_APPROVED_OFFER_CODES`,
+  `approvedOfferDiscountPaise()`, the `offers` field on
+  `fetchOrderPayments()`'s return shape - was removed in the revert of
+  2026-08-25. See §8.15.
 - **If nothing settled**, checks whether **any** attempt is `PENDING` —
   deliberately **not** amount-filtered, because an attempt Cashfree hasn't
   finished deciding may not carry a final amount yet, and the safe reading of
@@ -629,7 +689,11 @@ would turn that into `170`, breaking every signature. No `authenticate()`/
 - Headers read: `x-webhook-signature`, `x-webhook-timestamp` (**not optional**
   — unlike Razorpay's event-id header, the timestamp is part of the signed
   material, so without it no signature can be computed at all).
-- `verifyWebhookSignature(rawBody, signature, timestamp)`: signed payload is
+- **[UPDATED]** The controller now calls `webhookService.verifyIncomingWebhook(rawBody,
+  signature, timestamp)`, which resolves WHICH cinema's secret to check
+  against before calling `verifyWebhookSignature()` below - see §8.14 for the
+  per-cinema resolution mechanism this added. `verifyWebhookSignature` itself
+  is otherwise unchanged: signed payload is
   `timestamp + rawBody` **concatenated**, `HMAC-SHA256(secretKey, signedPayload)`
   encoded **base64** (not hex), compared with `crypto.timingSafeEqual` after a
   length check. **Three differences from Razorpay, each of which silently
@@ -783,7 +847,241 @@ rename-only by design. The filtered unique index is now
 **`payment_status_logs`** — append-only: `gateway_payment_id` (renamed from
 `razorpay_payment_id`), otherwise unchanged.
 
-`payment_gateway_config` table exists from the original schema, still unused.
+`payment_gateway_config` table existed from the original client schema,
+unused at the time this paragraph was written; it is **no longer unused** -
+see §8.14. It gained an `environment` column
+(`20260825000500-add-environment-to-payment-gateway-config.js`) alongside its
+original `gateway_id`/`gateway_secret_encrypted`/`gateway_url` (still
+genuinely unused) columns.
+
+`offers` (new table, `20260825000300-create-offers.js`) and `orders.offer_id`
+(new nullable FK, `20260825000600-revert-cashfree-offer-sync.js`) back the
+coupon system - see §8.15.
+
+### 8.14 Per-cinema Cashfree credentials
+
+Cashfree `APP_ID`/`SECRET_KEY` stopped being a single global env-var pair.
+Each cinema may run its own Cashfree merchant account, one **active** row per
+cinema in `payment_gateway_config` (filtered unique index
+`UQ_payment_gateway_config_active_cinema`, from the table's original
+migration - the constraint predates this feature but was exactly what made
+this design possible without a new migration for the uniqueness rule
+itself).
+
+- **Encryption**: `gateway_secret_encrypted` is AES-256-GCM ciphertext
+  (`backend/src/utils/credentials.js`) - IV (12 bytes) + auth tag (16 bytes,
+  GCM's own) + ciphertext, concatenated and base64-encoded in one column. The
+  key, `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes, Joi-validated,
+  boot throws in production if missing), lives **outside the database** -
+  server config only, never a DB column, never logged. This was an explicit
+  user decision made mid-build: the user's first answer to "how should
+  credentials be stored" was "plaintext"; on discovering this table already
+  had a `gateway_secret_encrypted` column with a pre-existing comment
+  ("Ciphertext only. The encryption key lives outside the database") from the
+  original schema, the question was re-raised and the user chose encryption,
+  confirming explicitly: "we will follow encryption and not store plain
+  text."
+- **Resolution** (`cashfree.client.resolveCredentials(cinemaId)`): that
+  cinema's active `payment_gateway_config` row first; the global
+  `CASHFREE_APP_ID`/`_SECRET_KEY`/`_ENVIRONMENT` env vars only as a fallback,
+  logged at `warn` every time it fires (`cinemaId` included, never the
+  credential). `getClientForCinema()` builds a fresh `Cashfree` SDK instance
+  per call rather than caching one - deliberately, since a cached client
+  built from a since-rotated secret would keep authenticating with the old
+  one until the process restarted, and constructing the SDK object is cheap.
+- **Webhook signature verification is the hard case**: which secret to check
+  a delivery against depends on which cinema it is about, which is not
+  knowable until the body is read - but the body cannot be trusted until the
+  signature verifies. Solved by `readUnverifiedGatewayOrderId()`: reads ONLY
+  `data.order.order_id` out of the **unverified** raw body, used purely as a
+  lookup key to find the QBusto order (and therefore cinema) it claims to be
+  about - never trusted as fact. An attacker gains nothing by forging this
+  field: they still cannot produce a valid signature without that specific
+  cinema's secret. If the order is not found at all (genuinely unknown
+  `order_id`), `resolveSigningSecret()` falls back to the global env secret
+  directly (not via `resolveCredentials`, which requires a resolved cinema)
+  so the legitimate "record as `unknown_gateway_order`, return 200" case
+  still works instead of becoming an unconditional "unverifiable, 400".
+- **Auth-error handling**: Cashfree's 401/403 (a wrong or revoked credential
+  for the resolved cinema) is classified by `cashfree.client.isAuthError()`
+  and folded into the same clean 503 a not-configured cinema gets, rather
+  than leaking a raw provider stack trace to a customer-facing endpoint. Added
+  after live-testing a corrupted DB secret and observing exactly that leak (a
+  bare 500 with the full Axios error and stack, since a 401 matched neither
+  `isTransientError` (5xx-only) nor `isDuplicateOrderError`).
+- **Dashboard**: `Cinemas → (cinema) → Payment gateway` section in
+  `CinemaDetailsDrawer.tsx` - status (`hasSecret`, `environment`,
+  `gatewayId`), "Set up credentials"/"Replace credentials" (`Settings:edit`)
+  opening `CinemaPaymentGatewayModal.tsx`, "Deactivate" (`Settings:delete`).
+  There is no "edit in place" - every save is a full replace (old row
+  deactivated, new one created), matching the backend's own model; `secretKey`
+  is write-only end to end and never appears in any response.
+- Live-verified: DB precedence over env fallback proven by temporarily
+  corrupting cinema 1's stored secret (real Cashfree 401), confirming
+  `payment-init` failed cleanly (503) rather than silently succeeding via a
+  matching env fallback, then restoring it and confirming success resumed.
+  The env-fallback path itself was verified against a cinema with no
+  `payment_gateway_config` row at all.
+
+### 8.15 Coupons - pure QBusto, no Cashfree involvement
+
+**THE PIVOT.** An earlier version of this session's work tried mirroring
+QBusto coupons into Cashfree's own offer system (`order_meta.offer_filters`
+as an ALLOW list at `payment-init`, `CASHFREE_APPROVED_OFFER_CODES` /
+`offers.cashfree_offer_id` at reconciliation - §8.6's superseded paragraph).
+The user's explicit instruction reversed this completely: "WE ARE NOT
+LETTING ANY COUPONS APPLY ON CASHFREE WE ARE REVERTING TO THE STRICT ARCH WE
+HAD BEFORE" - while explicitly keeping the per-cinema credentials work
+(§8.14): "but we have to keep the different id and secret key per cinema in
+our db as we were doing we just have to revert the changes we did for
+handling coupons in cashfree."
+
+The model now: a coupon (`offers` table, cinema-scoped, `code` unique per
+cinema) is validated and its discount computed **entirely within QBusto**
+(`backend/src/services/coupon.service.js`), and folded into `orders.total`
+**before `payment-init` is ever called**. Cashfree has no discount/offer
+concept in this flow at all - `createOrder()`'s request carries no
+`offer_filters`, and reconciliation/webhook both require an exact amount
+match (§8.6, corrected).
+
+- **Consumer flow**: "Apply coupon" in `CheckoutDrawer.tsx` calls
+  `POST /api/consumer/cinemas/:cinemaId/coupons/validate` (read-only preview,
+  no order created - `consumer.service.validateCouponPreview`, reuses
+  `buildOrderLines()` for the same authoritative subtotal order creation
+  would compute) before the order exists, so the preview is guaranteed to
+  match what `createOrder` actually applies a moment later for an identical
+  cart. `createOrder()` itself re-validates the code server-side - never
+  trusts that the preview was still valid by the time of submission.
+- **`discountType` vocabulary - a documented, deliberate choice, not
+  specified by the user**: `'percentage'` (case-insensitive) treats
+  `discAmount` as a percent of the subtotal, capped by `maxDiscAmount` if
+  set; anything else, **including `'flat'`**, is a flat rupee amount. Chosen
+  specifically so a coupon created without careful thought about this field
+  defaults to the less-surprising "flat" interpretation rather than silently
+  computing a percentage of an unrelated magnitude. Either way, the discount
+  is capped at the subtotal (`Math.max(0, Math.min(discountPaise,
+  subtotalPaise))`) - a coupon can never make an order negative.
+- **Validation rules** (`coupon.service.validateCoupon`): `status` must be
+  `'active'` (case-insensitive); `validFrom`/`validUntil` window;
+  `minTxnAmount`/`maxTxnAmount` gate eligibility against the subtotal;
+  `maxTxnLimit` caps total redemptions, counted via `Order.count({ where:
+  { offerId, paymentStatusId: paidStatusId } })` - **only PAID orders count**,
+  so an abandoned or still-pending attempt never took the coupon's slot.
+  **Known accepted race**: the limit is checked at order-creation time, not
+  re-checked at payment-settlement time (recall inherently cannot be, without
+  refusing to honour a payment Cashfree already actually collected - see
+  `paymenttransition.service.js`'s CAS design, which settles unconditionally
+  once money has moved) - two near-simultaneous checkouts can each pass the
+  check before either pays, and both later pay, over-redeeming a hard
+  `maxTxnLimit` by at most the number of orders racing at that instant. Not
+  fixed; documented as an accepted, standard e-commerce-coupon tradeoff,
+  distinct in kind from the payment-amount matching, which has zero tolerance
+  by design.
+- **`orders.offer_id`** (nullable FK, `NO ACTION` on delete/update) records
+  which coupon an order used - set once at `createOrder`, never changed
+  afterward, matching how `filmTitle`/`showTime` freeze what an order was
+  actually placed against. `offer.service.deleteOffer` guards the FK at the
+  application level: any order (paid or not) referencing an offer blocks a
+  hard delete with a 409, not a raw DB constraint error - the operator sets
+  `status: 'inactive'` on a used coupon instead.
+- **The zero-total edge case, found live, not anticipated**: a flat coupon
+  can discount an order down to exactly ₹0 (e.g. a flat-200 coupon against a
+  ₹180 cart, capped at the subtotal). Calling Cashfree's `PGCreateOrder` with
+  `order_amount: 0.00` is rejected outright (verified live: a real 400 from
+  Cashfree), which without a fix left a fully-covered order permanently
+  unpayable - `payment-init` returned a raw 500 and the customer was stuck.
+  Fixed by short-circuiting in `paymentInit`: when `toPaise(order.total) ===
+  0`, the order is settled immediately via the same `applyPaidTransition` CAS
+  every other discovery path uses (so it still drives the kitchen-ticket
+  side effect exactly once), with no gateway order ever created. The
+  response carries `paymentStatus: 'paid'` with `gatewayOrderId`/
+  `paymentSessionId` both `null` and `amount: 0`; `PaymentPage.tsx` checks
+  this before checking for a session and navigates straight to confirmation,
+  skipping the Pay button entirely. This became the system's **fourth**
+  `applyPaidTransition` caller (browser verify, webhook, reconciliation, and
+  now this).
+- **Dashboard**: `Offers` tab (`OffersPage.tsx`, table + filters;
+  `OfferFormModal.tsx`, field set - code, name, discountType, description,
+  tnc, status, discAmount, maxDiscAmount, minTxnAmount, maxTxnAmount,
+  maxTxnLimit, validFrom/validUntil). `maxDiscAmount` is shown only when
+  `discountType` is `'percentage'` - meaningless for a flat coupon, which is
+  already a fixed amount - and cleared automatically when switching away
+  from percentage so a stale value can't be silently submitted.
+  `paymentModes`/`offerCategory` were removed from BOTH the form and the
+  database (`20260825000700-drop-unused-offer-fields.js`) on 2026-08-25:
+  neither was ever read by any calculation, and a repository-wide search
+  found nothing outside the Offers CRUD path referencing them - pure
+  leftover vocabulary from the abandoned Cashfree-offer-mirroring design.
+  Required adding `'Offers'` to the `UserPermissionModuleName`
+  enum in `swagger.js` - it was already in the DB CHECK constraint and every
+  backend `authorize()` call, but had been missed in the OpenAPI schema, so
+  the generated dashboard types and `hasPermission()` could not see it until
+  fixed and regenerated. `module: 'Offers'` in `dashboard/src/routes/
+  modules.tsx`'s `NAV_MODULES` must match `MODULES.OFFERS` in
+  `backend/src/constants.js` exactly.
+- Live-verified end to end against the real Cashfree sandbox: coupon preview
+  → order creation with discount applied → payment-init sending only the
+  discounted amount (`order_meta.offer_filters` confirmed `null` via
+  `PGFetchOrder`) → webhook settlement at the exact discounted total →
+  `offerId`/redemption-count correctly recorded. The zero-total path
+  separately verified: order settles to `paid`/`confirmed` with no gateway
+  order created at all. Test data cleaned up after each run via direct SQL
+  delete in FK-safe order.
+- **Test coverage**: `tests/coupon.service.test.js` (new, 16 cases - status/
+  validity window/min-max/redemption-limit/percentage-vs-flat/subtotal-cap)
+  and two cases added to `tests/consumer.payment.test.js` (the zero-total
+  short-circuit; the auth-error-to-503 mapping).
+
+### 8.16 Two bugs found by an adversarial security review (2026-08-25), fixed same day
+
+**BLOCKER - empty cart auto-confirmed as a free, zero-item paid order.**
+`POST /api/consumer/orders` had NO `validate()` Joi middleware in front of it
+at all - the body went straight to `consumerService.createOrder()` with only
+ad-hoc checks inside the service, and `buildOrderLines()` never required a
+non-empty `items` array. The endpoint's own published OpenAPI contract
+already documented `items` as `required` with `minItems: 1`; nothing
+enforced it. Combined with §8.15's zero-total short-circuit, an anonymous
+request with `items: []` produced a ₹0 order that `payment-init` then
+confirmed as `paid`/`confirmed` immediately - no payment, no auth, fully
+repeatable, real kitchen-display impact. Fixed by adding
+`backend/src/validators/consumer.validators.js` (new file, mirrors
+`order.validators.js`'s `create.items` shape exactly:
+`Joi.array().items({productId, quantity}).min(1).max(50).required()`),
+wired via `validate(consumerValidators.createOrder)` on both
+`POST /api/consumer/orders` and `POST /api/consumer/cinemas/:cinemaId/coupons/validate`
+(same `items` concern). Controllers updated to read `req.validated.body`
+instead of raw `req.body`, matching the rest of the codebase's convention.
+The legitimate zero-total-via-coupon path is unaffected and still verified
+working - it now simply can never be reached with zero items.
+
+**HIGH - independently-capped discounts could sum past the subtotal.**
+`pricing.service.unitDiscountPaise` caps a product/source discount at 100%
+of that line (per-line, so `productDiscountPaise` can reach the full
+subtotal); `coupon.service.computeDiscountPaise` separately caps a coupon's
+discount at the full GROSS subtotal too. Nothing capped their SUM, so a
+heavy promotional price (e.g. a QR-only 100%-off line) stacked with a
+generous coupon could push `totalPaise` negative. `orders.total`'s
+Sequelize-level `validate: {min: 0}` (backed by the redundant SQL CHECK
+`CK_orders_total`) already made this impossible to persist - so this was
+never a financial-integrity gap, only a customer-facing error-quality one:
+a negative total surfaced as Sequelize's generic "Validation min on total
+failed" naming a field the customer never touched. Fixed with a two-line,
+call-site-only change in `consumer.service.createOrder` (coupon.service.js
+itself untouched, so its 16-case test suite needed no changes):
+`discountPaise = Math.min(productDiscountPaise + couponDiscountPaise, subtotalPaise)`,
+plus a belt-and-suspenders `if (totalPaise < 0) throw new ValidationError(...)`
+immediately after, so any future arithmetic mistake fails as a clean, named
+error instead of Sequelize's generic one.
+
+**Regression tests** (4 new cases in `tests/consumer.catalog.test.js`,
+alongside the existing availability-recheck describe block): empty array
+rejected with 400 before any DB call; missing `items` field rejected;
+a real cart fully covered by a coupon still creates at `total: 0`
+(proves the empty-cart fix didn't regress the legitimate zero-total path);
+a 100%-off product discount plus a full coupon on top is clamped at the
+subtotal, never negative. Full suite: 696/696 passing before this fix,
+698/698 after Part 3's cinema-credentials tests were added the same day
+(see §10).
 
 ---
 
@@ -798,9 +1096,94 @@ ready → delivered`. Orders become visible only via
 ## 10. Dashboard
 
 Pages: Banners, Categories, Chains, Cinemas, ComingSoon, Dashboard, Films,
-Forbidden, Login, NotFound, Orders, Pricing, Products, Screens, Sessions, Users.
-Films/Sessions are read-only views over client data. Reports and POS
-Integrations are `ComingSoonPage` placeholders.
+Forbidden, Login, NotFound, Offers, Orders, Pricing, Products, Screens,
+Sessions, Users. Films/Sessions are read-only views over client data. Reports
+and POS Integrations are `ComingSoonPage` placeholders. Offers (§8.15) is a
+plain page with local `useState`, not a Zustand store like Banners/
+Categories - nothing else in the Dashboard needs to read the offers list, so
+a store would only add indirection. Per-cinema Cashfree credentials (§8.14)
+are not a page of their own - a "Payment gateway" section inside
+`CinemaDetailsDrawer.tsx`, AND (added 2026-08-25) a mandatory section inside
+`CinemaFormModal.tsx` on create.
+
+### 10.1 Cinema creation now requires Cashfree credentials (2026-08-25)
+
+Backend investigation confirmed the payment flow already fully supported
+per-cinema credentials (§8.14, built earlier the same session) - what was
+missing was any way to set them AT creation time; the only path was the
+separate `payment_gateway_config` endpoints, used after the fact. Extended
+rather than duplicated:
+
+- `cinema.validators.js`'s `create` schema gained `gatewayId`/`secretKey`/
+  `environment`, all required, reusing the SAME Joi field definitions
+  `paymentgatewayconfig.validators.js` uses for its own `setCredentials`
+  schema (that file now exports the individual pieces, not just the composed
+  schema, specifically so this one definition of "what a valid credential
+  looks like" cannot drift into two).
+- `cinema.service.createCinema` wraps `Cinema.create` and a direct
+  `PaymentGatewayConfig.create` (encrypted via the same `utils/credentials.js`
+  used everywhere else) in ONE `sequelize.transaction` - a cinema is either
+  created payable from the start, or not created at all, never left silently
+  depending on the global env fallback because a second, separate request
+  happened to fail. `update` deliberately does NOT accept credential fields -
+  replacing an existing cinema's credentials stays on the existing, separate
+  `PUT /api/payment-gateway-config` endpoint.
+- `CinemaFormModal.tsx`: create mode shows a mandatory "Payment gateway"
+  section (APP ID, secret key, environment); edit mode shows the current
+  credential's STATUS only (via `paymentGatewayConfig.service.getActiveConfig`)
+  plus a "Replace credentials" button that opens the SAME
+  `CinemaPaymentGatewayModal` the details drawer already uses - a completely
+  separate save from the cinema's own fields, so editing an address never
+  requires re-entering a secret. There is no "edit in place" for a secret
+  that already exists, because it cannot be read back to prefill a field.
+- Live-verified: created a real cinema via the API with credentials, confirmed
+  `payment_gateway_config` held the encrypted row, and confirmed
+  `cashfree.client.resolveCredentials(newCinemaId)` - the exact function
+  `payment-init` calls - returned the correct decrypted secret, not the env
+  fallback. Test cinema cleaned up after.
+- Tests: 2 new cases in `tests/cinema.routes.test.js` (payment_gateway_config
+  created in the same transaction with the secret encrypted, not plaintext;
+  missing credentials rejected with 400 naming both fields) plus every
+  existing `POST /api/cinemas` test updated to send valid credentials (a
+  `CREDENTIALS_ENCRYPTION_KEY` fixed test value added at the top of the file,
+  matching the pattern `consumer.payment.test.js` already used for Cashfree's
+  own env vars).
+
+### 10.2 Required-field asterisks (2026-08-25, UI only)
+
+Every form in the Dashboard (13 of them) explicitly set `requiredMark={false}`
+on its `<Form>`, which suppresses antd's automatic red asterisk in front of a
+required field's label - antd derives that asterisk directly from the
+field's own `rules={[{required: true, ...}]}`, so the fix was simply
+removing the prop everywhere (one line per file), not writing any new
+required-detection logic. Zero validation behaviour changed - this is
+display-only, and the asterisk is guaranteed to match what `rules` already
+says is required, nothing else. Files: `BannerFormModal`, `CategoryFormModal`,
+`ChainFormModal`, `ChangePasswordModal`, `CinemaFormModal`,
+`CinemaPaymentGatewayModal`, `LoginPage`, `OfferFormModal`, `PricingFormModal`,
+`ProductFormModal`, `ScreenFormModal`, `AvailabilityFormModal`,
+`UserFormModal`.
+
+### 10.3 Shell layout - sidebar/header no longer scroll with the table (2026-08-25)
+
+Root cause: `.app-shell` used `min-height: 100vh` instead of a fixed
+`height: 100vh`, so a tall table grew the WHOLE shell past one viewport, and
+the browser's own `html`/`body` scrollbar ended up scrolling everything in
+it together - sidebar and header included, since they were just earlier
+siblings in that same scrolling box. Fixed in `global.scss` +
+`DashboardLayout.tsx`: `.app-shell` is now `height: 100vh; overflow: hidden`;
+the inner `<Layout>` wrapping Header+Content got a new `app-shell__main`
+class (`display:flex; flex-direction:column; height:100vh`) so it is bounded
+independently of the Sider beside it; `.app-shell__content` is
+`flex:1 1 auto; min-height:0; overflow-y:auto` - `min-height:0` is the
+specific flexbox trap this depended on: without it a flex child defaults to
+"at least as tall as its content," which silently defeats `overflow-y:auto`
+by never letting the box get short enough to need to scroll. The header's
+`position:sticky` was removed as no longer needed - it now lives outside the
+one scrolling region entirely, so it is always visible without any special
+positioning. `Sider` gained `app-shell__sider` (`height:100vh; overflow-y:
+auto`) defensively, so a longer nav list in the future scrolls internally
+too rather than repeating the same bug.
 
 ## 11. Consumer app
 
@@ -889,6 +1272,15 @@ production**, warned below that in development), `JWT_EXPIRES_IN` (1d),
 sandbox|prod|production`, default `test`), `CASHFREE_NOTIFY_URL` (optional),
 `CASHFREE_RETURN_URL` (optional), `CASHFREE_FALLBACK_CUSTOMER_PHONE` (default
 `9999999999`), `CASHFREE_TIMEOUT_MS` (default 4000, max 30000).
+`CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes, required - encrypts
+`payment_gateway_config.gateway_secret_encrypted`, see §8.14).
+
+**These three `CASHFREE_*` vars are now the FALLBACK, not the sole
+credential source** — §8.14's per-cinema `payment_gateway_config` is tried
+first. Boot still requires them regardless, since a fallback that cannot
+itself be configured is not a fallback. (`CASHFREE_APPROVED_OFFER_CODES`,
+which briefly existed during this session's offer-in-Cashfree design, was
+removed entirely in the revert - see §8.15.)
 
 **There is no separate webhook secret with Cashfree** — `CASHFREE_SECRET_KEY`
 both authenticates API calls and is the key Cashfree signs webhooks with. This
@@ -988,14 +1380,24 @@ Helper scripts in `backend/scripts/`: `create-dev-user.js`, `seed-dev-data.js`,
   and is warned about at startup.
 - `JWT_SECRET` ≥ 32 characters (enforced).
 - `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` configured and `CASHFREE_ENVIRONMENT`
-  set to `prod`/`production` (both enforced — boot fails otherwise). **Not
-  enforced, but required in practice:** either `CASHFREE_NOTIFY_URL` is set, or
-  an equivalent webhook URL is registered directly in the Cashfree Dashboard
+  set to `prod`/`production` (both enforced — boot fails otherwise). **This is
+  now the fallback pair, not necessarily what any given cinema settles
+  against** — see §8.14. For each production cinema, decide explicitly
+  whether it runs its own `payment_gateway_config` row (with its own
+  `environment: production`, which is **not** boot-checked the way the global
+  var is) or intentionally shares this fallback; a cinema silently falling
+  back is logged at `warn` every time, not an error. **Not enforced, but
+  required in practice:** either `CASHFREE_NOTIFY_URL` is set, or an
+  equivalent webhook URL is registered directly in the Cashfree Dashboard
   (Developers → Webhooks) — without one of the two, a payment where the
   customer's browser never returns has no automatic settlement path.
   `CASHFREE_RETURN_URL` is genuinely optional; the Consumer recovers on its own
   via `payment-verify` regardless of how the browser returns, since the order
   id is read from `sessionStorage`, not the URL.
+- `CREDENTIALS_ENCRYPTION_KEY` generated (64 hex chars / 32 bytes) and backed
+  up somewhere durable, **outside the database** — every cinema's stored
+  Cashfree secret is encrypted with this exact key, and losing or rotating it
+  makes every one of them undecryptable.
 - `VITE_CASHFREE_MODE` (consumer, build-time) must match `CASHFREE_ENVIRONMENT`
   (backend) — `production`/`prod` together, or the SDK rejects the session id.
 - Migrations and seeders applied before starting.
@@ -1100,6 +1502,20 @@ alignment migrations (a status note at its top says so), and its §6 reference t
     Razorpay-era exception (`consumer.service.js` reading `RAZORPAY_KEY_ID`/
     `RAZORPAY_KEY_SECRET` directly) no longer exists; every Cashfree value goes
     through `env.cashfree.*` with no exceptions.
+17. Never give Cashfree any role in a coupon/discount decision — no
+    `order_meta.offer_filters`, no "short payment matches a known discount"
+    branch anywhere in reconciliation or the webhook. QBusto computes the
+    discount and subtracts it before `payment-init`; Cashfree only ever sees
+    the final amount. Tried the other way once (§8.6's superseded paragraph),
+    reverted deliberately — see §8.15.
+18. Never store a payment gateway secret in plaintext, and don't add a second
+    column/table it could live in — `payment_gateway_config
+    .gateway_secret_encrypted`, encrypted via `utils/credentials.js`, is the
+    only one. `CREDENTIALS_ENCRYPTION_KEY` lives outside the database.
+19. A payment amount of exactly zero cannot be sent to Cashfree's
+    `PGCreateOrder` (rejected with a 400, verified live) — a fully-covered
+    coupon order must be settled by `payment-init` itself, not passed
+    through to the gateway at all. See §8.15's zero-total note.
 
 ---
 

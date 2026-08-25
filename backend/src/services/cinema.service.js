@@ -12,14 +12,17 @@
  *
  * Deletion is soft: is_active is set to 0 and the row stays.
  *
- * No transactions: every operation here is a single-row write.
+ * Every operation here is a single-row write EXCEPT createCinema, which also
+ * creates the cinema's mandatory Cashfree credential row in the same
+ * transaction - see its own header note.
  */
 
 const { Op } = require('sequelize');
 
-const { models } = require('../config/database');
+const { models, sequelize } = require('../config/database');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES } = require('../constants');
+const credentials = require('../utils/credentials');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -146,9 +149,17 @@ async function getCinema(actor, cinemaId) {
  * A duplicate `code` is left to the UQ_cinemas_code constraint, which the error
  * handler turns into a 409 - checking first would only add a query and still
  * lose a race.
+ *
+ * Also creates the cinema's Cashfree credential row (`payment_gateway_config`),
+ * in the SAME transaction as the cinema itself - see cinema.validators.js's
+ * `create` schema for why `gatewayId`/`secretKey`/`environment` are mandatory
+ * here. One transaction means one of two outcomes only: a cinema that can
+ * take payment from the moment it exists, or no cinema at all - never a
+ * cinema silently stuck on the deployment-wide fallback because the second
+ * of two separate requests happened to fail.
  */
 async function createCinema(actor, payload) {
-  const { chainId, ...attributes } = payload;
+  const { chainId, gatewayId, secretKey, environment, ...attributes } = payload;
 
   // Only an owner may place a cinema in another chain; anyone else creates
   // within their own, whatever the request body said.
@@ -156,11 +167,36 @@ async function createCinema(actor, payload) {
 
   await assertChainAcceptsCinemas(targetChainId);
 
-  const cinema = await models.Cinema.create({
-    ...attributes,
-    chainId: targetChainId,
-    createdBy: actor.id,
-    updatedBy: actor.id,
+  const gatewaySecretEncrypted = credentials.encrypt(secretKey);
+
+  const cinema = await sequelize.transaction(async (transaction) => {
+    const created = await models.Cinema.create(
+      {
+        ...attributes,
+        chainId: targetChainId,
+        createdBy: actor.id,
+        updatedBy: actor.id,
+      },
+      { transaction }
+    );
+
+    await models.PaymentGatewayConfig.create(
+      {
+        cinemaId: created.id,
+        // Genuinely unused - see the environment-column migration's note on
+        // why environment got its own column instead of reusing this one.
+        gatewayUrl: '',
+        gatewayId,
+        gatewaySecretEncrypted,
+        environment,
+        isActive: true,
+        createdBy: actor.id,
+        updatedBy: actor.id,
+      },
+      { transaction }
+    );
+
+    return created;
   });
 
   return serializeCinema(cinema);

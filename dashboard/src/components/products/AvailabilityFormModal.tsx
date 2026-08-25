@@ -171,7 +171,6 @@ export default function AvailabilityFormModal({
       <Form<FormValues>
         form={form}
         layout="vertical"
-        requiredMark={false}
         onFinish={handleSubmit}
         disabled={submitting}
         initialValues={{

@@ -56,19 +56,21 @@ Frontends hold **no business rules**. Every rule lives in the backend.
 QBusto has fully migrated from Razorpay to **Cashfree**. No Razorpay code,
 dependency or configuration remains anywhere in the repository.
 
-Three consumer endpoints, all idempotent:
+Consumer endpoints, all idempotent (coupon preview is read-only and needs no
+idempotency key):
 
 ```
-POST /api/consumer/orders                          (Idempotency-Key header required)
+POST /api/consumer/orders                                    (Idempotency-Key header required)
+POST /api/consumer/cinemas/:cinemaId/coupons/validate         (preview a coupon before ordering)
 POST /api/consumer/orders/:orderId/payment-init
 POST /api/consumer/orders/:orderId/payment-verify
-POST /api/webhooks/cashfree                         (raw body, HMAC-authed, no JWT)
+POST /api/webhooks/cashfree                                   (raw body, HMAC-authed, no JWT)
 ```
 
 **The single most important piece of this system:**
 `backend/src/services/paymenttransition.service.js` → `applyPaidTransition()`.
 It is a **compare-and-set** (`UPDATE … WHERE payment_status_id = pending`)
-called by **three independent discovery paths** — this seam is
+called by **four independent discovery paths** — this seam is
 **provider-agnostic and survived the migration untouched**:
 
 1. Browser `payment-verify` — takes no identity from the request; Cashfree's
@@ -78,6 +80,19 @@ called by **three independent discovery paths** — this seam is
 3. Pull reconciliation (`cashfree.client.fetchOrderPayments`, timeout via
    `CASHFREE_TIMEOUT_MS`, default 4s) — triggered on re-hitting `payment-init`
    or `payment-verify`, **not** a cron
+4. `payment-init` itself, when an order **with real items** discounted to
+   **exactly zero** — there is nothing left to ask Cashfree to collect (its
+   own create-order API refuses `order_amount` 0 outright, verified live), so
+   the order is confirmed paid immediately, with no gateway order ever
+   created. The response carries `paymentStatus: 'paid'` (`gatewayOrderId`/
+   `paymentSessionId` both `null`) and the Consumer skips straight to the
+   confirmation screen instead of rendering a Pay button for ₹0.
+   **`POST /api/consumer/orders` requires `items` to be non-empty**
+   (`backend/src/validators/consumer.validators.js`, `min(1)`) — this is load
+   -bearing, not incidental: an empty cart would otherwise also reach ₹0 and
+   get auto-confirmed by this same path with nothing in it and no payment
+   taken. Found and fixed as a BLOCKER in an adversarial security review; see
+   memory.md §8.16.
 
 Whichever lands first wins; the others are harmless no-ops. It also calls
 `fulfilment.confirmOnPayment()` (another CAS, `initiated → confirmed`), which
@@ -123,6 +138,106 @@ kitchen ticket, every time.
   Cashfree Dashboard (Developers → Webhooks) instead — confirm this exists for
   the production account before go-live; see
   [pre-production-checklist.md](./docs/pre-production-checklist.md).
+- **Cashfree has ZERO involvement in coupons/discounts, by design.**
+  `reconcilePaymentFromGateway` and the webhook both require the collected
+  amount to equal `order.total` **exactly** — no exceptions, no offer
+  reasoning, no "short by a known amount is OK" branch. An earlier design
+  tried the opposite (mirroring coupons into Cashfree's own offer system via
+  `order_meta.offer_filters` and accepting a short payment as evidence of a
+  valid redemption) and was **deliberately reverted**: it meant a third party
+  could ultimately decide what a customer owed, which a demo offer observed
+  in Cashfree's own sandbox (`testRetoolTPAPUPIoffer`, redeemable despite
+  existing nowhere in the merchant's own Offers dashboard) showed is not safe
+  to trust. See "Coupons" below for what replaced it.
+
+### Per-cinema Cashfree credentials
+
+Cashfree APP_ID/SECRET_KEY are **not** only a single global env-var pair any
+more. Each cinema may run its own Cashfree merchant account, stored in
+`payment_gateway_config` (one **active** row per cinema, enforced by a
+filtered unique index; replacing a credential deactivates the old row rather
+than overwriting it, so which credential a cinema was on at any point stays
+recoverable).
+
+- `gateway_secret_encrypted` is **AES-256-GCM ciphertext**, never plaintext —
+  encrypted/decrypted only by `backend/src/utils/credentials.js`. The key,
+  `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes), lives **outside the
+  database entirely**, so a DB leak alone cannot recover a working credential.
+- `environment` (`test`/`sandbox`/`prod`/`production`, mirroring
+  `CASHFREE_ENVIRONMENT`'s own vocabulary) is its own column, not folded into
+  the still-unused `gateway_url` column.
+- Resolution order, in `cashfree.client.resolveCredentials(cinemaId)`: that
+  cinema's active `payment_gateway_config` row **first**; the global
+  `CASHFREE_*` env vars **only as a fallback**, logged loudly every time that
+  fallback fires. The webhook has the harder version of this problem —
+  verifying a signature requires knowing which cinema's secret to check
+  against, before the body can be trusted at all — solved by reading
+  `data.order.order_id` out of the **unverified** body purely as a lookup key
+  (never as a fact), then resolving credentials from the QBusto order it
+  points to; an order that cannot be found falls back to the global secret so
+  a genuinely-unknown gateway order is still recorded as `unknown_gateway_order`
+  (200) rather than refused as unverifiable (400).
+- A wrong/revoked credential surfaces to the customer as the same clean 503
+  ("Payment provider temporarily unavailable") a not-configured cinema gets —
+  `cashfree.client.isAuthError()` catches Cashfree's 401/403 specifically so a
+  bad `payment_gateway_config` row never leaks a raw provider stack trace to
+  a customer-facing endpoint. Verified live by intentionally corrupting a
+  cinema's stored secret.
+- **Mandatory at cinema creation.** `POST /api/cinemas` requires
+  `gatewayId`/`secretKey`/`environment` and creates the cinema plus its
+  `payment_gateway_config` row in one transaction — a cinema is never left
+  created-but-unable-to-take-payment because a second, separate request
+  happened to fail. Replacing credentials on an *existing* cinema stays a
+  separate action: `Cinemas → (cinema) → Payment gateway`, backed by
+  `PUT/DELETE /api/payment-gateway-config` (Settings module permission).
+  `secretKey` is accepted on write and never appears in any response —
+  `hasSecret` is the only way to confirm one is on file.
+
+### Coupons — pure QBusto, no Cashfree involvement
+
+A coupon (`offers` table, Dashboard's **Offers** tab) is validated and
+applied **entirely within QBusto**. The customer enters a code in the
+Consumer app's cart ("Apply coupon" in `CheckoutDrawer`), which previews it
+via the coupons/validate endpoint above; at order creation the code is
+re-validated server-side (`services/coupon.service.validateCoupon`) against a
+subtotal QBusto itself computed from `product_pricing` — never a
+client-supplied figure — and the discount is subtracted into `orders.total`
+**before `payment-init` is ever called**. Cashfree is handed only the final,
+already-discounted amount and has no discount/offer concept in this flow at
+all.
+
+- `offers.discount_type` is free text but has a **defined meaning**:
+  `'percentage'` (case-insensitive) treats `disc_amount` as a percent of the
+  cart, capped by `max_disc_amount` if set (the Dashboard form only shows
+  "Max discount amount" for a percentage coupon — meaningless for a flat one);
+  **anything else, including `'flat'`, is a flat rupee amount** — chosen as
+  the default specifically so a coupon created without thinking hard about
+  this field behaves as the less-surprising "flat" interpretation. A
+  discount is always capped at the subtotal itself — `consumer.service
+  .createOrder` clamps `productDiscount + couponDiscount` at the subtotal
+  before computing `total`, so two independently-capped discounts (a
+  promotional price plus a coupon) can never sum past it and make an order
+  negative.
+  `offers.offer_category`/`payment_modes` — leftover vocabulary from the
+  abandoned Cashfree-offer-mirroring design, never read by any calculation —
+  were dropped from the database entirely
+  (`20260825000700-drop-unused-offer-fields.js`).
+- Validated: `status` must be `'active'`; `valid_from`/`valid_until` window;
+  `min_txn_amount`/`max_txn_amount` gate eligibility; `max_txn_limit` caps
+  total redemptions, counted only from **paid** orders (an abandoned or
+  pending attempt never took the coupon's slot). Known accepted race: the
+  limit is checked at **order-creation** time, not at payment-settlement
+  time, so two near-simultaneous checkouts can both pass the check and both
+  later pay — a coupon's `max_txn_limit` is a soft cap, not a hard guarantee,
+  the same tradeoff most e-commerce coupon systems make.
+- `orders.offer_id` (nullable FK, `NO ACTION`) records which coupon an order
+  used, for redemption counting and audit — frozen at order creation and
+  never changed afterward, the same way `filmTitle`/`showTime` freeze what an
+  order was actually placed against. Deleting a coupon that has ever been
+  redeemed is refused with a 409 (`services/offer.service.deleteOffer`) —
+  deactivate it (`status: 'inactive'`) instead.
+- A coupon that discounts an order to **exactly zero** is handled by
+  `payment-init` itself — see discovery path 4 above — not by this module.
 
 ---
 
@@ -249,8 +364,13 @@ Key vars: `DB_*`, `JWT_SECRET` (≥32 chars in prod), `CORS_ALLOWED_ORIGINS`,
 `FILE_STORAGE_PATH`, `MAX_UPLOAD_SIZE_MB`, `CASHFREE_APP_ID`,
 `CASHFREE_SECRET_KEY`, `CASHFREE_ENVIRONMENT`, `CASHFREE_NOTIFY_URL`
 (optional), `CASHFREE_RETURN_URL` (optional), `CASHFREE_FALLBACK_CUSTOMER_PHONE`,
-`CASHFREE_TIMEOUT_MS`. There is **no separate webhook secret** — Cashfree signs
-with `CASHFREE_SECRET_KEY` itself. Never commit values.
+`CASHFREE_TIMEOUT_MS`, `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes —
+required to encrypt/decrypt any `payment_gateway_config` row; see "Per-cinema
+Cashfree credentials" above). `CASHFREE_APP_ID`/`_SECRET_KEY`/`_ENVIRONMENT`
+are now the **fallback** used only when a cinema has no active
+`payment_gateway_config` row, not the sole credential source. There is **no
+separate webhook secret** — Cashfree signs with the resolved cinema's
+`CASHFREE_SECRET_KEY`-equivalent itself. Never commit values.
 
 ---
 
@@ -293,6 +413,22 @@ Integrations are Dashboard placeholders.
 8. Out-of-scope resource ⇒ **404, not 403**.
 9. `make migrate`, not `npm run db:migrate` (that script doesn't exist).
 10. Rebuild frontends to change `VITE_API_URL` — it's baked in at build time.
+11. Don't give Cashfree any role in a coupon/discount decision — no
+    `order_meta.offer_filters`, no "short payment matches a known offer"
+    branch. QBusto computes the discount, subtracts it before `payment-init`,
+    and Cashfree only ever sees the final amount. This was tried once and
+    reverted; see "Coupons" under Payments.
+12. Don't store a Cashfree secret in plaintext, and don't add a second place
+    credentials can live — `payment_gateway_config.gateway_secret_encrypted`,
+    encrypted via `utils/credentials.js`, is the only column.
+13. Don't let `POST /api/consumer/orders` accept an empty `items` array —
+    a zero-line, zero-total order gets auto-confirmed by the same
+    zero-total path a legitimately fully-discounted order uses. Enforced by
+    `consumer.validators.js`, not the frontend; this was a real BLOCKER
+    found live, not a hypothetical.
+14. Don't set `requiredMark={false}` on a Dashboard `<Form>` — it hides
+    every field's asterisk, not just the ones that shouldn't have one.
+    Leave the prop off entirely and let antd derive it from `rules`.
 
 ## README drift (verified against code)
 

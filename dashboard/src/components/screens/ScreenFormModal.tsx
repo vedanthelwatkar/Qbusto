@@ -168,7 +168,6 @@ export default function ScreenFormModal({
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{ isActive: true, cinemaId: defaultCinemaId }}

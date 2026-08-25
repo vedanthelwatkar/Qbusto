@@ -14,6 +14,9 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'paymentStatusId',
         as: 'paymentStatus',
       });
+      // The coupon applied at checkout, if any - see services/coupon.service.
+      // Nullable: most orders have none.
+      Order.belongsTo(models.Offer, { foreignKey: 'offerId', as: 'offer' });
 
       Order.hasMany(models.OrderItem, { foreignKey: 'orderId', as: 'items' });
       Order.hasMany(models.OrderStatusLog, { foreignKey: 'orderId', as: 'statusLogs' });
@@ -87,6 +90,14 @@ module.exports = (sequelize, DataTypes) => {
       paymentStatusId: {
         type: DataTypes.INTEGER,
         allowNull: false,
+      },
+      // Which coupon (offers.id) was applied at checkout, if any. Set once at
+      // order creation - see services/coupon.service.applyCoupon - and never
+      // changed afterward, matching how filmTitle/showTime freeze what an
+      // order was actually placed against.
+      offerId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
       },
       // smsStatus and whatsappStatus are independent. NULL means the channel was
       // not applicable or not enabled for this order.

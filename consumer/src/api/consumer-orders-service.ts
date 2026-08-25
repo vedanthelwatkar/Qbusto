@@ -10,6 +10,8 @@ import type {
   PostApiConsumerOrdersOrderIdPaymentInitBody,
   PostApiConsumerOrdersOrderIdPaymentVerify200,
   PostApiConsumerOrdersOrderIdPaymentVerifyBody,
+  PostApiConsumerCinemasCinemaIdCouponsValidate200,
+  PostApiConsumerCinemasCinemaIdCouponsValidateBody,
 } from './generated/cinemaOrderingAPI.schemas';
 import { customInstance } from './axios-instance';
 
@@ -28,6 +30,28 @@ export function createOrder(
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
+    },
+    data: body,
+  });
+}
+
+/**
+ * Preview a coupon's discount before placing an order. Creates nothing - the
+ * backend recomputes the subtotal from the same items/source an order would
+ * actually be created with, so the discount matches what `createOrder` would
+ * apply for an identical cart.
+ * @param cinemaId Cinema the coupon is being checked against
+ * @param body code + items + source
+ */
+export function validateCoupon(
+  cinemaId: number,
+  body: PostApiConsumerCinemasCinemaIdCouponsValidateBody
+): AxiosPromise<PostApiConsumerCinemasCinemaIdCouponsValidate200> {
+  return customInstance<PostApiConsumerCinemasCinemaIdCouponsValidate200>({
+    url: `/api/consumer/cinemas/${cinemaId}/coupons/validate`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
     data: body,
   });

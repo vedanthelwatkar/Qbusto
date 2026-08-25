@@ -204,7 +204,6 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           // Only meaningful when creating; the edit form is filled from the

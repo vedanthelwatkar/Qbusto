@@ -21,6 +21,7 @@ const MODULES = Object.freeze({
   REPORTS: 'Reports',
   POS_INTEGRATIONS: 'POS Integrations',
   SETTINGS: 'Settings',
+  OFFERS: 'Offers',
 });
 
 const MODULE_NAMES = Object.freeze(Object.values(MODULES));

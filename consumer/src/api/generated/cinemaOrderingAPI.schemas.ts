@@ -56,6 +56,7 @@ export const UserPermissionModuleName = {
   Reports: 'Reports',
   POS_Integrations: 'POS Integrations',
   Settings: 'Settings',
+  Offers: 'Offers',
 } as const;
 
 export interface UserPermission {
@@ -289,6 +290,66 @@ export interface Banner {
   /** @nullable */
   endDate?: string | null;
   isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Offer {
+  id?: number;
+  cinemaId?: number;
+  code?: string;
+  name?: string;
+  /** "percentage" (case-insensitive) drives percent-of-cart math; anything else, including "flat", is a flat rupee amount. */
+  discountType?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  tnc?: string | null;
+  status?: string;
+  discAmount?: number;
+  /**
+     * Only meaningful when discountType is "percentage" - caps the discount a percentage coupon can give. Ignored for a flat coupon, which is already a fixed amount.
+     * @nullable
+     */
+  maxDiscAmount?: number | null;
+  /** @nullable */
+  minTxnAmount?: number | null;
+  /** @nullable */
+  maxTxnAmount?: number | null;
+  /**
+     * Redemption count cap, not an amount.
+     * @nullable
+     */
+  maxTxnLimit?: number | null;
+  /** @nullable */
+  validFrom?: string | null;
+  /** @nullable */
+  validUntil?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type PaymentGatewayConfigEnvironment = typeof PaymentGatewayConfigEnvironment[keyof typeof PaymentGatewayConfigEnvironment];
+
+
+export const PaymentGatewayConfigEnvironment = {
+  test: 'test',
+  sandbox: 'sandbox',
+  prod: 'prod',
+  production: 'production',
+} as const;
+
+/**
+ * Never carries the secret key itself - see hasSecret.
+ */
+export interface PaymentGatewayConfig {
+  id?: number;
+  cinemaId?: number;
+  gatewayId?: string;
+  environment?: PaymentGatewayConfigEnvironment;
+  isActive?: boolean;
+  /** Whether a secret key is on file. Never the key itself. */
+  hasSecret?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1318,6 +1379,51 @@ export type DeleteApiProductPricingId200 = SuccessResponse & {
   data?: ProductPricing;
 };
 
+export type GetApiPaymentGatewayConfigParams = {
+cinemaId: number;
+};
+
+export type GetApiPaymentGatewayConfig200 = SuccessResponse & {
+  data?: PaymentGatewayConfig;
+};
+
+export type PutApiPaymentGatewayConfigBodyEnvironment = typeof PutApiPaymentGatewayConfigBodyEnvironment[keyof typeof PutApiPaymentGatewayConfigBodyEnvironment];
+
+
+export const PutApiPaymentGatewayConfigBodyEnvironment = {
+  test: 'test',
+  sandbox: 'sandbox',
+  prod: 'prod',
+  production: 'production',
+} as const;
+
+export type PutApiPaymentGatewayConfigBody = {
+  cinemaId: number;
+  /**
+     * Cashfree's APP_ID.
+     * @maxLength 255
+     */
+  gatewayId: string;
+  /**
+     * Cashfree's SECRET_KEY. Encrypted at rest; never returned.
+     * @maxLength 500
+     */
+  secretKey: string;
+  environment?: PutApiPaymentGatewayConfigBodyEnvironment;
+};
+
+export type PutApiPaymentGatewayConfig200 = SuccessResponse & {
+  data?: PaymentGatewayConfig;
+};
+
+export type DeleteApiPaymentGatewayConfigParams = {
+cinemaId: number;
+};
+
+export type DeleteApiPaymentGatewayConfig200 = SuccessResponse & {
+  data?: PaymentGatewayConfig;
+};
+
 export type GetApiOrderStatusesParams = {
 isActive?: boolean;
 };
@@ -1554,6 +1660,145 @@ export type PutApiOrdersIdPaymentStatusBody = {
 
 export type PutApiOrdersIdPaymentStatus200 = SuccessResponse & {
   data?: OrderDetail;
+};
+
+export type GetApiOffersParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+sort?: GetApiOffersSort;
+order?: GetApiOffersOrder;
+cinemaId?: number;
+status?: string;
+code?: string;
+};
+
+export type GetApiOffersSort = typeof GetApiOffersSort[keyof typeof GetApiOffersSort];
+
+
+export const GetApiOffersSort = {
+  id: 'id',
+  cinemaId: 'cinemaId',
+  code: 'code',
+  status: 'status',
+  validFrom: 'validFrom',
+  createdAt: 'createdAt',
+} as const;
+
+export type GetApiOffersOrder = typeof GetApiOffersOrder[keyof typeof GetApiOffersOrder];
+
+
+export const GetApiOffersOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type GetApiOffers200Meta = {
+  pagination?: Pagination;
+};
+
+export type GetApiOffers200 = SuccessResponse & {
+  data?: Offer[];
+  meta?: GetApiOffers200Meta;
+};
+
+export type PostApiOffersBody = {
+  cinemaId: number;
+  /** @maxLength 50 */
+  code: string;
+  /** @maxLength 150 */
+  name: string;
+  /**
+     * "percentage" drives % math; anything else is treated as a flat rupee amount.
+     * @maxLength 30
+     */
+  discountType: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  tnc?: string | null;
+  /** Free text, e.g. "active"/"inactive". */
+  status?: string;
+  discAmount: number;
+  /**
+     * Only meaningful when discountType is "percentage" - caps the discount.
+     * @nullable
+     */
+  maxDiscAmount?: number | null;
+  /** @nullable */
+  minTxnAmount?: number | null;
+  /** @nullable */
+  maxTxnAmount?: number | null;
+  /**
+     * Redemption count cap, not an amount.
+     * @nullable
+     */
+  maxTxnLimit?: number | null;
+  /** @nullable */
+  validFrom?: string | null;
+  /** @nullable */
+  validUntil?: string | null;
+};
+
+export type PostApiOffers201 = SuccessResponse & {
+  data?: Offer;
+};
+
+export type GetApiOffersId200 = SuccessResponse & {
+  data?: Offer;
+};
+
+export type PutApiOffersIdBody = {
+  /** @maxLength 50 */
+  code?: string;
+  /** @maxLength 150 */
+  name?: string;
+  /** @maxLength 30 */
+  discountType?: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  description?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  tnc?: string | null;
+  status?: string;
+  discAmount?: number;
+  /** @nullable */
+  maxDiscAmount?: number | null;
+  /** @nullable */
+  minTxnAmount?: number | null;
+  /** @nullable */
+  maxTxnAmount?: number | null;
+  /** @nullable */
+  maxTxnLimit?: number | null;
+  /** @nullable */
+  validFrom?: string | null;
+  /** @nullable */
+  validUntil?: string | null;
+};
+
+export type PutApiOffersId200 = SuccessResponse & {
+  data?: Offer;
+};
+
+export type DeleteApiOffersId200 = SuccessResponse & {
+  data?: Offer;
 };
 
 export type GetApiKitchenOrdersParams = {
@@ -1829,6 +2074,11 @@ export type PostApiConsumerOrdersBody = {
   showTime?: string | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * Validated and applied server-side against the cinema's offers - see POST .../coupons/validate to preview the discount first. An invalid/expired/out-of-range code is a 400 naming the couponCode field.
+     * @nullable
+     */
+  couponCode?: string | null;
   /** @minItems 1 */
   items: PostApiConsumerOrdersBodyItemsItem[];
 };
@@ -1860,7 +2110,10 @@ export type PostApiConsumerOrders201Data = {
   status?: PostApiConsumerOrders201DataStatus;
   paymentStatus?: PostApiConsumerOrders201DataPaymentStatus;
   subtotal?: number;
+  /** Total discount - product-level pricing discount plus couponDiscount, if any. */
   discount?: number;
+  /** The portion of `discount` contributed by `couponCode`. 0 when no coupon was applied. */
+  couponDiscount?: number;
   total?: number;
   currency?: string;
   items?: PostApiConsumerOrders201DataItemsItem[];
@@ -1875,20 +2128,74 @@ export type PostApiConsumerOrders201 = SuccessResponse & {
   data?: PostApiConsumerOrders201Data;
 };
 
+export type PostApiConsumerCinemasCinemaIdCouponsValidateBodySource = typeof PostApiConsumerCinemasCinemaIdCouponsValidateBodySource[keyof typeof PostApiConsumerCinemasCinemaIdCouponsValidateBodySource];
+
+
+export const PostApiConsumerCinemasCinemaIdCouponsValidateBodySource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
+
+export type PostApiConsumerCinemasCinemaIdCouponsValidateBodyItemsItem = {
+  productId: number;
+  /** @minimum 1 */
+  quantity: number;
+};
+
+export type PostApiConsumerCinemasCinemaIdCouponsValidateBody = {
+  code: string;
+  source: PostApiConsumerCinemasCinemaIdCouponsValidateBodySource;
+  /** @minItems 1 */
+  items: PostApiConsumerCinemasCinemaIdCouponsValidateBodyItemsItem[];
+};
+
+export type PostApiConsumerCinemasCinemaIdCouponsValidate200Data = {
+  valid?: boolean;
+  /** @nullable */
+  message?: string | null;
+  /**
+     * Rupees, only present when valid.
+     * @nullable
+     */
+  discount?: number | null;
+  subtotal?: number;
+};
+
+export type PostApiConsumerCinemasCinemaIdCouponsValidate200 = SuccessResponse & {
+  data?: PostApiConsumerCinemasCinemaIdCouponsValidate200Data;
+};
+
 export type PostApiConsumerOrdersOrderIdPaymentInitBody = { [key: string]: unknown };
+
+/**
+ * Present ONLY when a coupon discounted the order to zero: the order was confirmed as paid immediately, with no gateway involved at all, and the caller should skip straight to the confirmation screen rather than opening a checkout with nothing to pay. Absent (not `pending`) for the ordinary case where there is a real amount to collect.
+ */
+export type PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus = typeof PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus[keyof typeof PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus];
+
+
+export const PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus = {
+  paid: 'paid',
+} as const;
 
 export type PostApiConsumerOrdersOrderIdPaymentInit200Data = {
   orderId?: number;
-  /** The payment gateway's order identifier. */
-  gatewayOrderId?: string;
   /**
-     * Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued; the caller should retry rather than treat it as a failure.
+     * The payment gateway's order identifier. Null only when `paymentStatus` is `paid` - a coupon covered the order in full, so no gateway order was ever created.
+     * @nullable
+     */
+  gatewayOrderId?: string | null;
+  /**
+     * Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued (the caller should retry rather than treat it as a failure), or when `paymentStatus` is `paid` and there is nothing to check out.
      * @nullable
      */
   paymentSessionId?: string | null;
-  /** Amount in paise. */
+  /** Amount in paise. 0 when `paymentStatus` is `paid`. */
   amount?: number;
   currency?: string;
+  /** Present ONLY when a coupon discounted the order to zero: the order was confirmed as paid immediately, with no gateway involved at all, and the caller should skip straight to the confirmation screen rather than opening a checkout with nothing to pay. Absent (not `pending`) for the ordinary case where there is a real amount to collect. */
+  paymentStatus?: PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus;
 };
 
 export type PostApiConsumerOrdersOrderIdPaymentInit200 = SuccessResponse & {
@@ -2055,6 +2362,16 @@ export type GetApiCinemas200 = SuccessResponse & {
   data?: Cinema[];
 };
 
+export type PostApiCinemasBodyEnvironment = typeof PostApiCinemasBodyEnvironment[keyof typeof PostApiCinemasBodyEnvironment];
+
+
+export const PostApiCinemasBodyEnvironment = {
+  test: 'test',
+  sandbox: 'sandbox',
+  prod: 'prod',
+  production: 'production',
+} as const;
+
 export type PostApiCinemasBody = {
   /** Owners only; ignored otherwise. */
   chainId?: number;
@@ -2094,6 +2411,17 @@ export type PostApiCinemasBody = {
   smsEnabled?: boolean;
   whatsappEnabled?: boolean;
   isActive?: boolean;
+  /**
+     * Cashfree's APP_ID.
+     * @maxLength 255
+     */
+  gatewayId: string;
+  /**
+     * Cashfree's SECRET_KEY. Encrypted at rest; never returned.
+     * @maxLength 500
+     */
+  secretKey: string;
+  environment?: PostApiCinemasBodyEnvironment;
 };
 
 export type PostApiCinemas201 = SuccessResponse & {

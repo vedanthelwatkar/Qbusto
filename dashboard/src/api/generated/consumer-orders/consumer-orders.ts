@@ -6,6 +6,8 @@
  * OpenAPI spec version: 1.0.0
  */
 import type {
+  PostApiConsumerCinemasCinemaIdCouponsValidate200,
+  PostApiConsumerCinemasCinemaIdCouponsValidateBody,
   PostApiConsumerOrders201,
   PostApiConsumerOrdersBody,
   PostApiConsumerOrdersOrderIdPaymentInit200,
@@ -29,6 +31,21 @@ const postApiConsumerOrders = (
       {url: `/api/consumer/orders`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: postApiConsumerOrdersBody
+    },
+      );
+    }
+  /**
+ * Validates a coupon code against the cinema's `offers` and computes the discount from the SAME items/source the order would actually be created with - the subtotal is recomputed from live pricing here, never trusted from the client, so the discount matches exactly what `POST /api/consumer/orders` would apply for an identical cart. Creates nothing.
+ * @summary Preview a coupon's discount before placing an order
+ */
+const postApiConsumerCinemasCinemaIdCouponsValidate = (
+    cinemaId: number,
+    postApiConsumerCinemasCinemaIdCouponsValidateBody: PostApiConsumerCinemasCinemaIdCouponsValidateBody,
+ ) => {
+      return customInstance<PostApiConsumerCinemasCinemaIdCouponsValidate200>(
+      {url: `/api/consumer/cinemas/${cinemaId}/coupons/validate`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: postApiConsumerCinemasCinemaIdCouponsValidateBody
     },
       );
     }
@@ -61,7 +78,8 @@ const postApiConsumerOrdersOrderIdPaymentVerify = (
     },
       );
     }
-  return {postApiConsumerOrders,postApiConsumerOrdersOrderIdPaymentInit,postApiConsumerOrdersOrderIdPaymentVerify}};
+  return {postApiConsumerOrders,postApiConsumerCinemasCinemaIdCouponsValidate,postApiConsumerOrdersOrderIdPaymentInit,postApiConsumerOrdersOrderIdPaymentVerify}};
 export type PostApiConsumerOrdersResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerOrders>['postApiConsumerOrders']>>>
+export type PostApiConsumerCinemasCinemaIdCouponsValidateResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerOrders>['postApiConsumerCinemasCinemaIdCouponsValidate']>>>
 export type PostApiConsumerOrdersOrderIdPaymentInitResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerOrders>['postApiConsumerOrdersOrderIdPaymentInit']>>>
 export type PostApiConsumerOrdersOrderIdPaymentVerifyResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerOrders>['postApiConsumerOrdersOrderIdPaymentVerify']>>>

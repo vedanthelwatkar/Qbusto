@@ -22,6 +22,8 @@ const consumerRoutes = require('./consumer.routes');
 const kitchenRoutes = require('./kitchen.routes');
 const orderRoutes = require('./order.routes');
 const { orderStatusRouter, paymentStatusRouter } = require('./orderstatus.routes');
+const offerRoutes = require('./offer.routes');
+const paymentGatewayConfigRoutes = require('./paymentgatewayconfig.routes');
 const pricingRoutes = require('./pricing.routes');
 const productRoutes = require('./product.routes');
 const screenRoutes = require('./screen.routes');
@@ -67,5 +69,7 @@ router.use('/kitchen', kitchenRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/order-statuses', orderStatusRouter);
 router.use('/payment-statuses', paymentStatusRouter);
+router.use('/offers', offerRoutes);
+router.use('/payment-gateway-config', paymentGatewayConfigRoutes);
 
 module.exports = router;

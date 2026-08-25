@@ -69,12 +69,7 @@ export default function LoginPage() {
 
         {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-        <Form<LoginCredentials>
-          layout="vertical"
-          requiredMark={false}
-          onFinish={handleSubmit}
-          disabled={submitting}
-        >
+        <Form<LoginCredentials> layout="vertical" onFinish={handleSubmit} disabled={submitting}>
           <Form.Item
             name="username"
             label="Username"

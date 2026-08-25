@@ -21,6 +21,7 @@ import ComingSoonPage from '@/pages/ComingSoonPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import OffersPage from '@/pages/OffersPage';
 import OrdersPage from '@/pages/OrdersPage';
 import PricingPage from '@/pages/PricingPage';
 import ProductsPage from '@/pages/ProductsPage';
@@ -42,6 +43,7 @@ const PAGES: Record<string, ReactNode> = {
   '/products': <ProductsPage />,
   '/pricing': <PricingPage />,
   '/banners': <BannersPage />,
+  '/offers': <OffersPage />,
   '/settings/chains': <ChainsPage />,
   '/settings/cinemas': <CinemasPage />,
   '/settings/screens': <ScreensPage />,

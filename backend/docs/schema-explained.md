@@ -439,12 +439,18 @@ Each cinema may use its own payment gateway configuration regardless of which PO
 
 The table stores:
 
-- `gateway_url`
+- `gateway_url` (unused)
 - `gateway_id`
+- `environment` (`test`/`sandbox`/`prod`/`production`)
 - encrypted gateway secret
 - active status
 
 The encryption key is never stored in the database. It remains in secure server configuration or a secrets manager.
+
+**Implemented, not just designed**: `cashfree.client.resolveCredentials(cinemaId)`
+reads this table first, falling back to the deployment-wide `CASHFREE_APP_ID`/
+`CASHFREE_SECRET_KEY` env vars only when a cinema has no active row. Managed
+from the Dashboard under `Cinemas -> (cinema) -> Payment gateway`.
 
 Payment gateway credentials are therefore kept separate from POS credentials:
 

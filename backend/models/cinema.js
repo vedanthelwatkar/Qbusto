@@ -20,6 +20,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'cinemaId',
         as: 'paymentGatewayConfigs',
       });
+      Cinema.hasMany(models.Offer, { foreignKey: 'cinemaId', as: 'offers' });
 
       Cinema.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
       Cinema.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });

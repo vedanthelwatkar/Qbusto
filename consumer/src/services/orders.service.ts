@@ -3,13 +3,19 @@
  * Reuses generated types for request/response shapes.
  */
 
-import { createOrder, initPayment, verifyPayment } from '@/api/consumer-orders-service';
+import {
+  createOrder,
+  initPayment,
+  verifyPayment,
+  validateCoupon,
+} from '@/api/consumer-orders-service';
 import { orderFingerprint, getOrCreateIdempotencyKey } from '@/utils/checkoutSession';
 import type {
   PostApiConsumerOrdersBody,
   PostApiConsumerOrders201Data,
   PostApiConsumerOrdersOrderIdPaymentInit200,
   PostApiConsumerOrdersOrderIdPaymentVerify200,
+  PostApiConsumerCinemasCinemaIdCouponsValidate200Data,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 
 /**
@@ -29,6 +35,33 @@ export async function createOrderIdempotent(
   // possibly-undefined rather than cast away: a 2xx with no body would
   // otherwise surface as an order object with no orderId.
   return response.data.data;
+}
+
+/**
+ * Preview a coupon code's discount against the current cart, before an order
+ * exists. The backend recomputes the subtotal itself from `items`/`source`
+ * against live pricing - never trusted from here - so the discount returned
+ * is guaranteed to match what `placeOrder` would actually apply if the same
+ * code is included when the order is created a moment later.
+ */
+export async function previewCoupon(
+  cinemaId: number,
+  code: string,
+  items: Array<{ productId: number; quantity: number }>,
+  source: PostApiConsumerOrdersBody['source']
+): Promise<PostApiConsumerCinemasCinemaIdCouponsValidate200Data> {
+  const response = await validateCoupon(cinemaId, { code, items, source });
+  // The envelope's `data` is optional in the contract; a 2xx with no body is
+  // treated the same as "not valid" rather than throwing on a shape the type
+  // already says is possible.
+  return (
+    response.data.data ?? {
+      valid: false,
+      message: 'Could not check this coupon right now',
+      discount: null,
+      subtotal: 0,
+    }
+  );
 }
 
 /**
@@ -84,6 +117,13 @@ export interface PlaceOrderInput {
   customerEmail: string | null;
   items: Array<{ productId: number; quantity: number }>;
   source: PostApiConsumerOrdersBody['source'];
+  /**
+   * Re-validated and applied server-side at order creation - this is not
+   * trusted as already-correct just because `previewCoupon` accepted it a
+   * moment earlier (the cart could have changed since, or the coupon could
+   * have expired in between).
+   */
+  couponCode?: string | null;
 }
 
 /**
@@ -110,6 +150,7 @@ export async function placeOrder(
     filmTitle: input.filmTitle,
     showTime: input.showTime,
     items: input.items,
+    couponCode: input.couponCode || null,
   };
 
   const idempotencyKey = getOrCreateIdempotencyKey(orderFingerprint(orderData), newKey);

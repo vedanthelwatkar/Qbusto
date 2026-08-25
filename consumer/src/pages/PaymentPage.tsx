@@ -371,6 +371,21 @@ export default function PaymentPage() {
     initializePayment(orderId)
       .then((response) => {
         if (!active) return;
+
+        // A coupon covered the order in full - see the backend's own note on
+        // this response shape. There was never a gateway order or a session
+        // to check out with, so this goes straight to confirmation exactly
+        // like the "already paid" branch in the catch below, without ever
+        // rendering a Pay button for ₹0.
+        if (response.data && response.data.paymentStatus === 'paid') {
+          apply({ phase: 'confirmed', message: null });
+          clearAttempt();
+          sessionStorage.removeItem(ORDER_ID_KEY);
+          clearCheckoutSession();
+          navigate(`/confirmation/${orderId}`, { replace: true, state: { amount: 0 } });
+          return;
+        }
+
         // A session is what the checkout opens with, so an init that could not
         // issue one is not `ready` however well-formed the rest of it is.
         // Treated as an error WITHOUT storing the payload: the retry control is

@@ -49,12 +49,18 @@ export default function DashboardLayout() {
           <SidebarNav onNavigate={() => setNavDrawerOpen(false)} />
         </Drawer>
       ) : (
-        <Sider collapsible collapsed={siderCollapsed} trigger={null} width={240}>
+        <Sider
+          collapsible
+          collapsed={siderCollapsed}
+          trigger={null}
+          width={240}
+          className="app-shell__sider"
+        >
           <SidebarNav collapsed={siderCollapsed} />
         </Sider>
       )}
 
-      <Layout>
+      <Layout className="app-shell__main">
         <Header className="app-shell__header">
           <HeaderBar
             onToggleNav={() => (isMobile ? setNavDrawerOpen(!navDrawerOpen) : toggleSider())}

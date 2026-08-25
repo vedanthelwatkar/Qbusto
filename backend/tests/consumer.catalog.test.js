@@ -27,11 +27,14 @@ jest.mock('../src/config/database', () => {
     Product: { findAll: jest.fn(), findOne: jest.fn() },
     CinemaProduct: { findAll: jest.fn() },
     ProductPricing: { findAll: jest.fn() },
-    Order: { findByPk: jest.fn(), create: jest.fn() },
+    Order: { findByPk: jest.fn(), create: jest.fn(), count: jest.fn() },
     OrderItem: { bulkCreate: jest.fn() },
     OrderStatus: { findOne: jest.fn() },
     PaymentStatus: { findOne: jest.fn() },
+    OrderStatusLog: { create: jest.fn() },
+    PaymentStatusLog: { create: jest.fn() },
     IdempotencyKey: { findOne: jest.fn(), create: jest.fn() },
+    Offer: { findOne: jest.fn() },
   };
 
   return {
@@ -393,6 +396,170 @@ describe('POST /api/consumer/orders availability re-check', () => {
     const call = models.CinemaProduct.findAll.mock.calls[0][0];
     expect(call.attributes).toEqual(
       expect.arrayContaining(['availableFrom', 'availableUntil', 'isActive'])
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/consumer/orders - empty cart, and the zero-total/discount-cap
+// fixes that depend on `items` genuinely never being empty by the time
+// pricing math runs.
+//
+// An empty `items` array used to sail straight through: buildOrderLines()
+// never required a non-empty array, so an order with no lines got a ₹0
+// subtotal - which paymentInit's zero-total short-circuit (added so a coupon
+// covering an order in full can settle without a Cashfree call at all) then
+// confirmed as PAID with nothing in it, no auth, no payment, repeatably. The
+// fix is the `consumer.validators.js` schema wired into this route.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/consumer/orders - non-empty cart is enforced server-side', () => {
+  const TX = Symbol('transaction');
+
+  /** Everything createOrder needs to reach a real 201, once items exist. */
+  function arrangeSuccessfulCreate({ discAmount, discountType = 'flat' } = {}) {
+    sequelize.transaction.mockImplementation((callback) => callback(TX));
+    models.IdempotencyKey.findOne.mockResolvedValue(null);
+    models.IdempotencyKey.create.mockResolvedValue({});
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
+    models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
+    models.ProductPricing.findAll.mockResolvedValue([
+      { productId: 85, dayOfWeek: 0, ...buildPricing() },
+    ]);
+    models.OrderStatus.findOne.mockResolvedValue({ id: 21 });
+    models.PaymentStatus.findOne.mockResolvedValue({ id: 1 });
+    models.OrderStatusLog.create.mockResolvedValue({});
+    models.PaymentStatusLog.create.mockResolvedValue({});
+    models.Order.create.mockResolvedValue({ id: 999 });
+    models.Order.count.mockResolvedValue(0);
+    models.OrderItem.bulkCreate.mockResolvedValue([]);
+
+    if (discAmount !== undefined) {
+      models.Offer.findOne.mockResolvedValue({
+        id: 1,
+        cinemaId: CINEMA_ID,
+        code: 'SAVE',
+        status: 'active',
+        discountType,
+        discAmount,
+        maxDiscAmount: null,
+        minTxnAmount: null,
+        maxTxnAmount: null,
+        maxTxnLimit: null,
+        validFrom: null,
+        validUntil: null,
+      });
+    }
+  }
+
+  it('rejects an empty items array with a clean 400, before touching the database', async () => {
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-empty-cart')
+      .send({
+        cinemaId: CINEMA_ID,
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [],
+      });
+
+    expect(response.status).toBe(400);
+    expect(models.Cinema.findByPk).not.toHaveBeenCalled();
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request with no items field at all', async () => {
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-missing-items')
+      .send({ cinemaId: CINEMA_ID, source: 'qr', customerMobile: '9876543210' });
+
+    expect(response.status).toBe(400);
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('a real cart fully covered by a valid coupon still creates successfully at total 0', async () => {
+    // Rs 250 item, a flat Rs 250 coupon - legitimately zero, not empty.
+    arrangeSuccessfulCreate({ discAmount: 250, discountType: 'flat' });
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-fully-covered')
+      .send({
+        cinemaId: CINEMA_ID,
+        source: 'qr',
+        customerMobile: '9876543210',
+        couponCode: 'SAVE',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.total).toBe(0);
+    expect(response.body.data.couponDiscount).toBe(250);
+    expect(models.Order.create).toHaveBeenCalledWith(
+      expect.objectContaining({ total: '0.00', offerId: 1 }),
+      expect.anything()
+    );
+  });
+
+  it('a 100%-off product discount plus a coupon on top is capped at the subtotal, never negative', async () => {
+    // Same Rs 250 item, but with an additional 100% source-based promo on it,
+    // AND a flat Rs 250 coupon - two independently-capped discounts that would
+    // sum to twice the subtotal without the cap in createOrder.
+    sequelize.transaction.mockImplementation((callback) => callback(TX));
+    models.IdempotencyKey.findOne.mockResolvedValue(null);
+    models.IdempotencyKey.create.mockResolvedValue({});
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
+    models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
+    models.ProductPricing.findAll.mockResolvedValue([
+      {
+        productId: 85,
+        dayOfWeek: 0,
+        ...buildPricing({ discountType: 'P', discountOnQr: 100 }),
+      },
+    ]);
+    models.OrderStatus.findOne.mockResolvedValue({ id: 21 });
+    models.PaymentStatus.findOne.mockResolvedValue({ id: 1 });
+    models.OrderStatusLog.create.mockResolvedValue({});
+    models.PaymentStatusLog.create.mockResolvedValue({});
+    models.Order.create.mockResolvedValue({ id: 999 });
+    models.Order.count.mockResolvedValue(0);
+    models.OrderItem.bulkCreate.mockResolvedValue([]);
+    models.Offer.findOne.mockResolvedValue({
+      id: 1,
+      cinemaId: CINEMA_ID,
+      code: 'SAVE',
+      status: 'active',
+      discountType: 'flat',
+      discAmount: 250,
+      maxDiscAmount: null,
+      minTxnAmount: null,
+      maxTxnAmount: null,
+      maxTxnLimit: null,
+      validFrom: null,
+      validUntil: null,
+    });
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-double-discount')
+      .send({
+        cinemaId: CINEMA_ID,
+        source: 'qr',
+        customerMobile: '9876543210',
+        couponCode: 'SAVE',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+    // Never negative - clamped at the subtotal, not the raw sum of both discounts.
+    expect(response.body.data.total).toBe(0);
+    expect(response.body.data.discount).toBe(250);
+    expect(models.Order.create).toHaveBeenCalledWith(
+      expect.objectContaining({ total: '0.00', discount: '250.00' }),
+      expect.anything()
     );
   });
 });

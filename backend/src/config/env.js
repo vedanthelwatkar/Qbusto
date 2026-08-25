@@ -175,6 +175,31 @@ const envSchema = Joi.object({
    * a stalled payment-init strands someone mid-purchase.
    */
   CASHFREE_TIMEOUT_MS: Joi.number().integer().positive().max(30000).default(4000),
+
+  /**
+   * Encrypts/decrypts `payment_gateway_config.gateway_secret_encrypted` - the
+   * per-cinema Cashfree secret key. 64 hex characters (32 bytes, for
+   * AES-256-GCM - see src/utils/credentials.js).
+   *
+   * Deliberately kept OUTSIDE the database entirely: the whole point of
+   * encrypting the column is that a database leak alone (a backup, an
+   * unrelated SQL injection elsewhere) must not hand over a working payment
+   * gateway credential. If this key lived next to the ciphertext it protects,
+   * encryption would be theatre.
+   *
+   * Optional at the Joi level so a deployment that has not yet configured any
+   * per-cinema gateway can still boot; the guard below makes it required in
+   * production, and src/utils/credentials.js throws clearly if an encrypt/
+   * decrypt is attempted without it.
+   */
+  CREDENTIALS_ENCRYPTION_KEY: Joi.string()
+    .pattern(/^[0-9a-fA-F]{64}$/)
+    .allow('')
+    .optional()
+    .messages({
+      'string.pattern.base':
+        'CREDENTIALS_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes for AES-256)',
+    }),
 }).unknown(true);
 
 const { value, error } = envSchema.validate(process.env, {
@@ -280,6 +305,20 @@ if (value.NODE_ENV === 'development' && value.JWT_SECRET.length < MIN_PRODUCTION
   );
 }
 
+/**
+ * Without this key, no per-cinema `payment_gateway_config` row can ever be
+ * decrypted - every cinema with one configured would have payments silently
+ * unavailable, which in production must be caught at boot, not discovered by
+ * a customer standing at a kiosk.
+ */
+if (value.NODE_ENV === 'production' && !value.CREDENTIALS_ENCRYPTION_KEY) {
+  throw new Error(
+    'Invalid environment configuration:\n' +
+      '  - CREDENTIALS_ENCRYPTION_KEY must be set when NODE_ENV is production. ' +
+      'Without it, no per-cinema payment_gateway_config row can be decrypted.'
+  );
+}
+
 // Connection settings are intentionally absent: config/config.js owns those and
 // is shared with the Sequelize CLI. They are validated above so a missing value
 // fails at boot, but nothing in src/ should read them from here.
@@ -352,6 +391,15 @@ const env = {
 
     /** Orders are created in INR only. */
     currency: 'INR',
+  },
+
+  security: {
+    /**
+     * 32-byte AES-256 key, hex-encoded, for src/utils/credentials.js. Empty
+     * string rather than undefined when unset, matching every other optional
+     * secret in this module - callers check truthiness, not `typeof`.
+     */
+    credentialsEncryptionKey: value.CREDENTIALS_ENCRYPTION_KEY || '',
   },
 
   uploads: {

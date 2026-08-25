@@ -36,6 +36,8 @@ const getApiCinemas = (
     }
   /**
  * `chainId` is honoured only for owners; every other role creates within their own chain. The referenced chain must exist and be active. `code` appears in QR ordering URLs, is stored upper case, and is unique across the whole system. Requires the Settings module edit permission.
+ *
+ * Cashfree credentials (`gatewayId`/`secretKey`/`environment`) are MANDATORY here and created in the same transaction as the cinema - without them, payment-init for this cinema falls through to the deployment-wide fallback credentials (or fails outright if none are configured). `secretKey` is encrypted before it is ever written and is never returned in any response. To replace credentials on an existing cinema, use `PUT /api/payment-gateway-config` - not this endpoint, which does not accept them on update.
  * @summary Create a cinema
  */
 const postApiCinemas = (

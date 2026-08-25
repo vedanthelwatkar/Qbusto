@@ -10,6 +10,14 @@
 
 const request = require('supertest');
 
+// Read by src/utils/credentials.js to encrypt the mandatory gateway secret
+// createCinema now writes alongside every new cinema. A fixed value here
+// (rather than whatever a developer's real .env holds) keeps the encrypted
+// ciphertext assertions below deterministic - see consumer.payment.test.js
+// for the same pattern with Cashfree's own env vars.
+process.env.CREDENTIALS_ENCRYPTION_KEY =
+  '3261c0f9c99d1e0bb3c142e1f2e423b8dbe57078fac7dc381014e8de81b2b904';
+
 jest.mock('../src/config/database', () => {
   const models = {
     User: { findByPk: jest.fn() },
@@ -21,6 +29,9 @@ jest.mock('../src/config/database', () => {
       create: jest.fn(),
       destroy: jest.fn(),
     },
+    // createCinema writes this in the same transaction as the cinema itself
+    // - see cinema.service.js's own header note on why.
+    PaymentGatewayConfig: { create: jest.fn() },
   };
 
   return {
@@ -30,17 +41,28 @@ jest.mock('../src/config/database', () => {
   };
 });
 
-const { models } = require('../src/config/database');
+const { models, sequelize } = require('../src/config/database');
 const createApp = require('../src/app');
 const { generateAccessToken } = require('../src/utils/jwt');
 const { ERROR_CODES } = require('../src/constants');
 
 const app = createApp();
 
+beforeEach(() => {
+  sequelize.transaction.mockImplementation((callback) => callback('TX'));
+  models.PaymentGatewayConfig.create.mockResolvedValue({ id: 1 });
+});
+
 const SETTINGS_FULL = [{ moduleName: 'Settings', canRead: true, canEdit: true, canDelete: true }];
 const SETTINGS_READ = [{ moduleName: 'Settings', canRead: true, canEdit: false, canDelete: false }];
 
-const VALID_CINEMA = { code: 'BLR-01', name: 'Starlight Indiranagar' };
+const VALID_CINEMA = {
+  code: 'BLR-01',
+  name: 'Starlight Indiranagar',
+  gatewayId: 'TEST_APP_ID_123',
+  secretKey: 'test_secret_key_value_at_least_16_chars',
+  environment: 'test',
+};
 
 function buildCinema(overrides = {}) {
   return {
@@ -228,8 +250,61 @@ describe('POST /api/cinemas', () => {
 
     expect(response.status).toBe(201);
     expect(models.Cinema.create).toHaveBeenCalledWith(
-      expect.objectContaining({ chainId: 1, code: 'BLR-01', createdBy: 7, updatedBy: 7 })
+      expect.objectContaining({ chainId: 1, code: 'BLR-01', createdBy: 7, updatedBy: 7 }),
+      { transaction: 'TX' }
     );
+  });
+
+  it('creates the mandatory payment gateway config in the same transaction, secret encrypted', async () => {
+    const token = authenticateAs(buildActor({ id: 7, chainId: 1 }));
+    models.Chain.findByPk.mockResolvedValue({ id: 1, isActive: true });
+    models.Cinema.create.mockResolvedValue(buildCinema({ id: 42 }));
+
+    const response = await request(app)
+      .post('/api/cinemas')
+      .set('Authorization', token)
+      .send(VALID_CINEMA);
+
+    expect(response.status).toBe(201);
+    expect(models.PaymentGatewayConfig.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cinemaId: 42,
+        gatewayId: VALID_CINEMA.gatewayId,
+        environment: VALID_CINEMA.environment,
+        isActive: true,
+        createdBy: 7,
+        updatedBy: 7,
+      }),
+      { transaction: 'TX' }
+    );
+
+    // The secret was encrypted, not stored as the plaintext the request sent.
+    const [values] = models.PaymentGatewayConfig.create.mock.calls[0];
+    expect(values.gatewaySecretEncrypted).toBeDefined();
+    expect(values.gatewaySecretEncrypted).not.toBe(VALID_CINEMA.secretKey);
+    expect(values).not.toHaveProperty('secretKey');
+
+    // Never in the response, whatever shape it took internally.
+    expect(JSON.stringify(response.body)).not.toContain(VALID_CINEMA.secretKey);
+  });
+
+  it('rejects cinema creation with no gateway credentials - they are mandatory', async () => {
+    const token = authenticateAs(buildActor());
+
+    const response = await request(app)
+      .post('/api/cinemas')
+      .set('Authorization', token)
+      .send({ code: 'BLR-01', name: 'Starlight Indiranagar' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'gatewayId' }),
+        expect.objectContaining({ field: 'secretKey' }),
+      ])
+    );
+    expect(models.Cinema.create).not.toHaveBeenCalled();
+    expect(models.PaymentGatewayConfig.create).not.toHaveBeenCalled();
   });
 
   it('forces a non-owner to create inside their own chain', async () => {

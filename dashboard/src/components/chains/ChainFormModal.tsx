@@ -147,7 +147,6 @@ export default function ChainFormModal({ chain, onClose, onSaved }: ChainFormMod
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{ isActive: true }}

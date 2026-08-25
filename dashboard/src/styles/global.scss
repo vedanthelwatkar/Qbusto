@@ -7,6 +7,74 @@
 // real values at config time and cannot be handed a CSS variable. Change a
 // colour in theme.ts and change it here; nowhere else should carry a hex.
 
+// A Modal's title otherwise reads as just another line of text sitting
+// directly above the form - too close in size and weight to the body to
+// register as a header. Bigger, and cut off from the body with a real rule
+// and enough breathing room that the body content doesn't crowd the line.
+.ant-modal-header {
+  border-bottom: 1px solid var(--qb-border) !important;
+  padding-bottom: 16px !important;
+  margin-bottom: 20px !important;
+}
+
+.ant-modal-title {
+  font-size: 18px !important;
+  color: var(--qb-text) !important;
+}
+
+// Moves a required field's "*" from before the label to after it.
+//
+// THE ATTEMPT THAT DIDN'T WORK, AND WHY
+//
+// The first version of this hid `::before` and re-added the star as a new
+// `::after` - but antd's own form styles (form/style/index.js) ALSO put
+// something on that label's `::after`: the trailing colon (or, in this
+// app's vertical-layout forms, a non-breaking space standing in for it, via
+// `.ant-form-item-no-colon::after { content: "\a0" }`). Only one `::after`
+// can win per element, and that antd rule is more specific
+// (`.ant-form-item-label > label.ant-form-item-no-colon::after`, two classes
+// plus an element) than a bare `.ant-form-item-required::after` - so it
+// consistently beat the asterisk, `!important` or not, and nothing showed.
+//
+// Fixed instead by leaving content generation alone entirely and just
+// reordering the EXISTING `::before` asterisk. The label renders as
+// `display: inline-flex` (same file), so its `::before`/`::after` pseudo
+// -elements are flex items and respond to `order` like any other child: the
+// label text itself is an anonymous flex item at the default `order: 0`, so
+// giving the asterisk `order: 1` alone is enough to move it after the text
+// without ever touching what `::after` renders.
+.ant-form-item-required::before {
+  order: 1;
+  margin-inline-end: 0 !important;
+  margin-inline-start: 4px;
+}
+
+// CORRECTION, found via DevTools: the previous comment's theory was wrong.
+// None of this app's forms pass `colon={false}`, so `computedColon` is true
+// and the `ant-form-item-no-colon` class is never applied at all - the
+// selector above never matched anything. What's actually widening the gap
+// is antd's UNCONDITIONAL `&::after { content: ":" }` on every form label
+// (form/style/index.js), colon or no visible colon intended - confirmed live:
+// the inspector showed a real, non-zero-width `::after` box sitting between
+// the text and the reordered asterisk. Removed for required fields only, so
+// optional fields (not reported as a problem) keep whatever they had.
+.ant-form-item-required::after {
+  content: none !important;
+  margin: 0 !important;
+}
+
+// Table/Select/virtual-list scroll regions carry their OWN `scrollbar-color`
+// (antd's table/style/index.js sets it directly on `.ant-table`, using
+// antd's default grey theme tokens, not ours) - a directly-set property on
+// the scrolling element itself always wins over an inherited value from an
+// ancestor like `html`, regardless of selector specificity, which is why
+// the dashboard-wide theming further up left exactly this one scrollbar
+// (a table's own horizontal scroll) still grey. Restated here, `!important`,
+// on the actual class antd targets.
+.ant-table-wrapper .ant-table {
+  scrollbar-color: var(--qb-border) var(--qb-page-bg) !important;
+}
+
 :root {
   --qb-primary-50: #fff4e9;
   --qb-primary-100: #ffe2c8;
@@ -18,6 +86,42 @@
   --qb-border: #e5e7eb;
   --qb-page-bg: #f5f6f8;
   --qb-surface: #ffffff;
+}
+
+// Themed scrollbars, dashboard-wide. Unscoped (not `.app-shell *`)
+// deliberately: antd portals a Modal/Drawer/Select dropdown's scrollable body
+// to `document.body`, outside `.app-shell` in the DOM, so a scoped rule would
+// miss every one of them. Firefox uses the two-value shorthand (thumb, then
+// track); WebKit browsers (Chrome, Edge, Safari) need the pseudo-elements
+// instead - there is no single property both engines share.
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--qb-primary-500) var(--qb-page-bg);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--qb-page-bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--qb-primary-500);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--qb-primary-600);
+}
+
+// The square where a horizontal and vertical scrollbar meet - left unstyled
+// it stays the OS default grey/white, which reads as "the horizontal one
+// isn't themed" even though its track and thumb are.
+*::-webkit-scrollbar-corner {
+  background: var(--qb-page-bg);
 }
 
 $content-padding: 24px;
@@ -34,18 +138,70 @@ body {
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+// The shell is pinned to exactly one viewport height, never taller: a tall
+// table used to grow `.app-shell` itself past 100vh, which put the SCROLL on
+// `html`/`body` - carrying the sidebar and header along with it, since they
+// are earlier siblings in that same scrolling box. Fixing the shell's own
+// height to 100vh (not min-height) and hiding its overflow is what forces
+// each region below to own its scroll instead of the page owning all of it.
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+
+  &__sider {
+    // The sidebar is its own scroll region (defensive: today's nav list is
+    // short enough not to need it, but a longer one must not push the shell
+    // taller the same way a table used to). Still scrollable by wheel/touch/
+    // keyboard - only the scrollbar itself is hidden, since a nav rail is not
+    // where a visible scroll affordance reads as useful chrome. A class
+    // selector always outweighs the dashboard-wide rule's universal `*`, so
+    // this wins regardless of source order, no `!important` needed.
+    height: 100vh;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  // Wraps the header + content column so it can be constrained to the
+  // shell's height independently of the sider next to it - antd's own
+  // Layout has no Sider inside this one, so it renders as a plain flex
+  // column by default, but height:100% still has to be stated explicitly
+  // for the column to stop at the viewport instead of growing with Content.
+  &__main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    // Lets the column shrink narrower than its content's natural width
+    // instead of forcing the whole shell to scroll horizontally when a wide
+    // table's own horizontal scroll (already handled per-page) is enough.
+    min-width: 0;
+  }
 
   &__header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    flex: 0 0 auto;
     border-bottom: 1px solid var(--qb-border);
   }
 
   &__content {
     padding: $content-padding;
+    flex: 1 1 auto;
+    // The flexbox trap: without this, a flex child defaults to
+    // min-height:auto, which means "at least as tall as my content" - so
+    // overflow-y:auto below would never actually engage, and the tall
+    // content would grow this box (and the shell) instead of scrolling
+    // inside it.
+    min-height: 0;
+    // Both axes stated explicitly, rather than leaving overflow-x to the
+    // browser's own "one non-visible axis forces auto on the other" rule -
+    // that computed value is correct per spec, but stating it directly here
+    // means the horizontal scrollbar this box can show is unambiguously a
+    // real overflow:auto region, not an implicit side-effect a reader (or a
+    // future edit) could miss.
+    overflow: auto;
   }
 }
 

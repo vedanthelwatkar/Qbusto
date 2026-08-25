@@ -26,6 +26,8 @@
 const { Cashfree, CFEnvironment } = require('cashfree-pg');
 
 const env = require('../config/env');
+const logger = require('../config/logger');
+const credentials = require('../utils/credentials');
 
 /**
  * Bound how long we WAIT for a provider call. This is not cancellation: if the
@@ -54,31 +56,90 @@ function withTimeout(value, ms, label) {
 }
 
 /**
- * Lazily built, so importing this module never requires credentials. Tests and
- * any environment without Cashfree configured can load the app; only an actual
- * payment call needs the keys.
+ * `models` is required lazily, inside the functions that need it, not at
+ * module load. `config/database` and this module are both required very
+ * early in the app's dependency graph (consumer.service -> cashfree.client,
+ * consumer.service -> config/database), and requiring it at the top of this
+ * file risks a circular-require ordering bug the moment anything in
+ * config/database ever imports this module back. Nothing here is
+ * performance-sensitive enough for the repeated require() (Node caches the
+ * module after the first call) to matter.
  */
-let client = null;
-
-function getClient() {
-  if (client) return client;
-
-  if (!env.cashfree.configured) {
-    throw new Error('Cashfree is not configured');
-  }
-
-  client = new Cashfree(
-    env.cashfree.isProduction ? CFEnvironment.PRODUCTION : CFEnvironment.SANDBOX,
-    env.cashfree.appId,
-    env.cashfree.secretKey
-  );
-
-  return client;
+function db() {
+  return require('../config/database');
 }
 
-/** Test seam. Never called by production code. */
-function resetClient() {
-  client = null;
+/**
+ * Resolve which Cashfree credentials to use for one cinema.
+ *
+ * PRIMARY SOURCE: `payment_gateway_config`, one encrypted row per cinema,
+ * managed from the Dashboard. This is what makes QBusto multi-tenant on
+ * payments - two cinemas can run against two entirely different Cashfree
+ * merchant accounts.
+ *
+ * FALLBACK: the global `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY`/
+ * `CASHFREE_ENVIRONMENT` env vars, logged loudly every time they are used.
+ * This exists only so a deployment that has not yet migrated every cinema
+ * into `payment_gateway_config` does not lose payments outright; it is not
+ * meant to be the steady state; see docs/pre-production-checklist.md.
+ *
+ * `environment` ('test'/'sandbox'/'prod'/'production', mirroring
+ * CASHFREE_ENVIRONMENT's own vocabulary) is its own column, added by
+ * `20260825000500-add-environment-to-payment-gateway-config.js` - deliberately
+ * NOT folded into the existing `gateway_url` column, which stays genuinely
+ * unused rather than secretly holding an environment name instead of a URL.
+ *
+ * @throws {Error} If neither the cinema's own config nor the env fallback is
+ *   available - the caller maps this to a 503.
+ */
+async function resolveCredentials(cinemaId) {
+  const { models } = db();
+
+  const config = await models.PaymentGatewayConfig.findOne({
+    where: { cinemaId, isActive: true },
+    attributes: ['gatewayId', 'gatewaySecretEncrypted', 'environment'],
+  });
+
+  if (config) {
+    const secretKey = credentials.decrypt(config.gatewaySecretEncrypted);
+    const isProduction = config.environment === 'prod' || config.environment === 'production';
+
+    return { appId: config.gatewayId, secretKey, isProduction };
+  }
+
+  if (env.cashfree.configured) {
+    logger.warn(
+      'No active payment_gateway_config for this cinema - falling back to global CASHFREE_* env credentials',
+      { cinemaId }
+    );
+
+    return {
+      appId: env.cashfree.appId,
+      secretKey: env.cashfree.secretKey,
+      isProduction: env.cashfree.isProduction,
+    };
+  }
+
+  throw new Error('Cashfree is not configured for this cinema');
+}
+
+/**
+ * A fresh Cashfree SDK client for one cinema's credentials.
+ *
+ * Deliberately NOT cached across calls: a cinema's credentials can be edited
+ * from the Dashboard at any time, and a cached client built from a
+ * now-rotated secret would keep authenticating with the old one until the
+ * process restarted. Constructing the SDK object is cheap - it only assigns
+ * a few fields - so there is no real cost to doing it fresh every call.
+ */
+async function getClientForCinema(cinemaId) {
+  const resolved = await resolveCredentials(cinemaId);
+
+  return new Cashfree(
+    resolved.isProduction ? CFEnvironment.PRODUCTION : CFEnvironment.SANDBOX,
+    resolved.appId,
+    resolved.secretKey
+  );
 }
 
 /**
@@ -144,10 +205,26 @@ function normalisePhone(raw) {
  * deterministic gateway order id, so a create retried after a network timeout
  * returns the original order rather than making a second one.
  *
+ * `amountPaise` is already the FINAL, post-discount amount - any coupon a
+ * customer applied was validated and subtracted entirely within QBusto
+ * before this is ever called (see consumer.service.applyCoupon). Cashfree
+ * sees a plain order amount and has no coupon/offer concept in this flow at
+ * all: no `offer_filters`, no discount reasoning on its side. This is a
+ * deliberate reversion - an earlier version of this integration tried
+ * routing coupons through Cashfree's own offer system and accepting a
+ * short payment as evidence of a valid redemption, which was abandoned in
+ * favour of this simpler, strictly-enforced design: QBusto is the only
+ * source of truth for what a customer owes, always.
+ *
+ * `cinemaId` decides which Cashfree merchant account the order is created
+ * against (`resolveCredentials`) - each cinema may run its own account.
+ *
  * @returns {Promise<{gatewayOrderId: string, paymentSessionId: string|null, orderStatus: string|null}>}
  */
-async function createOrder({ orderId, amountPaise, customerMobile, customerEmail }) {
+async function createOrder({ orderId, cinemaId, amountPaise, customerMobile, customerEmail }) {
   const gatewayOrderId = buildGatewayOrderId(orderId);
+
+  const client = await getClientForCinema(cinemaId);
 
   const request = {
     order_id: gatewayOrderId,
@@ -169,7 +246,7 @@ async function createOrder({ orderId, amountPaise, customerMobile, customerEmail
   };
 
   const response = await withTimeout(
-    getClient().PGCreateOrder(request, undefined, gatewayOrderId),
+    client.PGCreateOrder(request, undefined, gatewayOrderId),
     env.cashfree.timeoutMs,
     'Cashfree order creation'
   );
@@ -192,9 +269,11 @@ async function createOrder({ orderId, amountPaise, customerMobile, customerEmail
  *
  * @returns {Promise<{orderStatus: string|null, paymentSessionId: string|null, amountPaise: number|null, currency: string|null}|null>}
  */
-async function fetchOrder(gatewayOrderId) {
+async function fetchOrder(gatewayOrderId, cinemaId) {
+  const client = await getClientForCinema(cinemaId);
+
   const response = await withTimeout(
-    getClient().PGFetchOrder(gatewayOrderId),
+    client.PGFetchOrder(gatewayOrderId),
     env.cashfree.timeoutMs,
     'Cashfree order fetch'
   );
@@ -220,9 +299,11 @@ async function fetchOrder(gatewayOrderId) {
  *
  * @returns {Promise<Array<{paymentId: string|null, status: string|null, amountPaise: number|null, currency: string|null}>>}
  */
-async function fetchOrderPayments(gatewayOrderId) {
+async function fetchOrderPayments(gatewayOrderId, cinemaId) {
+  const client = await getClientForCinema(cinemaId);
+
   const response = await withTimeout(
-    getClient().PGOrderFetchPayments(gatewayOrderId),
+    client.PGOrderFetchPayments(gatewayOrderId),
     env.cashfree.timeoutMs,
     'Cashfree payment fetch'
   );
@@ -252,6 +333,21 @@ function isTransientError(error) {
   const status = readStatus(error);
 
   return status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * True when Cashfree refused the request as unauthenticated/unauthorised -
+ * a wrong or revoked APP_ID/SECRET_KEY for the resolved cinema, most likely
+ * an operator error in that cinema's `payment_gateway_config` row rather than
+ * a bug. Verified live: a corrupted secret produces a 401 here, and 401/403
+ * are not otherwise transient (isTransientError only covers 5xx), so without
+ * this a bad credential would surface to the customer as a raw, unexplained
+ * 500 instead of the same clean "try again shortly, or ask staff" 503 a
+ * cinema with no credentials configured at all already gets.
+ */
+function isAuthError(error) {
+  const status = readStatus(error);
+  return status === 401 || status === 403;
 }
 
 function readStatus(error) {
@@ -305,11 +401,13 @@ module.exports = {
   createOrder,
   fetchOrder,
   fetchOrderPayments,
+  getClientForCinema,
+  resolveCredentials,
   isTransientError,
+  isAuthError,
   isDuplicateOrderError,
   toRupees,
   rupeesToPaise,
   normalisePhone,
   withTimeout,
-  resetClient,
 };

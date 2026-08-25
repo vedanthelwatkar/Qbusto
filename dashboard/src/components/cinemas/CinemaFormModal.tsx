@@ -10,24 +10,56 @@
  * the whole system, so it is upper-cased as it is typed rather than being
  * rejected afterwards.
  *
+ * PAYMENT GATEWAY CREDENTIALS
+ *
+ * Mandatory on creation - `POST /api/cinemas` creates the cinema and its
+ * `payment_gateway_config` row together, in one backend transaction, so a
+ * cinema is never left able to take orders but not payment. There is no
+ * "edit in place" for a secret that already exists (it cannot be read back
+ * to prefill a field), so the edit form shows the current credential's
+ * status only and offers a "Replace credentials" action that reuses the
+ * same `CinemaPaymentGatewayModal` the cinema details drawer already uses -
+ * a completely separate save from the cinema's own fields, so changing an
+ * address never requires re-entering a secret, and vice versa.
+ *
  * Mounted only while it is open, so each open starts from a clean form and a
  * correct initial loading state instead of an effect resetting the last one.
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, App, DatePicker, Form, Input, Modal, Spin, Switch } from 'antd';
+import {
+  Alert,
+  App,
+  Button,
+  DatePicker,
+  Descriptions,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  Spin,
+  Switch,
+  Tag,
+  Typography,
+} from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
 import type {
   Cinema,
+  PaymentGatewayConfig,
   PostApiCinemasBody,
   PutApiCinemasIdBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import ChainSelect from '@/components/chains/ChainSelect';
+import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
 import { toApiError } from '@/services/api';
 import * as cinemasService from '@/services/cinemas.service';
+import * as gatewayConfigService from '@/services/paymentGatewayConfig.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { fieldErrorsFrom } from '@/utils/validation';
+
+const { Text } = Typography;
 
 interface FormValues {
   chainId?: number;
@@ -41,6 +73,9 @@ interface FormValues {
   smsEnabled: boolean;
   whatsappEnabled: boolean;
   isActive: boolean;
+  gatewayId: string;
+  secretKey: string;
+  environment: 'test' | 'production';
 }
 
 interface CinemaFormModalProps {
@@ -65,6 +100,39 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
 
   /** Closes itself, then tells the parent from `afterClose`, so the animation runs. */
   const [visible, setVisible] = useState(true);
+
+  // Edit mode only: the existing credential's status, never its secret - see
+  // this file's header note on why replacing one is a separate action.
+  const [gatewayConfig, setGatewayConfig] = useState<PaymentGatewayConfig | null>(null);
+  const [gatewayLoading, setGatewayLoading] = useState(isEdit);
+  const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
+  const [gatewayRefreshKey, setGatewayRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (cinemaId === undefined) return;
+
+    let active = true;
+
+    gatewayConfigService
+      .getActiveConfig({ cinemaId })
+      .then((loaded) => {
+        if (active) setGatewayConfig(loaded);
+      })
+      .catch(() => {
+        // Shown as "not configured" rather than an error banner: the cinema
+        // form itself is still fully usable either way, and the drawer's own
+        // "Payment gateway" section is the authoritative place to diagnose a
+        // load failure.
+        if (active) setGatewayConfig(null);
+      })
+      .finally(() => {
+        if (active) setGatewayLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [cinemaId, gatewayRefreshKey]);
 
   useEffect(() => {
     if (cinemaId === undefined) return;
@@ -149,6 +217,9 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           smsEnabled: values.smsEnabled,
           whatsappEnabled: values.whatsappEnabled,
           isActive: values.isActive,
+          gatewayId: values.gatewayId,
+          secretKey: values.secretKey,
+          environment: values.environment,
         };
 
         await cinemasService.createCinema(body);
@@ -195,7 +266,6 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{
@@ -203,6 +273,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
             smsEnabled: false,
             whatsappEnabled: false,
             chainId: actor?.chainId,
+            environment: 'test',
           }}
         >
           {isEdit || actor?.role !== 'owner' ? null : (
@@ -277,6 +348,100 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
             <Input />
           </Form.Item>
 
+          <Typography.Title level={5} style={{ marginTop: 8 }}>
+            Payment gateway
+          </Typography.Title>
+
+          {isEdit ? (
+            <div style={{ marginBottom: 24 }}>
+              {gatewayLoading ? (
+                <Skeleton active paragraph={{ rows: 1 }} />
+              ) : (
+                <Descriptions column={1} size="small" bordered>
+                  <Descriptions.Item label="Status">
+                    {gatewayConfig ? (
+                      <Tag color="success">Configured</Tag>
+                    ) : (
+                      <Tag>Not configured</Tag>
+                    )}
+                  </Descriptions.Item>
+                  {gatewayConfig ? (
+                    <>
+                      <Descriptions.Item label="APP ID">
+                        <Text copyable>{gatewayConfig.gatewayId}</Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Environment">
+                        <Tag color={gatewayConfig.environment === 'production' ? 'red' : 'default'}>
+                          {gatewayConfig.environment}
+                        </Tag>
+                      </Descriptions.Item>
+                    </>
+                  ) : (
+                    <Descriptions.Item label="Note">
+                      <Text type="secondary">
+                        Checkout falls back to the deployment&apos;s global Cashfree credentials, if
+                        any are configured.
+                      </Text>
+                    </Descriptions.Item>
+                  )}
+                </Descriptions>
+              )}
+
+              <Button
+                size="small"
+                style={{ marginTop: 12 }}
+                onClick={() => setGatewayModalOpen(true)}
+              >
+                {gatewayConfig ? 'Replace credentials' : 'Set up credentials'}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                className="form-alert"
+                message="Required to take payment for this cinema. Encrypted before storage and never shown again once saved."
+              />
+
+              <Form.Item
+                name="gatewayId"
+                label="APP ID"
+                rules={[
+                  { required: true, message: "Enter Cashfree's APP_ID" },
+                  { max: 255, message: 'Use at most 255 characters' },
+                ]}
+              >
+                <Input autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item
+                name="secretKey"
+                label="Secret key"
+                rules={[
+                  { required: true, message: "Enter Cashfree's SECRET_KEY" },
+                  { max: 500, message: 'Use at most 500 characters' },
+                ]}
+              >
+                <Input.Password autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item
+                name="environment"
+                label="Environment"
+                rules={[{ required: true, message: 'Select an environment' }]}
+                extra="A production deploy pointed at test credentials looks healthy but takes no real money."
+              >
+                <Select
+                  options={[
+                    { value: 'test', label: 'Test (sandbox)' },
+                    { value: 'production', label: 'Production (real money)' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          )}
+
           <Form.Item name="activeSince" label="Active since">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
@@ -299,6 +464,18 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           </Form.Item>
         </Form>
       </Spin>
+
+      {gatewayModalOpen && cinemaId !== undefined ? (
+        <CinemaPaymentGatewayModal
+          cinemaId={cinemaId}
+          cinemaName={cinema?.name ?? 'this cinema'}
+          onClose={() => setGatewayModalOpen(false)}
+          onSaved={() => {
+            setGatewayLoading(true);
+            setGatewayRefreshKey((n) => n + 1);
+          }}
+        />
+      ) : null}
     </Modal>
   );
 }

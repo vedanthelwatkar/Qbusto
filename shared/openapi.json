@@ -187,7 +187,8 @@
               "Users",
               "Reports",
               "POS Integrations",
-              "Settings"
+              "Settings",
+              "Offers"
             ],
             "example": "Orders"
           },
@@ -716,6 +717,133 @@
           "isActive": {
             "type": "boolean",
             "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 4
+          },
+          "cinemaId": {
+            "type": "integer",
+            "example": 3
+          },
+          "code": {
+            "type": "string",
+            "example": "abcd15"
+          },
+          "name": {
+            "type": "string",
+            "example": "Weekend UPI Offer"
+          },
+          "discountType": {
+            "type": "string",
+            "example": "flat",
+            "description": "\"percentage\" (case-insensitive) drives percent-of-cart math; anything else, including \"flat\", is a flat rupee amount."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "tnc": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "example": "active"
+          },
+          "discAmount": {
+            "type": "number",
+            "format": "decimal",
+            "example": 200
+          },
+          "maxDiscAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true,
+            "description": "Only meaningful when discountType is \"percentage\" - caps the discount a percentage coupon can give. Ignored for a flat coupon, which is already a fixed amount."
+          },
+          "minTxnAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "maxTxnAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "maxTxnLimit": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Redemption count cap, not an amount."
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PaymentGatewayConfig": {
+        "type": "object",
+        "description": "Never carries the secret key itself - see hasSecret.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2
+          },
+          "cinemaId": {
+            "type": "integer",
+            "example": 3
+          },
+          "gatewayId": {
+            "type": "string",
+            "example": "TEST11196503d1188251c10567fb73c030569111"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "test",
+              "sandbox",
+              "prod",
+              "production"
+            ],
+            "example": "test"
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          },
+          "hasSecret": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether a secret key is on file. Never the key itself."
           },
           "createdAt": {
             "type": "string",
@@ -3589,6 +3717,197 @@
         }
       }
     },
+    "/api/payment-gateway-config": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get a cinema's active Cashfree credentials (metadata only)",
+        "description": "Never returns the secret key itself - only whether one is configured (`hasSecret`), the App ID, and the environment. Requires the Settings module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The active config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentGatewayConfig"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Replace a cinema's active Cashfree credentials",
+        "description": "The previous active config, if any, is deactivated (not deleted) and a new one is created, in one transaction. `secretKey` is encrypted before it is ever written to the database and is not returned in the response. Requires the Settings module edit permission.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cinemaId",
+                  "gatewayId",
+                  "secretKey"
+                ],
+                "properties": {
+                  "cinemaId": {
+                    "type": "integer"
+                  },
+                  "gatewayId": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Cashfree's APP_ID."
+                  },
+                  "secretKey": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Cashfree's SECRET_KEY. Encrypted at rest; never returned."
+                  },
+                  "environment": {
+                    "type": "string",
+                    "enum": [
+                      "test",
+                      "sandbox",
+                      "prod",
+                      "production"
+                    ],
+                    "default": "test"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credentials saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentGatewayConfig"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Deactivate a cinema's active Cashfree credentials",
+        "description": "The row is deactivated, not deleted - a historical record of which credential this cinema was on stays available. Requires the Settings module delete permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentGatewayConfig"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/order-statuses": {
       "get": {
         "tags": [
@@ -4267,6 +4586,522 @@
           },
           "409": {
             "description": "The payment cannot move from its current status to the requested one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offers": {
+      "get": {
+        "tags": [
+          "Offers"
+        ],
+        "summary": "List offers",
+        "description": "Paginated. Non-owners see only offers for cinemas in their own chain. Requires the Offers module read permission.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "cinemaId",
+                "code",
+                "status",
+                "validFrom",
+                "createdAt"
+              ],
+              "default": "createdAt"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Offers list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Offer"
+                          }
+                        },
+                        "meta": {
+                          "type": "object",
+                          "properties": {
+                            "pagination": {
+                              "$ref": "#/components/schemas/Pagination"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Offers"
+        ],
+        "summary": "Create an offer (coupon)",
+        "description": "A cinema-scoped coupon, validated and applied entirely within QBusto - Cashfree plays no part in coupon handling. `code` is unique within the cinema. `discountType` of 'percentage' (case-insensitive) treats `discAmount` as a percent of the cart, capped by `maxDiscAmount`; anything else treats it as a flat rupee amount. `status` is free text, for the operator's own vocabulary. Requires the Offers module edit permission.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cinemaId",
+                  "code",
+                  "name",
+                  "discountType",
+                  "discAmount"
+                ],
+                "properties": {
+                  "cinemaId": {
+                    "type": "integer"
+                  },
+                  "code": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "discountType": {
+                    "type": "string",
+                    "maxLength": 30,
+                    "description": "\"percentage\" drives % math; anything else is treated as a flat rupee amount."
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  },
+                  "tnc": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "nullable": true
+                  },
+                  "status": {
+                    "type": "string",
+                    "default": "active",
+                    "description": "Free text, e.g. \"active\"/\"inactive\"."
+                  },
+                  "discAmount": {
+                    "type": "number",
+                    "format": "decimal"
+                  },
+                  "maxDiscAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true,
+                    "description": "Only meaningful when discountType is \"percentage\" - caps the discount."
+                  },
+                  "minTxnAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true
+                  },
+                  "maxTxnAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true
+                  },
+                  "maxTxnLimit": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "Redemption count cap, not an amount."
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "validUntil": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Offer created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Offer"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The referenced cinema does not exist, or is in another chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An offer with this code already exists in the cinema, or the cinema is deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/offers/{id}": {
+      "get": {
+        "tags": [
+          "Offers"
+        ],
+        "summary": "Get an offer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The offer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Offer"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Offers"
+        ],
+        "summary": "Update an offer",
+        "description": "`cinemaId` cannot be changed. Requires the Offers module edit permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "discountType": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true
+                  },
+                  "tnc": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "nullable": true
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "discAmount": {
+                    "type": "number",
+                    "format": "decimal"
+                  },
+                  "maxDiscAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true
+                  },
+                  "minTxnAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true
+                  },
+                  "maxTxnAmount": {
+                    "type": "number",
+                    "format": "decimal",
+                    "nullable": true
+                  },
+                  "maxTxnLimit": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "validUntil": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Offer updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Offer"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "An offer with this code already exists in the cinema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Offers"
+        ],
+        "summary": "Delete an offer",
+        "description": "A genuine delete, not soft - unless the coupon has actually been redeemed on at least one order, in which case it is refused with a 409: an order's history must never silently lose which coupon it used. Set `status` to something other than \"active\" instead of deleting a coupon that has been used. Requires the Offers module delete permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Offer deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Offer"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "This coupon has been redeemed on at least one order and cannot be deleted",
             "content": {
               "application/json": {
                 "schema": {
@@ -5343,6 +6178,11 @@
                     "type": "string",
                     "nullable": true
                   },
+                  "couponCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Validated and applied server-side against the cinema's offers - see POST .../coupons/validate to preview the discount first. An invalid/expired/out-of-range code is a 400 naming the couponCode field.\n"
+                  },
                   "items": {
                     "type": "array",
                     "minItems": 1,
@@ -5405,7 +6245,13 @@
                             },
                             "discount": {
                               "type": "number",
-                              "format": "decimal"
+                              "format": "decimal",
+                              "description": "Total discount - product-level pricing discount plus couponDiscount, if any."
+                            },
+                            "couponDiscount": {
+                              "type": "number",
+                              "format": "decimal",
+                              "description": "The portion of `discount` contributed by `couponCode`. 0 when no coupon was applied."
                             },
                             "total": {
                               "type": "number",
@@ -5468,6 +6314,118 @@
         }
       }
     },
+    "/api/consumer/cinemas/{cinemaId}/coupons/validate": {
+      "post": {
+        "tags": [
+          "Consumer - Orders"
+        ],
+        "summary": "Preview a coupon's discount before placing an order",
+        "description": "Validates a coupon code against the cinema's `offers` and computes the discount from the SAME items/source the order would actually be created with - the subtotal is recomputed from live pricing here, never trusted from the client, so the discount matches exactly what `POST /api/consumer/orders` would apply for an identical cart. Creates nothing.\n",
+        "parameters": [
+          {
+            "name": "cinemaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "source",
+                  "items"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "qr",
+                      "seat_qr",
+                      "kiosk",
+                      "counter"
+                    ]
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "productId": {
+                          "type": "integer"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "discount": {
+                              "type": "number",
+                              "nullable": true,
+                              "description": "Rupees, only present when valid."
+                            },
+                            "subtotal": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cinema not found"
+          }
+        }
+      }
+    },
     "/api/consumer/orders/{orderId}/payment-init": {
       "post": {
         "tags": [
@@ -5515,20 +6473,28 @@
                             },
                             "gatewayOrderId": {
                               "type": "string",
-                              "description": "The payment gateway's order identifier."
+                              "nullable": true,
+                              "description": "The payment gateway's order identifier. Null only when `paymentStatus` is `paid` - a coupon covered the order in full, so no gateway order was ever created.\n"
                             },
                             "paymentSessionId": {
                               "type": "string",
                               "nullable": true,
-                              "description": "Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued; the caller should retry rather than treat it as a failure.\n"
+                              "description": "Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued (the caller should retry rather than treat it as a failure), or when `paymentStatus` is `paid` and there is nothing to check out.\n"
                             },
                             "amount": {
                               "type": "integer",
-                              "description": "Amount in paise."
+                              "description": "Amount in paise. 0 when `paymentStatus` is `paid`."
                             },
                             "currency": {
                               "type": "string",
                               "example": "INR"
+                            },
+                            "paymentStatus": {
+                              "type": "string",
+                              "enum": [
+                                "paid"
+                              ],
+                              "description": "Present ONLY when a coupon discounted the order to zero: the order was confirmed as paid immediately, with no gateway involved at all, and the caller should skip straight to the confirmation screen rather than opening a checkout with nothing to pay. Absent (not `pending`) for the ordinary case where there is a real amount to collect.\n"
                             }
                           }
                         }
@@ -6182,7 +7148,7 @@
           "Cinemas"
         ],
         "summary": "Create a cinema",
-        "description": "`chainId` is honoured only for owners; every other role creates within their own chain. The referenced chain must exist and be active. `code` appears in QR ordering URLs, is stored upper case, and is unique across the whole system. Requires the Settings module edit permission.\n",
+        "description": "`chainId` is honoured only for owners; every other role creates within their own chain. The referenced chain must exist and be active. `code` appears in QR ordering URLs, is stored upper case, and is unique across the whole system. Requires the Settings module edit permission.\n\nCashfree credentials (`gatewayId`/`secretKey`/`environment`) are MANDATORY here and created in the same transaction as the cinema - without them, payment-init for this cinema falls through to the deployment-wide fallback credentials (or fails outright if none are configured). `secretKey` is encrypted before it is ever written and is never returned in any response. To replace credentials on an existing cinema, use `PUT /api/payment-gateway-config` - not this endpoint, which does not accept them on update.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -6191,7 +7157,9 @@
                 "type": "object",
                 "required": [
                   "code",
-                  "name"
+                  "name",
+                  "gatewayId",
+                  "secretKey"
                 ],
                 "properties": {
                   "chainId": {
@@ -6245,6 +7213,26 @@
                   "isActive": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "gatewayId": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Cashfree's APP_ID."
+                  },
+                  "secretKey": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Cashfree's SECRET_KEY. Encrypted at rest; never returned."
+                  },
+                  "environment": {
+                    "type": "string",
+                    "enum": [
+                      "test",
+                      "sandbox",
+                      "prod",
+                      "production"
+                    ],
+                    "default": "test"
                   }
                 }
               }

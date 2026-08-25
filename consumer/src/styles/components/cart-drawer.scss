@@ -276,13 +276,17 @@
 
   /* Footer ------------------------------------------------------------- */
 
+  /* Tighter than the scroll region above: this is the one part of the sheet
+     that must stay visible above the keyboard/home-indicator on a short
+     phone screen, so every rule below trims vertical space deliberately
+     rather than reusing the panel's usual spacing scale. */
   &__footer {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-sm);
-    padding: var(--space-lg);
-    padding-bottom: calc(var(--space-lg) + env(safe-area-inset-bottom));
+    gap: var(--space-xs);
+    padding: var(--space-md) var(--space-lg);
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
     border-top: 1px solid var(--color-border);
     background-color: var(--color-bg-primary);
   }
@@ -299,6 +303,13 @@
     color: var(--color-text-secondary);
   }
 
+  /* The item count rides on the same line as "Total" rather than its own
+     row, so real, already-computed data (how many items this is) is visible
+     without costing the footer another line of height. */
+  &__summary-count {
+    font-size: var(--font-size-xs);
+  }
+
   &__summary-value {
     font-size: var(--font-size-h3);
     font-weight: var(--font-weight-bold);
@@ -306,10 +317,102 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Subtotal/coupon breakdown lines, shown only once a coupon is applied -
+     smaller and quieter than the main Total row they sit above. */
+  &__summary--muted {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__note {
     font-size: var(--font-size-xs);
     color: var(--color-text-light);
-    margin-bottom: var(--space-sm);
+    /* No margin-bottom: the footer's own `gap` already spaces it from the
+       summary above and the button below, and stacking both would be the
+       same space paid for twice. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* `&__footer` is a flex column, and this is one of its items. A flex
+       item's `min-width` defaults to `auto`, which resolves to the
+       content's UNWRAPPED width when `white-space: nowrap` is set above -
+       so once a show is selected and this line is long enough (session +
+       disclaimer), the browser would refuse to shrink it, and the footer
+       (and with it the whole sheet) grew wider than the viewport instead of
+       truncating. `overflow: hidden` alone cannot fix this: it only clips
+       within whatever box the flex algorithm assigns, and without this the
+       algorithm never assigns a box narrower than the full sentence. Same
+       root cause, same fix, as `.field`'s `min-width: 0` elsewhere in this
+       file - the difference is `white-space: nowrap` is what exposed it
+       here, since a normally-wrapping element hits this far less often. */
+    min-width: 0;
+  }
+
+  /* Coupon --------------------------------------------------------------- */
+
+  &__coupon {
+    padding: 0 var(--space-lg) var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  &__coupon-input {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  /* The input is a flex item next to the Apply button - same overflow trap
+     as everywhere else in this file, same fix. */
+  &__coupon-field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__coupon-apply {
+    flex-shrink: 0;
+    /* Matches the text input's own height so the row reads as one control,
+       not a short button next to a taller field. */
+    height: 44px;
+    padding: 0 var(--space-lg);
+  }
+
+  &__coupon-applied {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-primary-muted);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary-muted);
+  }
+
+  &__coupon-applied-text {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--font-size-small);
+    color: var(--color-text-primary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__coupon-remove {
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary);
+    text-decoration: underline;
+  }
+
+  &__coupon-message {
+    font-size: var(--font-size-xs);
+    color: var(--color-error);
   }
 
   /* Checkout details --------------------------------------------------- */

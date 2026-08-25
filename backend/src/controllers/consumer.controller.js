@@ -125,12 +125,32 @@ async function createOrder(req, res, next) {
   try {
     const idempotencyKey = req.get('Idempotency-Key');
 
-    const order = await consumerService.createOrder(req.body, idempotencyKey);
+    const order = await consumerService.createOrder(req.validated.body, idempotencyKey);
 
     return success(res, {
       data: order,
       statusCode: 201,
       message: 'Order created',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function validateCoupon(req, res, next) {
+  try {
+    const { cinemaId } = req.params;
+    const { code, items, source } = req.validated.body;
+
+    const result = await consumerService.validateCouponPreview(parseInt(cinemaId), {
+      code,
+      items,
+      source,
+    });
+
+    return success(res, {
+      data: result,
+      message: result.valid ? 'Coupon applied' : 'Coupon not applied',
     });
   } catch (error) {
     next(error);
@@ -185,6 +205,7 @@ module.exports = {
   getBanners,
   getSessions,
   createOrder,
+  validateCoupon,
   paymentInit,
   paymentVerify,
 };

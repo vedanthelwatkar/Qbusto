@@ -160,7 +160,6 @@ export default function CategoryFormModal({ category, onClose, onSaved }: Catego
         <Form<FormValues>
           form={form}
           layout="vertical"
-          requiredMark={false}
           onFinish={handleSubmit}
           disabled={submitting || loading || loadFailed}
           initialValues={{ isActive: true, chainId: actor?.chainId }}

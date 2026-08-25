@@ -75,6 +75,7 @@ const createApp = require('../src/app');
 const app = createApp();
 
 const ORDER_ID = 42;
+const CINEMA_ID = 7;
 const GATEWAY_ORDER_ID = 'qbusto_order_42';
 const GATEWAY_PAYMENT_ID = '5114910151';
 const SESSION_ID = 'session_TESTonly_abc123';
@@ -91,6 +92,7 @@ function buildOrder(overrides = {}) {
   const { paymentStatusCode = 'pending', ...rest } = overrides;
   return {
     id: ORDER_ID,
+    cinemaId: CINEMA_ID,
     total: ORDER_TOTAL,
     gatewayOrderId: GATEWAY_ORDER_ID,
     customerMobile: '9876543210',
@@ -305,6 +307,48 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
 
     expect(JSON.stringify(response.body)).not.toContain(process.env.CASHFREE_SECRET_KEY);
   });
+
+  test('a coupon that discounted the order to zero settles immediately, without calling Cashfree at all', async () => {
+    models.Order.findByPk.mockResolvedValue(
+      buildOrder({ total: '0.00', gatewayOrderId: null })
+    );
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({
+      orderId: ORDER_ID,
+      gatewayOrderId: null,
+      paymentSessionId: null,
+      amount: 0,
+      currency: 'INR',
+      paymentStatus: 'paid',
+    });
+
+    // No gateway order was ever created or asked about for an order with
+    // nothing left to collect.
+    expect(cashfree.createOrder).not.toHaveBeenCalled();
+    expect(cashfree.fetchOrderPayments).not.toHaveBeenCalled();
+
+    // Settled through the same compare-and-set every other source uses, so
+    // it also drives the kitchen-ticket side effect a real payment would.
+    expect(models.Order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentStatusId: PAID_STATUS_ID }),
+      expect.objectContaining({ where: { id: ORDER_ID, paymentStatusId: PENDING_STATUS_ID } })
+    );
+    expect(models.OrderStatusLog.create).toHaveBeenCalled();
+  });
+
+  test('a wrong/revoked credential for this cinema is a 503, not a raw 500 leaking the provider error', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+    const unauthorized = new Error('Request failed with status code 401');
+    unauthorized.response = { status: 401 };
+    cashfree.createOrder.mockRejectedValue(unauthorized);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(503);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -402,6 +446,15 @@ describe('reconciliation when a customer returns to an interrupted payment', () 
 });
 
 // ---------------------------------------------------------------------------
+// Cashfree offers — REMOVED. Coupons are now validated and applied entirely
+// within QBusto, before payment-init ever runs (see
+// tests/coupon.service.test.js and consumer.service.createOrder) — Cashfree
+// has no discount/offer concept in this flow at all any more, so
+// reconciliation is strict exact-match only, covered by "a successful
+// payment for the WRONG amount is refused" above.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // payment-verify
 // ---------------------------------------------------------------------------
 
@@ -427,7 +480,7 @@ describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
       .send({ gatewayPaymentId: 'attacker_supplied', signature: 'nonsense' });
 
     expect(response.status).toBe(200);
-    expect(cashfree.fetchOrderPayments).toHaveBeenCalledWith(GATEWAY_ORDER_ID);
+    expect(cashfree.fetchOrderPayments).toHaveBeenCalledWith(GATEWAY_ORDER_ID, CINEMA_ID);
     expect(models.Order.update).toHaveBeenCalledWith(
       expect.objectContaining({ gatewayPaymentId: GATEWAY_PAYMENT_ID }),
       expect.anything()

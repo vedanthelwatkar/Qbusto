@@ -21,11 +21,11 @@
 
 ## Active table count
 
-30 active tables.
+31 active tables.
 
 Active tables:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, payment_webhook_events.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, payment_webhook_events, offers.
 
 Deferred and not in the active schema:
 
@@ -39,7 +39,7 @@ Nullable audit-user fields are added only where they are meaningful and do not d
 
 Tables with `created_by` and `updated_by`:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, user_permissions, banners, pos_integrations, screen_pos_mappings, product_pos_mappings, payment_gateway_config.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, user_permissions, banners, pos_integrations, screen_pos_mappings, product_pos_mappings, payment_gateway_config, offers.
 
 Tables intentionally not given audit-user fields:
 
@@ -377,6 +377,7 @@ Seeded values: pending, paid, failed, refunded.
 | gateway_order_id   | varchar(100)  | nullable                                          |
 | gateway_payment_id | varchar(100)  | nullable                                          |
 | gateway_signature  | varchar(255)  | nullable                                          |
+| offer_id            | int           | FK -> offers.id, nullable, ON DELETE NO ACTION    |
 | notes               | varchar(500)  | nullable                                          |
 | delivered_at        | datetime2     | nullable                                          |
 | created_at          | datetime2     | NOT NULL                                          |
@@ -400,6 +401,13 @@ The filter is required, not cosmetic. SQL Server treats NULLs as equal in a
 unique index, so an unfiltered one would permit only a single order without a
 Cashfree order id. With the filter, one gateway order maps to at most one
 QBusto order while unpaid orders remain unconstrained.
+
+`offer_id` records which coupon (see `offers` below), if any, was applied at
+checkout - set once at order creation and never changed afterward, the same
+way `film_title`/`show_time` freeze what an order was actually placed
+against. `ON DELETE NO ACTION`: an offer that has ever been redeemed on an
+order cannot be hard-deleted (the application layer refuses with a 409
+before the database constraint would); it must be deactivated instead.
 
 ---
 
@@ -817,15 +825,94 @@ Never store secrets, auth tokens, or sensitive PII in the payload columns.
 
 ---
 
+## offers
+
+Cinema-scoped coupons, managed from the Dashboard's Offers tab. Validated and
+applied entirely within QBusto (`backend/src/services/coupon.service.js`) -
+Cashfree has no visibility into this table or the discount it drives at all;
+a customer applies a coupon in the Consumer app's cart, and the discount is
+subtracted from an order's `total` before payment is ever requested from the
+gateway.
+
+| Column           | Type          | Constraints                                  |
+| ---------------- | ------------- | --------------------------------------------- |
+| id                | int           | PK auto                                      |
+| cinema_id         | int           | FK -> cinemas.id, NOT NULL, ON DELETE NO ACTION |
+| code              | varchar(50)   | NOT NULL                                     |
+| name              | varchar(150)  | NOT NULL                                     |
+| discount_type     | varchar(30)   | NOT NULL                                     |
+| description       | varchar(500)  | nullable                                     |
+| tnc               | varchar(2000) | nullable                                     |
+| status            | varchar(20)   | NOT NULL, default 'active'                   |
+| disc_amount       | decimal(10,2) | NOT NULL                                     |
+| max_disc_amount   | decimal(10,2) | nullable - only meaningful when discount_type is 'percentage' |
+| min_txn_amount    | decimal(10,2) | nullable                                     |
+| max_txn_amount    | decimal(10,2) | nullable                                     |
+| max_txn_limit     | int           | nullable (a redemption COUNT, not an amount) |
+| valid_from        | datetime2     | nullable                                     |
+| valid_until       | datetime2     | nullable                                     |
+| created_by        | int           | nullable, FK -> users.id, ON DELETE NO ACTION |
+| updated_by        | int           | nullable, FK -> users.id, ON DELETE NO ACTION |
+| created_at        | datetime2     | NOT NULL                                     |
+| updated_at        | datetime2     | NOT NULL                                     |
+
+```sql
+CREATE UNIQUE INDEX UX_offers_cinema_id_code
+ON offers(cinema_id, code);
+```
+
+`code` is unique per cinema, not globally - what a customer types into
+"Apply coupon" in the Consumer app.
+
+`discount_type` is free text, but has a defined meaning the code reads
+directly: `'percentage'` (case-insensitive) treats `disc_amount` as a
+percent of the cart subtotal, capped by `max_disc_amount` if set; anything
+else, **including `'flat'`**, is treated as a flat rupee amount. A coupon's
+discount is always capped at the order's own subtotal - it can never make an
+order negative.
+
+`status` is free text, for the operator's own vocabulary rather than a fixed
+enum.
+
+`payment_modes` and `offer_category` existed only to mirror Cashfree's own
+offer vocabulary from an abandoned design (see this table's own note below
+on the superseded `cashfree_offer_id` design) and were never read by any
+calculation. Both columns were dropped
+(`20260825000700-drop-unused-offer-fields.js`) after a repository-wide
+search confirmed nothing outside the Dashboard's own CRUD form referenced
+them.
+
+`max_txn_limit` caps total redemptions, counted only against **paid**
+orders - an abandoned or still-pending order never took the coupon's slot.
+This limit is checked at order-creation time, not re-checked at
+payment-settlement time; two near-simultaneous checkouts can both pass the
+check before either pays and both later pay, which is a known, accepted
+race rather than a bug (refusing to honour a payment already actually
+collected by Cashfree would be worse).
+
+Deletion is a genuine delete, not soft, **unless** the coupon has been
+redeemed on at least one order (`orders.offer_id` references it), in which
+case the application layer refuses with a 409 - set `status` to something
+other than `'active'` instead.
+
+An earlier version of this table also carried `cashfree_offer_id`, for a
+design where a coupon's Cashfree-side offer id was passed to Cashfree's own
+`order_meta.offer_filters`. That column was dropped
+(`20260825000600-revert-cashfree-offer-sync.js`) when the design was
+reverted in favour of the pure-QBusto model described above.
+
+---
+
 ## payment_gateway_config
 
 | Column                   | Type          | Constraints                                  |
 | ------------------------ | ------------- | -------------------------------------------- |
 | id                       | int           | PK auto                                      |
 | cinema_id                | int           | FK -> cinemas.id, NOT NULL                   |
-| gateway_url              | varchar(500)  | NOT NULL                                     |
+| gateway_url              | varchar(500)  | NOT NULL (unused - see note)                 |
 | gateway_id               | varchar(255)  | NOT NULL                                     |
 | gateway_secret_encrypted | varchar(1000) | NOT NULL                                     |
+| environment              | varchar(20)   | NOT NULL, default 'test'                     |
 | is_active                | bit           | NOT NULL, default 1                          |
 | created_by               | int           | nullable, FK -> users.id, ON DELETE SET NULL |
 | updated_by               | int           | nullable, FK -> users.id, ON DELETE SET NULL |
@@ -840,11 +927,11 @@ ON payment_gateway_config(cinema_id)
 WHERE is_active = 1;
 ```
 
-This table represents the client's PAYGATEWAY_URL, PAYGATEWAY_ID, and PAYGATEWAY_SECRETKEY requirements at cinema scope.
+This table represents the client's PAYGATEWAY_URL, PAYGATEWAY_ID, and PAYGATEWAY_SECRETKEY requirements at cinema scope. **This is actively used**, not aspirational: each cinema may run its own Cashfree merchant account, resolved via `backend/src/services/cashfree.client.js`'s `resolveCredentials(cinemaId)` ahead of the deployment-wide `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` env vars, which are the fallback only. `gateway_url` remains genuinely unused - `environment` (added later, not folded into `gateway_url`) is the column that carries which Cashfree environment (`test`/`sandbox`/`prod`/`production`) a cinema's credentials belong to.
 
-The gateway secret is stored only as encrypted ciphertext in `gateway_secret_encrypted`. The encryption key must live outside the database, such as in server configuration or a secret manager.
+The gateway secret is stored only as encrypted ciphertext in `gateway_secret_encrypted` (AES-256-GCM, `backend/src/utils/credentials.js`). The encryption key, `CREDENTIALS_ENCRYPTION_KEY`, must live outside the database, such as in server configuration or a secret manager.
 
-Only one active payment gateway configuration should exist per cinema at a time. Historical inactive rows may remain.
+Only one active payment gateway configuration should exist per cinema at a time, enforced by the filtered unique index above. Historical inactive rows may remain - replacing a cinema's credentials deactivates the previous row rather than overwriting it. Managed from the Dashboard: `Cinemas -> (cinema) -> Payment gateway`.
 
 ---
 
@@ -944,6 +1031,13 @@ Orders and status history:
 - `payment_status_logs.new_status_id -> payment_statuses.id`
 - `payment_status_logs.changed_by_user_id -> users.id`
 - `payment_webhook_events.order_id -> orders.id`
+- `orders.offer_id -> offers.id`
+
+Coupons:
+
+- `offers.cinema_id -> cinemas.id`
+- `offers.created_by -> users.id`
+- `offers.updated_by -> users.id`
 
 POS and payment gateway:
 
@@ -1014,6 +1108,7 @@ Unique constraints and indexes used in the active schema:
 - `order_pos_context.order_id` unique
 - `pos_transactions.idempotency_key` unique
 - filtered unique index on `payment_gateway_config(cinema_id)` where `is_active = 1`
+- `offers(cinema_id, code)` unique
 - `orders(cinema_id, created_at)` non-unique index
 - `orders(status_id)` non-unique index
 - `orders(payment_status_id)` non-unique index

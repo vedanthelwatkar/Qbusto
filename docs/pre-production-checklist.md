@@ -110,9 +110,15 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 
 **Cashfree — see §3 for the full production procedure**
 - [ ] `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY` — **both required in
-      production; boot throws without them**
+      production; boot throws without them.** These are now the **fallback**
+      credentials, used only for a cinema with no active
+      `payment_gateway_config` row — see the new "Per-cinema credentials"
+      part of §3. Boot still requires them even so: a fallback that cannot
+      itself be configured is not a fallback.
 - [ ] `CASHFREE_ENVIRONMENT=prod` (or `production`) — **boot throws if this is
-      not a production value while `NODE_ENV=production`**
+      not a production value while `NODE_ENV=production`**. Applies to the
+      fallback only; each cinema's own `payment_gateway_config` row carries
+      its own `environment`, set from the Dashboard, independently.
 - [ ] `CASHFREE_NOTIFY_URL` — optional at the Joi level, but see §3: required
       in practice unless a webhook is registered directly in the Cashfree
       Dashboard
@@ -121,6 +127,18 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 - [ ] `CASHFREE_FALLBACK_CUSTOMER_PHONE` (default `9999999999`) — only matters
       for orders with no usable customer mobile
 - [ ] `CASHFREE_TIMEOUT_MS` (default 4000, max 30000)
+- [ ] `CREDENTIALS_ENCRYPTION_KEY` — **required**, 64 hex characters (32
+      bytes), boot throws without a validly-shaped value. Encrypts every
+      `payment_gateway_config.gateway_secret_encrypted` row
+      (`backend/src/utils/credentials.js`, AES-256-GCM). Generate once with
+      `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+      and **never rotate it casually** — every cinema's stored Cashfree
+      secret was encrypted with this exact key, and changing it makes every
+      one of them undecryptable (they would all need to be re-entered from
+      the Dashboard). Back this value up as carefully as a database
+      credential, and keep it **out of the database** (server config / secret
+      manager only) — that separation is the entire point of encrypting the
+      column at all.
 
 **Image uploads**
 - [ ] `FILE_STORAGE_PATH` — **must be an absolute path outside the source
@@ -145,6 +163,32 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
   — `localhost` is not reachable from Cashfree's servers regardless of TLS.
   Self-signed certificates do not help; use a tunnel that issues a real
   public HTTPS URL.
+
+### Per-cinema credentials — decide this BEFORE go-live
+
+Every cinema running under this deployment can run its own Cashfree merchant
+account (`payment_gateway_config`, set from `Cinemas → (cinema) → Payment
+gateway` in the Dashboard), resolved ahead of the global `CASHFREE_APP_ID`/
+`CASHFREE_SECRET_KEY` fallback above. For each production cinema:
+
+- [ ] Either it has its own `payment_gateway_config` row with
+      `environment: production` and real production credentials, **or** the
+      deployment-wide fallback is intentionally what it should settle
+      against — decide this explicitly per cinema, not by omission. A cinema
+      silently falling back to the global pair is not a bug (the fallback
+      logs a warning every time it fires — grep `payment_gateway_config` in
+      logs to find any cinema doing this), but it should be a deliberate
+      choice, not a forgotten setup step.
+- [ ] If a cinema's own credentials are configured, confirm `environment` is
+      actually `prod`/`production`, not left on `test` — unlike the global
+      `CASHFREE_ENVIRONMENT` var, this is **not boot-checked**; a cinema
+      pointed at sandbox credentials in production fails every payment for
+      that cinema alone while the rest of the deployment looks fine.
+- [ ] Do the browser-close / no-return / webhook tests below (§7) against at
+      least one cinema running its **own** `payment_gateway_config`
+      credentials, not only against the global fallback — the credential
+      resolution path and the webhook's per-cinema signature verification are
+      both new and worth confirming live, not just in test.
 
 ### PRODUCTION MODE — required before go-live
 
@@ -478,7 +522,9 @@ by this repository):
 ```
 [ ] Database backed up
 [ ] Production environment configured
-[ ] Cashfree production credentials configured
+[ ] CREDENTIALS_ENCRYPTION_KEY generated and backed up (never rotate casually)
+[ ] Cashfree production credentials configured (global fallback)
+[ ] Per-cinema payment_gateway_config decided for every production cinema
 [ ] Cashfree webhook configured and reachable
 [ ] HTTPS configured
 [ ] Consumer production build verified

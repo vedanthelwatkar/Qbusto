@@ -10,6 +10,8 @@
 
 const express = require('express');
 const consumerController = require('../controllers/consumer.controller');
+const validate = require('../middleware/validate');
+const consumerValidators = require('../validators/consumer.validators');
 
 const router = express.Router();
 
@@ -318,6 +320,14 @@ router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
  *               notes:
  *                 type: string
  *                 nullable: true
+ *               couponCode:
+ *                 type: string
+ *                 nullable: true
+ *                 description: >
+ *                   Validated and applied server-side against the cinema's
+ *                   offers - see POST .../coupons/validate to preview the
+ *                   discount first. An invalid/expired/out-of-range code is
+ *                   a 400 naming the couponCode field.
  *               items:
  *                 type: array
  *                 minItems: 1
@@ -357,6 +367,11 @@ router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
  *                         discount:
  *                           type: number
  *                           format: decimal
+ *                           description: Total discount - product-level pricing discount plus couponDiscount, if any.
+ *                         couponDiscount:
+ *                           type: number
+ *                           format: decimal
+ *                           description: The portion of `discount` contributed by `couponCode`. 0 when no coupon was applied.
  *                         total:
  *                           type: number
  *                           format: decimal
@@ -392,7 +407,73 @@ router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
  *       409:
  *         description: Resource conflict (unavailable cinema/product)
  */
-router.post('/orders', consumerController.createOrder);
+router.post('/orders', validate(consumerValidators.createOrder), consumerController.createOrder);
+
+/**
+ * @openapi
+ * /api/consumer/cinemas/{cinemaId}/coupons/validate:
+ *   post:
+ *     tags: [Consumer - Orders]
+ *     summary: Preview a coupon's discount before placing an order
+ *     description: >
+ *       Validates a coupon code against the cinema's `offers` and computes
+ *       the discount from the SAME items/source the order would actually be
+ *       created with - the subtotal is recomputed from live pricing here,
+ *       never trusted from the client, so the discount matches exactly what
+ *       `POST /api/consumer/orders` would apply for an identical cart.
+ *       Creates nothing.
+ *     parameters:
+ *       - name: cinemaId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, source, items]
+ *             properties:
+ *               code:
+ *                 type: string
+ *               source:
+ *                 type: string
+ *                 enum: [qr, seat_qr, kiosk, counter]
+ *               items:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: object
+ *                   required: [productId, quantity]
+ *                   properties:
+ *                     productId: { type: integer }
+ *                     quantity: { type: integer, minimum: 1 }
+ *     responses:
+ *       200:
+ *         description: Validation result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         valid: { type: boolean }
+ *                         message: { type: string, nullable: true }
+ *                         discount: { type: number, nullable: true, description: 'Rupees, only present when valid.' }
+ *                         subtotal: { type: number }
+ *       404:
+ *         description: Cinema not found
+ */
+router.post(
+  '/cinemas/:cinemaId/coupons/validate',
+  validate(consumerValidators.validateCoupon),
+  consumerController.validateCoupon
+);
 
 /**
  * @openapi
@@ -428,20 +509,38 @@ router.post('/orders', consumerController.createOrder);
  *                           type: integer
  *                         gatewayOrderId:
  *                           type: string
- *                           description: The payment gateway's order identifier.
+ *                           nullable: true
+ *                           description: >
+ *                             The payment gateway's order identifier. Null only
+ *                             when `paymentStatus` is `paid` - a coupon covered
+ *                             the order in full, so no gateway order was ever
+ *                             created.
  *                         paymentSessionId:
  *                           type: string
  *                           nullable: true
  *                           description: >
  *                             Short-lived token for the Cashfree hosted checkout.
- *                             Null when a session could not be issued; the caller
- *                             should retry rather than treat it as a failure.
+ *                             Null when a session could not be issued (the caller
+ *                             should retry rather than treat it as a failure), or
+ *                             when `paymentStatus` is `paid` and there is nothing
+ *                             to check out.
  *                         amount:
  *                           type: integer
- *                           description: Amount in paise.
+ *                           description: Amount in paise. 0 when `paymentStatus` is `paid`.
  *                         currency:
  *                           type: string
  *                           example: INR
+ *                         paymentStatus:
+ *                           type: string
+ *                           enum: [paid]
+ *                           description: >
+ *                             Present ONLY when a coupon discounted the order to
+ *                             zero: the order was confirmed as paid immediately,
+ *                             with no gateway involved at all, and the caller
+ *                             should skip straight to the confirmation screen
+ *                             rather than opening a checkout with nothing to pay.
+ *                             Absent (not `pending`) for the ordinary case where
+ *                             there is a real amount to collect.
  *       404:
  *         description: Order not found
  *       409:

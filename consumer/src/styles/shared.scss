@@ -276,7 +276,13 @@
   .field__select,
   select {
     /* The full option text stays available in the native picker; only the
-       closed control truncates. */
+       closed control truncates. `text-overflow: ellipsis` alone does
+       nothing without `overflow: hidden` and `white-space: nowrap` - all
+       three are required together, and the first attempt at this rule only
+       had the one, so a long show title (screen + full film title + time)
+       was still being hard-clipped by the browser with no "…" shown. */
+    overflow: hidden;
+    white-space: nowrap;
     text-overflow: ellipsis;
   }
 

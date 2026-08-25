@@ -62,7 +62,7 @@ export default function ChangePasswordModal({ open, onClose }: ChangePasswordMod
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      <Form form={form} layout="vertical" requiredMark={false} onFinish={handleSubmit}>
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
         <Form.Item
           name="currentPassword"
           label="Current password"
