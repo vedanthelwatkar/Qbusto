@@ -2,6 +2,14 @@
 
 > Technical source of truth for the database.
 > Last updated: 2026-08-25
+> Revision: 11 - renamed the three SQL-Server-auto-generated constraint names
+> on `payment_webhook_events` that still carried the old table name after
+> Revision 10's table rename (`20260825000200-rename-payment-webhook-events-
+> constraints.js`): `PK_payment_webhook_events`, `UQ_payment_webhook_events_
+> event_id` (unique on `event_id`), `FK_payment_webhook_events_order_id`
+> (`order_id` → `orders.id`). Applied to the live database and verified;
+> confirmed zero database objects anywhere in the schema still contain
+> "razorpay" in their name.
 > Revision: 10 - renamed all Razorpay-specific payment columns/table to
 > provider-neutral names (`20260825000100-rename-payment-columns-provider-neutral.js`),
 > ahead of the Razorpay → Cashfree payment gateway migration. Applied to the

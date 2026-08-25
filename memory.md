@@ -743,13 +743,28 @@ status change. A refund must be issued manually in the Cashfree Dashboard.
 
 ### 8.13 Payment-related tables (renamed, not redesigned)
 
-A single rename-only migration, `20260825000100-rename-payment-columns-
-provider-neutral.js`, moved the schema off Razorpay-specific names via
-`sp_rename` — **applied to the live database and verified**. Two SQL Server
-quirks it had to navigate: unqualified `sp_rename` source names fail with
-error 15225 (schema-qualify as `dbo.x`), and a filtered index predicate blocks
-a column rename outright with an **empty** error message (drop the index
-before renaming, recreate it after).
+A rename-only migration, `20260825000100-rename-payment-columns-provider-
+neutral.js`, moved the schema off Razorpay-specific names via `sp_rename` —
+**applied to the live database and verified**. Two SQL Server quirks it had to
+navigate: unqualified `sp_rename` source names fail with error 15225
+(schema-qualify as `dbo.x`), and a filtered index predicate blocks a column
+rename outright with an **empty** error message (drop the index before
+renaming, recreate it after).
+
+A follow-up migration, `20260825000200-rename-payment-webhook-events-
+constraints.js`, closed a gap that migration left: `sp_rename` on a *table*
+does not cascade to rename that table's SQL-Server-auto-generated PK/UQ/FK
+constraint names, which still embedded the old table name
+(`PK__razorpay__...`, `UQ__razorpay__...`, `FK__razorpay___order__...`) even
+after `razorpay_webhook_events` became `payment_webhook_events`. Renamed to
+`PK_payment_webhook_events`, `UQ_payment_webhook_events_event_id`,
+`FK_payment_webhook_events_order_id` — confirmed via a live catalog query that
+zero database objects anywhere in the schema still contain "razorpay" in their
+name. One more SQL Server quirk found here: a table-owned constraint renames
+with a **two-part** name (`schema.constraint_name`), not the three-part form
+(`schema.table.constraint_name`) that columns and indexes use — the three-part
+form fails outright with "Either the parameter @objname is ambiguous or the
+claimed @objtype (OBJECT) is wrong."
 
 **`payment_webhook_events`** (renamed from `razorpay_webhook_events`) —
 durable audit + dedup ledger: `id`, `event_id` **VARCHAR(64) UNIQUE**, `event`
