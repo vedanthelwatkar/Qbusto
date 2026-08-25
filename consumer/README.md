@@ -38,7 +38,7 @@ Screensaver  →  Catalogue + checkout sheet  →  Payment  →  Confirmation
    mobile and an optional email. The menu stays mounted and visible behind it,
    so the customer never loses sight of what they are buying, and closing the
    sheet leaves the cart exactly as it was.
-4. **Payment** — Razorpay checkout, opened from the page.
+4. **Payment** — Cashfree hosted checkout, opened as an in-page modal.
 5. **Confirmation** — the order reference and a summary.
 
 Any unmatched URL renders a not-found page rather than a blank screen.
@@ -334,8 +334,11 @@ src/
 
 ## Deployment notes
 
-- Serve over HTTPS. Razorpay checkout and browser payment features expect a
+- Serve over HTTPS. Cashfree checkout and browser payment features expect a
   secure context.
+- `VITE_CASHFREE_MODE` is baked in at build time and must match the backend's
+  `CASHFREE_ENVIRONMENT` (`sandbox`↔`test`, `production`↔`prod`) — a mismatch
+  causes the Cashfree SDK to reject the payment session id.
 - Configure the static host to serve `index.html` for unmatched paths, so
   client-side routes such as `/confirmation/:orderId` resolve on a direct visit
   or a page refresh.

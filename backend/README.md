@@ -72,7 +72,7 @@ exist.
 | Orders                   | Staff-facing order listing, creation and status transitions    |
 | Consumer API             | Public, unauthenticated catalogue, sessions and ordering       |
 | Kitchen API              | Kitchen Display System board and fulfilment transitions        |
-| Webhooks                 | Razorpay payment notifications                                 |
+| Webhooks                 | Cashfree payment notifications                                 |
 | POS integration          | Adapter contract and schema only — not implemented (Phase 2)   |
 
 ---
@@ -95,7 +95,7 @@ exist.
 - Node.js LTS
 - Microsoft SQL Server, reachable from the application host (Express edition is
   sufficient for development)
-- A Razorpay account if payment features are required
+- A Cashfree account if payment features are required
 
 ---
 
@@ -176,9 +176,14 @@ Required with no default: `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
 Production-only rules enforced at startup:
 
 - `JWT_SECRET` must be at least 32 characters.
-- `RAZORPAY_WEBHOOK_SECRET` is required and must be at least 32 characters.
-- A Razorpay **test** key is rejected outright.
-- A Razorpay **live** key outside production produces a warning.
+- `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` must both be set (required to
+  take any payment and to verify any webhook — there is no separate webhook
+  secret with Cashfree, the API secret key does both jobs).
+- `CASHFREE_ENVIRONMENT` must be `prod` or `production`; any other value is
+  rejected outright, since a production deployment pointed at the Cashfree
+  sandbox would look completely healthy while taking no real money.
+- A production `CASHFREE_ENVIRONMENT` of `prod`/`production` used outside
+  `NODE_ENV=production` produces a warning (it charges real cards).
 - `CORS_ALLOWED_ORIGINS=*` produces a warning; set an explicit origin list.
 
 Image uploads are configured by `FILE_STORAGE_PATH` and `MAX_UPLOAD_SIZE_MB`;
@@ -236,10 +241,13 @@ Before deploying:
 1. Apply migrations and seeders on the target database.
 2. Set an explicit `CORS_ALLOWED_ORIGINS` list.
 3. Set a `JWT_SECRET` of at least 32 characters.
-4. Configure live Razorpay keys and the webhook secret if payments are enabled.
+4. Configure production Cashfree credentials (`CASHFREE_APP_ID`,
+   `CASHFREE_SECRET_KEY`, `CASHFREE_ENVIRONMENT=prod`) and register a webhook
+   URL, either via `CASHFREE_NOTIFY_URL` or directly in the Cashfree Dashboard,
+   if payments are enabled.
 5. Consider `SWAGGER_ENABLED=false` on a publicly reachable deployment.
-6. Terminate TLS in front of the application. Razorpay requires an HTTPS
-   webhook URL.
+6. Terminate TLS in front of the application. Cashfree requires an HTTPS
+   webhook URL, and nothing in front of it may re-serialise the request body.
 
 The repository does not include a process manager, container definition or
 reverse-proxy configuration; choose these to suit the target environment.
@@ -433,16 +441,21 @@ and remove what nothing references, with a backup taken first.
 
 ## Payments
 
-Razorpay is integrated for customer payments placed through the Consumer app.
-The flow is:
+Cashfree Hosted Checkout is integrated for customer payments placed through
+the Consumer app (migrated from Razorpay; no Razorpay code or dependency
+remains). The flow is:
 
 1. The Consumer app requests payment initialisation for an order.
-2. The backend creates a Razorpay order and returns its identifier.
-3. The customer completes payment in the Razorpay checkout.
-4. The payment is confirmed on the server.
+2. The backend creates a Cashfree order and returns a short-lived
+   `paymentSessionId`.
+3. The customer completes payment in Cashfree's hosted checkout, opened as an
+   in-page modal.
+4. The payment is confirmed on the server — the browser holds no payment
+   credential to verify, so `payment-verify` asks Cashfree directly,
+   server-to-server, whether the order was paid.
 
-A payment can be discovered three ways — the browser posting a signature back,
-a Razorpay webhook, or reconciliation against Razorpay's records when neither
+A payment can be discovered three ways — the browser calling `payment-verify`,
+a Cashfree webhook, or reconciliation against Cashfree's records when neither
 arrived. All three converge on a single transition in
 `src/services/paymenttransition.service.js`, which moves the order from pending
 to paid with a conditional update. Whichever source arrives first performs the
@@ -453,30 +466,53 @@ Payment status and fulfilment status are independent. Marking an order paid
 never advances it through the kitchen workflow beyond making it eligible for
 fulfilment, and the kitchen can never mark an order paid.
 
+A UPI collect the customer has not yet approved or declined is reported
+separately as `gatewayPending: true` on a 409 from `payment-verify` — this
+state must never be treated as a safely-retryable failure, since the
+outstanding attempt can still succeed and a retry risks a double charge.
+
 ---
 
 ## Webhook configuration
 
-The webhook endpoint is `POST /api/webhooks/razorpay`. It is mounted before the
+The webhook endpoint is `POST /api/webhooks/cashfree`. It is mounted before the
 JSON body parser because signature verification requires the exact raw bytes
-Razorpay sent.
+Cashfree sent — this matters more for Cashfree than for most providers, since
+it signs decimal amounts as sent (`170.00`) and a parse/re-serialise round trip
+would turn that into `170`, breaking every signature.
 
-In the Razorpay Dashboard, under **Settings → Webhooks**:
+In the Cashfree Dashboard, under **Developers → Webhooks** (configured
+separately for the Test and Production environments — switching environments
+in the dashboard does not carry a webhook configuration across):
 
-1. Set the webhook URL to `https://<your-host>/api/webhooks/razorpay`.
-2. Generate a signing secret and set it as `RAZORPAY_WEBHOOK_SECRET`.
-3. Subscribe to the `payment.captured` and `payment.failed` events.
+1. Click **Add Webhook Endpoint**.
+2. Set the URL to `https://<your-host>/api/webhooks/cashfree`.
+3. Subscribe to at least the payment-success event; also subscribe to the
+   failed/dropped events if you want them recorded for audit (they never
+   change order state either way).
+4. There is no separate signing secret to generate — Cashfree signs with the
+   same `CASHFREE_SECRET_KEY` already used to authenticate API calls.
 
 Delivery handling:
 
-- Signatures are verified with a timing-safe comparison. An unverifiable
-  request is rejected with 400.
+- Signatures are verified with a timing-safe comparison over
+  `timestamp + rawBody`, HMAC-SHA256, base64-encoded. A delivery with no
+  timestamp, an invalid signature, or a timestamp more than 15 minutes old is
+  rejected with 400.
 - Every processed event is recorded, so a redelivery of the same event is
   recognised and ignored rather than applied twice.
 - The endpoint acknowledges only after the transaction commits. A transient
-  failure returns 5xx so Razorpay retries.
+  failure returns 5xx so Cashfree retries.
 
-The endpoint must be reachable over HTTPS from Razorpay's servers.
+The endpoint must be reachable over HTTPS from Cashfree's servers, and nothing
+in front of it may re-serialise the request body.
+
+**Setting `CASHFREE_NOTIFY_URL` is an alternative to the dashboard
+registration above**, not a replacement requirement — it overrides the webhook
+URL on a per-order basis, which is what makes a local tunnel (ngrok, Cloudflare
+Tunnel) work during development without touching the shared dashboard
+configuration. In production, use one or both; without either, a payment where
+the customer's browser never returns has no automatic way to settle.
 
 ---
 

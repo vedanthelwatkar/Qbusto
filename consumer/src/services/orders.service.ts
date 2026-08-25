@@ -9,7 +9,6 @@ import type {
   PostApiConsumerOrdersBody,
   PostApiConsumerOrders201Data,
   PostApiConsumerOrdersOrderIdPaymentInit200,
-  PostApiConsumerOrdersOrderIdPaymentVerifyBody,
   PostApiConsumerOrdersOrderIdPaymentVerify200,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 
@@ -33,10 +32,10 @@ export async function createOrderIdempotent(
 }
 
 /**
- * Initialize payment (Phase 2: Create Razorpay order, idempotent).
+ * Initialize payment (creates or resumes the gateway order, idempotent).
  *
  * @param orderId - Local order ID from creation
- * @returns Payment init response with razorpayOrderId, razorpayKeyId, amount (paise)
+ * @returns Payment init response with gatewayOrderId, paymentSessionId, amount (paise)
  */
 export async function initializePayment(
   orderId: number
@@ -46,17 +45,20 @@ export async function initializePayment(
 }
 
 /**
- * Verify payment (Phase 3: Verify Razorpay signature, idempotent, marks order paid).
+ * Confirm payment with the gateway (idempotent; marks the order paid).
+ *
+ * Sends no payment identity. Cashfree's hosted checkout hands the browser no
+ * cryptographic credential, so there is nothing a client could present that
+ * would prove a payment happened - the backend asks Cashfree directly. The
+ * request means only "my checkout finished, please look".
  *
  * @param orderId - Local order ID
- * @param paymentData - Razorpay payment ID and signature
  * @returns Updated order with paymentStatus: paid
  */
 export async function verifyOrderPayment(
-  orderId: number,
-  paymentData: PostApiConsumerOrdersOrderIdPaymentVerifyBody
+  orderId: number
 ): Promise<PostApiConsumerOrdersOrderIdPaymentVerify200> {
-  const response = await verifyPayment(orderId, paymentData);
+  const response = await verifyPayment(orderId, {});
   return response.data;
 }
 

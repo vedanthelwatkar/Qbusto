@@ -118,8 +118,8 @@ function buildOrder(overrides = {}) {
     total: 450,
     smsStatus: null,
     whatsappStatus: null,
-    razorpayOrderId: null,
-    razorpayPaymentId: null,
+    gatewayOrderId: null,
+    gatewayPaymentId: null,
     notes: null,
     deliveredAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -1139,9 +1139,9 @@ describe('PUT /api/orders/:id/payment-status', () => {
     await request(app)
       .put('/api/orders/30/payment-status')
       .set('Authorization', token)
-      .send({ paymentStatus: 'paid', razorpayPaymentId: 'pay_forged' });
+      .send({ paymentStatus: 'paid', gatewayPaymentId: 'pay_forged' });
 
-    expect(models.PaymentStatusLog.create.mock.calls[0][0].razorpayPaymentId).toBeNull();
+    expect(models.PaymentStatusLog.create.mock.calls[0][0].gatewayPaymentId).toBeNull();
   });
 
   it('refuses to refund a payment that was never made', async () => {

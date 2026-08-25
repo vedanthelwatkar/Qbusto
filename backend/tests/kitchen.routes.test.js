@@ -350,8 +350,8 @@ describe('GET /api/kitchen/orders', () => {
     const [order] = response.body.data;
     expect(order).not.toHaveProperty('customerMobile');
     expect(order).not.toHaveProperty('customerEmail');
-    expect(order).not.toHaveProperty('razorpayPaymentId');
-    expect(order).not.toHaveProperty('razorpayOrderId');
+    expect(order).not.toHaveProperty('gatewayPaymentId');
+    expect(order).not.toHaveProperty('gatewayOrderId');
   });
 
   it('returns the fields a ticket is printed from', async () => {

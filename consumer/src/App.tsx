@@ -84,7 +84,7 @@ const ACTIVITY_EVENTS = [
  * QR scan re-supplies everything, and one behaviour is far easier to keep
  * correct than two.
  *
- * NEVER runs on the payment page. Razorpay's checkout is an iframe, so a
+ * NEVER runs on the payment page. The gateway checkout is an iframe, so a
  * customer typing their card details generates no events we can see and the
  * timer would fire while they are actively paying. Resetting there would also
  * discard the order id and attempt record that recovery depends on, at the
@@ -97,6 +97,7 @@ function IdleReset() {
   const { pathname } = useLocation();
   const clearCustomerData = useContextStore((state) => state.clearCustomerData);
   const clearCart = useCartStore((state) => state.clear);
+  const resetUI = useUIStore((state) => state.reset);
 
   const enabled = pathname !== '/' && !pathname.startsWith('/payment');
 
@@ -110,6 +111,9 @@ function IdleReset() {
       clearCheckoutSession();
       // Keeps cinemaId/screenId/source, so a kiosk never needs re-provisioning.
       clearCustomerData();
+      // Close the cart sheet as well as emptying it. Without this the flag
+      // survives the reset and the next customer is shown an open, empty cart.
+      resetUI();
       navigate('/', { replace: true });
     };
 
@@ -129,7 +133,7 @@ function IdleReset() {
         window.removeEventListener(event, restart, { capture: true });
       }
     };
-  }, [enabled, pathname, navigate, clearCart, clearCustomerData]);
+  }, [enabled, pathname, navigate, clearCart, clearCustomerData, resetUI]);
 
   return null;
 }

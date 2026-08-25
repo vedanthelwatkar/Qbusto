@@ -2,35 +2,43 @@
 
 const { Model } = require('sequelize');
 
+/**
+ * The durable record of every payment webhook delivery.
+ *
+ * Provider-neutral by design: the columns name a "gateway", not a specific
+ * provider, so a future change of gateway needs no migration here. The table
+ * was renamed from `razorpay_webhook_events` in
+ * 20260825000100-rename-payment-columns-provider-neutral.
+ */
 module.exports = (sequelize, DataTypes) => {
-  class RazorpayWebhookEvent extends Model {
+  class PaymentWebhookEvent extends Model {
     static associate(models) {
-      // Optional: an event for an unrecognised Razorpay order has no internal
+      // Optional: an event for an unrecognised gateway order has no internal
       // order to point at, and is still recorded.
-      RazorpayWebhookEvent.belongsTo(models.Order, {
+      PaymentWebhookEvent.belongsTo(models.Order, {
         foreignKey: 'orderId',
         as: 'order',
       });
     }
   }
 
-  RazorpayWebhookEvent.init(
+  PaymentWebhookEvent.init(
     {
       eventId: {
         type: DataTypes.STRING(64),
         allowNull: false,
         unique: true,
-        comment: 'x-razorpay-event-id header; unique per Razorpay event',
+        comment: 'Dedup key: "<event type>:<gateway payment id>". Unique per logical event.',
       },
       event: {
         type: DataTypes.STRING(50),
         allowNull: false,
       },
-      razorpayOrderId: {
+      gatewayOrderId: {
         type: DataTypes.STRING(50),
         allowNull: true,
       },
-      razorpayPaymentId: {
+      gatewayPaymentId: {
         type: DataTypes.STRING(50),
         allowNull: true,
       },
@@ -49,13 +57,13 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: 'RazorpayWebhookEvent',
-      tableName: 'razorpay_webhook_events',
+      modelName: 'PaymentWebhookEvent',
+      tableName: 'payment_webhook_events',
       timestamps: true,
       underscored: true,
-      indexes: [{ fields: ['razorpay_order_id'] }],
+      indexes: [{ fields: ['gateway_order_id'] }],
     }
   );
 
-  return RazorpayWebhookEvent;
+  return PaymentWebhookEvent;
 };

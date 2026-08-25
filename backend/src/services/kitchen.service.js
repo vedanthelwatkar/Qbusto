@@ -14,10 +14,10 @@
  *
  * Both halves matter, and each is doing separate work.
  *
- * `paid` is the money guard. An order the customer abandoned in the Razorpay
+ * `paid` is the money guard. An order the customer abandoned in the gateway
  * modal sits at (pending, initiated) forever, and the kitchen must never make
  * food for it. Note this is read from the orders row, which is the only
- * authoritative payment state in the system - the KDS never calls Razorpay,
+ * authoritative payment state in the system - the KDS never calls the gateway,
  * never verifies a signature, and never decides for itself that something was
  * paid for. It reads what the payment seam already settled.
  *
@@ -48,7 +48,7 @@ const fulfilmentService = require('./fulfilment.service');
  * Deliberately narrower than the staff order API's PUBLIC_ATTRIBUTES. A
  * kitchen screen hangs on a wall where anyone walking past can read it, so the
  * customer's mobile number and email address are not on it, and neither are
- * the razorpay_* identifiers - a cook has no use for a gateway payment id and
+ * the gateway_* identifiers - a cook has no use for a gateway payment id and
  * a wall display is not where one should be readable.
  *
  * Money is included because `total` is on the physical ticket and staff use it

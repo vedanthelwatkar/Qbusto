@@ -711,7 +711,7 @@ export default function CheckoutDrawer() {
               </button>
               <p className="cart-drawer__secure">
                 <LockIcon size={14} />
-                Payment is processed securely by Razorpay.
+                Payment is processed securely by Cashfree.
               </p>
             </footer>
           </>

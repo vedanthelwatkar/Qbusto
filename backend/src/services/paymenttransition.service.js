@@ -5,9 +5,10 @@
  *
  * Three different things can now discover that a payment succeeded:
  *
- *   1. the browser posting a signature to payment-verify
- *   2. a Razorpay webhook
- *   3. reconciliation against Razorpay's own records, when neither of the
+ *   1. the browser telling us its checkout finished, which payment-verify
+ *      then confirms server-to-server against the gateway
+ *   2. a gateway webhook
+ *   3. reconciliation against the gateway's own records, when neither of the
  *      above ever arrived
  *
  * Each is a legitimate discovery path, and any of them may be first. What none
@@ -54,7 +55,7 @@ async function resolvePaymentStatusId(code, transaction) {
  *
  * @param {object} params
  * @param {number} params.orderId
- * @param {string|null} params.razorpayPaymentId Written only when supplied, so
+ * @param {string|null} params.gatewayPaymentId Written only when supplied, so
  *   a source that does not carry one cannot erase a value another source
  *   already recorded.
  * @param {string} params.reason Audit text for the status log.
@@ -62,15 +63,15 @@ async function resolvePaymentStatusId(code, transaction) {
  * @returns {Promise<{transitioned: boolean}>} `false` means someone else had
  *   already done it — never an error.
  */
-async function applyPaidTransition({ orderId, razorpayPaymentId = null, reason }, transaction) {
+async function applyPaidTransition({ orderId, gatewayPaymentId = null, reason }, transaction) {
   const [paidStatusId, pendingStatusId] = await Promise.all([
     resolvePaymentStatusId(PAYMENT_STATUSES.PAID, transaction),
     resolvePaymentStatusId(PAYMENT_STATUSES.PENDING, transaction),
   ]);
 
   const changes = { paymentStatusId: paidStatusId };
-  if (razorpayPaymentId) {
-    changes.razorpayPaymentId = razorpayPaymentId;
+  if (gatewayPaymentId) {
+    changes.gatewayPaymentId = gatewayPaymentId;
   }
 
   const [rowsUpdated] = await models.Order.update(changes, {
@@ -87,7 +88,7 @@ async function applyPaidTransition({ orderId, razorpayPaymentId = null, reason }
       orderId,
       previousStatusId: pendingStatusId,
       newStatusId: paidStatusId,
-      razorpayPaymentId,
+      gatewayPaymentId,
       reason,
     },
     { transaction }
@@ -109,7 +110,7 @@ async function applyPaidTransition({ orderId, razorpayPaymentId = null, reason }
   // no separate kitchen queue table, so the ticket is the order itself moving
   // initiated -> confirmed, which is what makes it visible to the KDS.
   //
-  // Deliberately attached here and not in razorpaywebhook.service, not in
+  // Deliberately attached here and not in paymentwebhook.service, not in
   // paymentVerify and not in reconciliation. Those are three ways of finding
   // out about ONE payment; this line runs once regardless of which of them got
   // there first, so a webhook retry racing the browser cannot produce two

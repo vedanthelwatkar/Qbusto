@@ -33,7 +33,7 @@ const postApiConsumerOrders = (
       );
     }
   /**
- * @summary Initialize Razorpay payment (idempotent)
+ * @summary Initialize a Cashfree hosted-checkout payment (idempotent)
  */
 const postApiConsumerOrdersOrderIdPaymentInit = (
     orderId: number,
@@ -47,11 +47,12 @@ const postApiConsumerOrdersOrderIdPaymentInit = (
       );
     }
   /**
- * @summary Verify Razorpay payment signature (idempotent)
+ * Asks Cashfree directly whether this order has been paid, and settles it if so. Takes no payment identity from the caller: Cashfree's hosted checkout hands the browser no cryptographic credential, so anything a client supplied would be an unverifiable assertion. The request means only "my checkout finished, please look".
+ * @summary Confirm a payment with the gateway (idempotent)
  */
 const postApiConsumerOrdersOrderIdPaymentVerify = (
     orderId: number,
-    postApiConsumerOrdersOrderIdPaymentVerifyBody: PostApiConsumerOrdersOrderIdPaymentVerifyBody,
+    postApiConsumerOrdersOrderIdPaymentVerifyBody?: PostApiConsumerOrdersOrderIdPaymentVerifyBody,
  ) => {
       return customInstance<PostApiConsumerOrdersOrderIdPaymentVerify200>(
       {url: `/api/consumer/orders/${orderId}/payment-verify`, method: 'POST',

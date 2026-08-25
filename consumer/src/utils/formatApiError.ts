@@ -90,35 +90,28 @@ export function readConflictPaymentStatus(error: unknown): string | null {
 }
 
 /**
- * True when payment-verify rejected the signature itself — a permanent failure
- * that re-sending the same credentials can never resolve, as opposed to a
- * network or server error where retrying is the correct recovery.
+ * True when the 409 says the gateway still holds a payment it has not finished
+ * deciding — typically a UPI collect the customer has not approved yet.
  *
- * Shape verified against the running backend rather than assumed: the service
- * raises `ValidationError('Invalid payment signature', [{ field:
- * 'razorpaySignature', ... }])`, which `errorHandler` serialises as HTTP **400**
- * with `error.details`. This is the authoritative contract (README §10.8).
+ *   409 { error: { details: { orderId, paymentStatus: 'pending', gatewayPending: true } } }
  *
- * Status alone is not sufficient: payment-verify also returns 400 when the
- * order has no `razorpayOrderId`, which is a different, non-permanent case.
- * 403 is accepted as a defensive compatibility case only — the current backend
- * does not produce it.
+ * This is the difference between "nothing was taken, pay again" and "money may
+ * yet move, do NOT pay again". A pending attempt can still succeed minutes
+ * later, so offering a second payment while one is outstanding is exactly how a
+ * customer gets charged twice.
+ *
+ * Defaults to FALSE only for a shape that positively says otherwise: anything
+ * unrecognised is not treated as a licence to retry by this function alone —
+ * callers pair it with `readConflictPaymentStatus`, and an unreadable error
+ * never reaches the retry branch at all.
  */
-export function isSignatureVerificationFailure(error: unknown): boolean {
-  if (!axios.isAxiosError(error)) return false;
+export function isGatewayPaymentPending(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 409) return false;
 
-  const status = error.response?.status;
-  if (status === 403) return true;
-  if (status !== 400) return false;
+  const details = (error.response?.data as { error?: { details?: unknown } } | undefined)?.error
+    ?.details;
 
-  const details = (error.response?.data as { error?: { details?: unknown } } | undefined)
-    ?.error?.details;
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return false;
 
-  return (
-    Array.isArray(details) &&
-    details.some(
-      (detail) =>
-        detail && typeof detail === 'object' && (detail as { field?: string }).field === 'razorpaySignature'
-    )
-  );
+  return (details as { gatewayPending?: unknown }).gatewayPending === true;
 }

@@ -116,9 +116,9 @@ const updateStatus = {
 
 const updatePaymentStatus = {
   params: idParam,
-  // razorpayPaymentId is deliberately absent even though payment_status_logs
+  // gatewayPaymentId is deliberately absent even though payment_status_logs
   // has a column for it: writing one would be asserting a gateway result this
-  // phase has no way to verify. It belongs with the Razorpay integration.
+  // path has no way to verify. It belongs with the payment gateway integration.
   body: Joi.object({
     paymentStatus: Joi.string()
       .valid(...PAYMENT_STATUS_CODES)

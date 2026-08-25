@@ -35,6 +35,17 @@ audit and is left as written below. Two things it flagged have since moved:
 `Film_strNowShowingFlag` remains undefined and is passed through raw, without
 interpretation. See `docs/schema-explained.md` for the current state of each.
 
+The `razorpay_*` columns and the `razorpay_webhook_events` table named
+throughout this document reflect the schema **as it was at the time of this
+audit** (2026-08-23). Two days later, `20260825000100-rename-payment-columns-
+provider-neutral.js` renamed them to provider-neutral names ahead of the
+Razorpay → Cashfree payment gateway migration, which has since been completed.
+Current names: `orders.gateway_order_id`/`gateway_payment_id`/
+`gateway_signature`, `payment_status_logs.gateway_payment_id`,
+`payment_webhook_events` (table, was `razorpay_webhook_events`) with
+`gateway_order_id`/`gateway_payment_id`. See `docs/schema.md` for the current
+schema and `CLAUDE.md`/`memory.md` for the current payment architecture.
+
 ---
 
 ## 1. Executive Summary

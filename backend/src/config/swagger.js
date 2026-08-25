@@ -535,7 +535,7 @@ const definition = {
         description:
           'An order as a kitchen screen sees it. Deliberately narrower than `Order`: ' +
           'a KDS hangs on a wall where anyone can read it, so customer mobile, ' +
-          'customer email and the razorpay_* identifiers are not included. ' +
+          'customer email and the gateway_* identifiers are not included. ' +
           'Only orders that are paid and in a kitchen-owned fulfilment status are ' +
           'ever returned. Money is a JSON number, as elsewhere in this API.',
         properties: {
@@ -632,7 +632,7 @@ const definition = {
           newStatus: { type: 'string', example: 'preparing' },
           changedByUserId: { type: 'integer', nullable: true, example: 7 },
           reason: { type: 'string', nullable: true, example: 'Customer changed their mind' },
-          razorpayPaymentId: {
+          gatewayPaymentId: {
             type: 'string',
             nullable: true,
             description:
@@ -702,12 +702,12 @@ const definition = {
             enum: ['pending', 'success', 'failed'],
             nullable: true,
           },
-          razorpayOrderId: {
+          gatewayOrderId: {
             type: 'string',
             nullable: true,
-            description: 'Written by the Razorpay integration phase. Null otherwise.',
+            description: "The payment gateway's order identifier. Null before payment-init runs.",
           },
-          razorpayPaymentId: { type: 'string', nullable: true },
+          gatewayPaymentId: { type: 'string', nullable: true },
           notes: { type: 'string', nullable: true },
           deliveredAt: {
             type: 'string',

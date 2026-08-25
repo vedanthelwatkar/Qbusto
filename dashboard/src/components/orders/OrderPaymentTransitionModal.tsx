@@ -3,7 +3,7 @@
  *
  * This is the staff-operated payment path: cash taken at the counter, a refund
  * granted, a failed attempt written off. It sends no gateway identifiers and
- * performs no Razorpay verification or reconciliation — those belong to the
+ * performs no gateway verification or reconciliation — those belong to the
  * backend, which is the only authority on what a payment actually did.
  *
  * The transitions offered mirror the backend's payment graph, so a control is
@@ -28,11 +28,11 @@ interface OrderPaymentTransitionModalProps {
   currentPaymentStatus: string;
   paymentStatuses: OrderStatus[];
   /**
-   * Set once payment initialisation has run, i.e. a Razorpay payment was
+   * Set once payment initialisation has run, i.e. a gateway payment was
    * actually started for this order. Its presence is what makes marking the
    * order `failed` risky — see the warning below.
    */
-  razorpayOrderId?: string | null;
+  gatewayOrderId?: string | null;
   onClose: () => void;
   /** Receives the updated order exactly as the server returned it. */
   onSuccess: (updated: OrderDetail) => void;
@@ -57,7 +57,7 @@ export default function OrderPaymentTransitionModal({
   orderId,
   currentPaymentStatus,
   paymentStatuses,
-  razorpayOrderId,
+  gatewayOrderId,
   onClose,
   onSuccess,
 }: OrderPaymentTransitionModalProps) {
@@ -73,10 +73,10 @@ export default function OrderPaymentTransitionModal({
     paymentStatuses.find((entry) => entry.code === code)?.name ?? code;
 
   /**
-   * A Razorpay payment was started for this order and has not settled here.
+   * A gateway payment was started for this order and has not settled here.
    *
    * Marking it `failed` in that state is the one staff action that can
-   * contradict reality: Razorpay may capture the payment moments later, and
+   * contradict reality: the gateway may settle the payment moments later, and
    * because the automated paths only move an order out of `pending`, the
    * capture would then find the order already `failed` and leave it there. The
    * customer would have paid against an order this system calls failed.
@@ -86,7 +86,7 @@ export default function OrderPaymentTransitionModal({
    * component should decide, and the backend remains authoritative either way.
    */
   const contradictsLivePayment =
-    currentPaymentStatus === 'pending' && Boolean(razorpayOrderId) && nextStatus === 'failed';
+    currentPaymentStatus === 'pending' && Boolean(gatewayOrderId) && nextStatus === 'failed';
 
   const handleTransition = async () => {
     // Guards a second confirm while the first is in flight.
@@ -137,11 +137,11 @@ export default function OrderPaymentTransitionModal({
           type="warning"
           showIcon
           className="form-alert"
-          message="A Razorpay payment was started for this order"
+          message="A gateway payment was started for this order"
           description={
             'If that payment is captured after you mark this order failed, the customer ' +
             'will have paid for an order the system shows as failed, and the automatic ' +
-            'update will not correct it. Confirm in the Razorpay dashboard that no ' +
+            'update will not correct it. Confirm in the Cashfree dashboard that no ' +
             'payment was captured before continuing.'
           }
         />

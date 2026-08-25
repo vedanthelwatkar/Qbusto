@@ -63,7 +63,7 @@ function createApp() {
   app.use(cors(corsOptions));
   app.use(compression());
 
-  // Webhooks mount BEFORE the JSON parser. Razorpay signs the exact request
+  // Webhooks mount BEFORE the JSON parser. Cashfree signs the exact request
   // bytes, so the router needs the unparsed Buffer; once express.json() has
   // run, those bytes are gone and no signature could ever be verified. The
   // exception is scoped to this one path — every other route still gets

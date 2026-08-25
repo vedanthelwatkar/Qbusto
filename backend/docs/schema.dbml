@@ -2,7 +2,7 @@
 // Source of truth: backend/docs/schema.md
 // Import at: https://dbdiagram.io
 // 27 active V1 tables (including idempotency_keys from Phase 1 consumer API,
-// shows from backend Phase B1, and razorpay_webhook_events from the payment
+// shows from backend Phase B1, and payment_webhook_events from the payment
 // webhook work)
 // NOT included (deferred): source_discounts, price_change_logs, user_login_logs
 
@@ -194,9 +194,9 @@ Table orders {
   payment_status_id   int           [not null, note: 'FK to payment_statuses.id.']
   sms_status          varchar(20)   [note: 'Allowed values: pending, success, failed. NULL means not applicable or not enabled.']
   whatsapp_status     varchar(20)   [note: 'Allowed values: pending, success, failed. NULL means not applicable or not enabled.']
-  razorpay_order_id   varchar(100)
-  razorpay_payment_id varchar(100)
-  razorpay_signature  varchar(255)
+  gateway_order_id   varchar(100)
+  gateway_payment_id varchar(100)
+  gateway_signature  varchar(255)
   notes               varchar(500)
   delivered_at        datetime2
   created_at          datetime2     [not null]
@@ -206,7 +206,7 @@ Table orders {
     (cinema_id, created_at) [name: 'IX_orders_cinema_created_at']
     (status_id) [name: 'IX_orders_status_id']
     (payment_status_id) [name: 'IX_orders_payment_status_id']
-    (razorpay_order_id) [unique, name: 'UX_orders_razorpay_order_id', note: 'SQL Server filtered unique index: WHERE razorpay_order_id IS NOT NULL. The filter is required because SQL Server treats NULLs as equal.']
+    (gateway_order_id) [unique, name: 'UX_orders_gateway_order_id', note: 'SQL Server filtered unique index: WHERE gateway_order_id IS NOT NULL. The filter is required because SQL Server treats NULLs as equal.']
   }
 }
 
@@ -242,7 +242,7 @@ Table payment_status_logs {
   previous_status_id  int          [note: 'Nullable on first entry.']
   new_status_id       int          [not null]
   changed_by_user_id  int          [note: 'Nullable FK to users.id.']
-  razorpay_payment_id varchar(100)
+  gateway_payment_id varchar(100)
   reason              varchar(500)
   created_at          datetime2    [not null]
 }
@@ -460,21 +460,21 @@ Table idempotency_keys [note: 'Maps Idempotency-Key header (UUID) to order for c
   }
 }
 
-Table razorpay_webhook_events [note: 'Durable record of every Razorpay webhook delivery. Machine-written by the webhook handler; no audit-user fields. The unique event_id is the deduplication mechanism.'] {
+Table payment_webhook_events [note: 'Durable record of every Cashfree webhook delivery. Machine-written by the webhook handler; no audit-user fields. The unique event_id is the deduplication mechanism.'] {
   id                  int          [pk, increment]
-  event_id            varchar(64)  [not null, unique, note: 'x-razorpay-event-id, or a key derived from the event and its subject when the delivery carries none.']
-  event               varchar(50)  [not null, note: 'e.g. payment.captured, payment.failed, order.paid']
-  razorpay_order_id   varchar(50)  [note: 'From the event payload; null if the event carried none.']
-  razorpay_payment_id varchar(50)
-  order_id            int          [note: 'Nullable FK to orders.id. Null when the event names a Razorpay order this system does not recognise - such a delivery is still recorded rather than dropped.']
+  event_id            varchar(64)  [not null, unique, note: 'Cashfree sends no dedicated event-id header; the key is derived as "event:cf_payment_id", or "event:gateway_order_id" when the delivery carries no payment entity.']
+  event               varchar(50)  [not null, note: 'e.g. PAYMENT_SUCCESS_WEBHOOK, PAYMENT_FAILED_WEBHOOK, PAYMENT_USER_DROPPED_WEBHOOK']
+  gateway_order_id   varchar(50)  [note: 'From the event payload; null if the event carried none.']
+  gateway_payment_id varchar(50)
+  order_id            int          [note: 'Nullable FK to orders.id. Null when the event names a Cashfree order this system does not recognise - such a delivery is still recorded rather than dropped.']
   outcome             varchar(30)  [not null, note: 'received | applied | ignored']
   reason              varchar(60)  [note: 'Why an event was ignored, for investigation.']
   created_at          datetime2    [not null]
   updated_at          datetime2    [not null]
 
   indexes {
-    (event_id) [unique, name: 'UQ_razorpay_webhook_events_event_id']
-    (razorpay_order_id) [name: 'IX_razorpay_webhook_events_razorpay_order_id']
+    (event_id) [unique, name: 'UQ_payment_webhook_events_event_id']
+    (gateway_order_id) [name: 'IX_payment_webhook_events_gateway_order_id']
   }
 }
 
@@ -520,7 +520,7 @@ Ref: payment_status_logs.new_status_id > payment_statuses.id
 Ref: payment_status_logs.changed_by_user_id > users.id
 
 Ref: idempotency_keys.order_id > orders.id
-Ref: razorpay_webhook_events.order_id > orders.id
+Ref: payment_webhook_events.order_id > orders.id
 
 Ref: shows.cinema_id > cinemas.id
 Ref: shows.screen_id > screens.id

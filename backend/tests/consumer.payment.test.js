@@ -1,44 +1,58 @@
 'use strict';
 
 /**
- * Consumer payment-init / payment-verify.
- *
- * These two endpoints had no test coverage at all, despite being the only
- * place in the product where money moves.
+ * Consumer payment-init / payment-verify, against Cashfree.
  *
  * Most of what is asserted here is CONTRACT rather than behaviour, because the
  * Consumer's payment recovery is built on the precise shape of these
  * responses. With no `GET /orders/{id}`, the only authoritative answer to "was
- * this order already paid?" is the 409 that payment-init returns once the
- * order leaves the pending state, and the only way to resolve an interrupted
- * payment is that payment-verify is idempotent. If either shape changes, the
- * Consumer silently loses the ability to tell "already paid" from "not paid" —
- * and the failure mode of that confusion is charging a customer twice.
+ * this order already paid?" is the 409 these endpoints return, and the only way
+ * to resolve an interrupted payment is that payment-verify is idempotent. If
+ * either shape changes, the Consumer silently loses the ability to tell
+ * "already paid" from "not paid yet" - and the failure mode of that confusion
+ * is charging a customer twice.
  *
- * So the assertions on `error.details.paymentStatus` and on the
- * `razorpaySignature` detail field are deliberately exact. They are what
- * `readConflictPaymentStatus()` and `isSignatureVerificationFailure()` read.
+ * So the assertions on `error.details.paymentStatus` are deliberately exact.
+ * They are what `readConflictPaymentStatus()` reads.
  *
- * The model layer is mocked: what is under test is the decision the service
+ * THE BIG CHANGE FROM THE PREVIOUS PROVIDER
+ *
+ * payment-verify no longer accepts a signature from the browser, because
+ * Cashfree's hosted checkout issues none. It asks Cashfree directly instead.
+ * That is why the Cashfree client is the thing mocked here: what is under test
+ * is the DECISION we make from a given provider reply, and no network call is
+ * ever made.
+ *
+ * The model layer is mocked too: what is under test is the decision the service
  * makes for a given order row, not the SQL.
  */
 
 const request = require('supertest');
 
+// Credentials must be present before config/env loads, or the service refuses
+// to initialise a payment at all.
+process.env.CASHFREE_APP_ID = 'TEST_APP_ID';
+process.env.CASHFREE_SECRET_KEY = 'test_secret_key_value_at_least_32_characters';
+process.env.CASHFREE_ENVIRONMENT = 'test';
+
 /**
- * Reconciliation talks to Razorpay. The SDK is mocked so no network call is
- * ever made: what is under test is the DECISION we make from a given reply.
+ * The provider boundary. Only the three network operations are stubbed; the
+ * pure helpers (paise/rupee conversion, id building, error classification) are
+ * the real implementations, so a unit mix-up in those still fails a test.
  */
-const mockFetchPayments = jest.fn();
-jest.mock('razorpay', () =>
-  jest.fn().mockImplementation(() => ({
-    orders: { create: jest.fn(), fetchPayments: mockFetchPayments },
-  }))
-);
+jest.mock('../src/services/cashfree.client', () => {
+  const actual = jest.requireActual('../src/services/cashfree.client');
+  return {
+    ...actual,
+    createOrder: jest.fn(),
+    fetchOrder: jest.fn(),
+    fetchOrderPayments: jest.fn(),
+  };
+});
 
 jest.mock('../src/config/database', () => {
   const models = {
-    Order: { findByPk: jest.fn(), update: jest.fn() },
+    Order: { findByPk: jest.fn(), findOne: jest.fn(), update: jest.fn() },
     PaymentStatus: { findOne: jest.fn() },
     PaymentStatusLog: { create: jest.fn() },
     // confirmOnPayment runs at the post-payment seam: a paid order becomes work
@@ -55,57 +69,84 @@ jest.mock('../src/config/database', () => {
 });
 
 const { models, sequelize } = require('../src/config/database');
+const cashfree = require('../src/services/cashfree.client');
 const createApp = require('../src/app');
 
 const app = createApp();
 
 const ORDER_ID = 42;
-const RAZORPAY_ORDER_ID = 'order_TESTonly000001';
-const RAZORPAY_PAYMENT_ID = 'pay_TESTonly000001';
+const GATEWAY_ORDER_ID = 'qbusto_order_42';
+const GATEWAY_PAYMENT_ID = '5114910151';
+const SESSION_ID = 'session_TESTonly_abc123';
+const ORDER_TOTAL = '250.00';
+const ORDER_TOTAL_PAISE = 25000;
+
+const PENDING_STATUS_ID = 1;
+const PAID_STATUS_ID = 2;
+const INITIATED_STATUS_ID = 21;
+const CONFIRMED_STATUS_ID = 22;
 
 /** An order row as paymentInit/paymentVerify select it. */
 function buildOrder(overrides = {}) {
   const { paymentStatusCode = 'pending', ...rest } = overrides;
   return {
     id: ORDER_ID,
-    total: '250.00',
-    razorpayOrderId: RAZORPAY_ORDER_ID,
-    paymentStatusId: 1,
+    total: ORDER_TOTAL,
+    gatewayOrderId: GATEWAY_ORDER_ID,
+    customerMobile: '9876543210',
+    customerEmail: null,
+    paymentStatusId: PENDING_STATUS_ID,
     paymentStatus: { code: paymentStatusCode },
     ...rest,
   };
 }
 
-/**
- * The signature Razorpay would produce for this order/payment pair. Computed
- * with the same HMAC the service uses, so the "valid signature" case exercises
- * the real comparison rather than a stubbed one.
- */
-function validSignature(secret, razorpayOrderId, paymentId) {
-  const crypto = require('crypto');
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`${razorpayOrderId}|${paymentId}`)
-    .digest('hex');
+/** One payment attempt as the Cashfree client normalises it. */
+function payment(overrides = {}) {
+  return {
+    paymentId: GATEWAY_PAYMENT_ID,
+    status: 'SUCCESS',
+    amountPaise: ORDER_TOTAL_PAISE,
+    currency: 'INR',
+    ...overrides,
+  };
+}
+
+function initRequest() {
+  return request(app).post(`/api/consumer/orders/${ORDER_ID}/payment-init`).send({});
+}
+
+function verifyRequest() {
+  return request(app).post(`/api/consumer/orders/${ORDER_ID}/payment-verify`).send({});
 }
 
 beforeEach(() => {
-  process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
-  process.env.RAZORPAY_KEY_SECRET = 'test_secret';
+  jest.clearAllMocks();
 
-  // Default: a transaction that just runs its callback.
   sequelize.transaction.mockImplementation(async (callback) => callback('TX'));
   models.PaymentStatus.findOne.mockImplementation(async ({ where }) =>
-    where.code === 'paid' ? { id: 2 } : { id: 1 }
+    where.code === 'paid' ? { id: PAID_STATUS_ID } : { id: PENDING_STATUS_ID }
   );
   models.Order.update.mockResolvedValue([1]);
   models.PaymentStatusLog.create.mockResolvedValue({});
-  // The seam's fulfilment side effect. Ids differ from the payment ones so a
-  // test cannot pass by confusing the two tables.
   models.OrderStatus.findOne.mockImplementation(async ({ where }) =>
-    where.code === 'confirmed' ? { id: 22 } : { id: 21 }
+    where.code === 'confirmed' ? { id: CONFIRMED_STATUS_ID } : { id: INITIATED_STATUS_ID }
   );
   models.OrderStatusLog.create.mockResolvedValue({});
+
+  // Default provider posture: nothing has been paid.
+  cashfree.fetchOrderPayments.mockResolvedValue([]);
+  cashfree.fetchOrder.mockResolvedValue({
+    orderStatus: 'ACTIVE',
+    paymentSessionId: SESSION_ID,
+    amountPaise: ORDER_TOTAL_PAISE,
+    currency: 'INR',
+  });
+  cashfree.createOrder.mockResolvedValue({
+    gatewayOrderId: GATEWAY_ORDER_ID,
+    paymentSessionId: SESSION_ID,
+    orderStatus: 'ACTIVE',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -113,27 +154,123 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/consumer/orders/:orderId/payment-init', () => {
-  test('is idempotent: an order that already has a razorpay order returns the same id', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
+  test('creates a gateway order and returns a payment session', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
+    const response = await initRequest();
 
     expect(response.status).toBe(200);
-    expect(response.body.data.razorpayOrderId).toBe(RAZORPAY_ORDER_ID);
+    expect(response.body.data.gatewayOrderId).toBe(GATEWAY_ORDER_ID);
+    expect(response.body.data.paymentSessionId).toBe(SESSION_ID);
+    expect(response.body.data.amount).toBe(ORDER_TOTAL_PAISE);
+    expect(response.body.data.currency).toBe('INR');
+  });
+
+  test('the gateway order is created for the order total, in paise at our boundary', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    await initRequest();
+
+    expect(cashfree.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: ORDER_ID, amountPaise: ORDER_TOTAL_PAISE })
+    );
+  });
+
+  test('the gateway order id is stored with a compare-and-set on NULL', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    await initRequest();
+
+    // One gateway order per QBusto order, ever - backed by the filtered
+    // unique index.
+    expect(models.Order.update).toHaveBeenCalledWith(
+      { gatewayOrderId: GATEWAY_ORDER_ID },
+      { where: { id: ORDER_ID, gatewayOrderId: null } }
+    );
+  });
+
+  test('is idempotent: an order that already has a gateway order creates no second one', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.gatewayOrderId).toBe(GATEWAY_ORDER_ID);
+    expect(cashfree.createOrder).not.toHaveBeenCalled();
     // The Consumer calls this endpoint to probe an interrupted attempt. If it
-    // created a second razorpay order each time, that probe would be a
+    // created a second gateway order each time, that probe would be a
     // side-effecting operation and could not be used for recovery.
     expect(models.Order.update).not.toHaveBeenCalled();
+  });
+
+  test('a resumed attempt gets a FRESH session, because sessions expire', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrder.mockResolvedValue({
+      orderStatus: 'ACTIVE',
+      paymentSessionId: 'session_FRESH_xyz',
+      amountPaise: ORDER_TOTAL_PAISE,
+      currency: 'INR',
+    });
+
+    const response = await initRequest();
+
+    expect(response.body.data.paymentSessionId).toBe('session_FRESH_xyz');
+  });
+
+  test('a duplicate-order 409 from the provider adopts the existing order rather than failing', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+    const conflict = new Error('order exists');
+    conflict.response = { status: 409 };
+    cashfree.createOrder.mockRejectedValue(conflict);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.gatewayOrderId).toBe(GATEWAY_ORDER_ID);
+  });
+
+  test('a 422 idempotency conflict also adopts the existing order', async () => {
+    // Cashfree answers 422 with type `idempotency_error` when the idempotency
+    // key has been reused - which, since the key IS the gateway order id, still
+    // means the order exists. Verified against the live sandbox.
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+    const conflict = new Error('Request failed with status code 422');
+    conflict.response = { status: 422, data: { type: 'idempotency_error' } };
+    cashfree.createOrder.mockRejectedValue(conflict);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.gatewayOrderId).toBe(GATEWAY_ORDER_ID);
+  });
+
+  test('a 422 that is NOT an idempotency conflict is not swallowed', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+    const invalid = new Error('Request failed with status code 422');
+    invalid.response = { status: 422, data: { type: 'validation_error' } };
+    cashfree.createOrder.mockRejectedValue(invalid);
+
+    const response = await initRequest();
+
+    // A real validation problem must surface, not be mistaken for a duplicate.
+    expect(response.status).toBeGreaterThanOrEqual(500);
+  });
+
+  test('a provider outage is a 503, not a 500', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+    const outage = new Error('bad gateway');
+    outage.response = { status: 502 };
+    cashfree.createOrder.mockRejectedValue(outage);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(503);
   });
 
   test('a paid order is refused with 409 carrying the authoritative payment status', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'paid' }));
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
+    const response = await initRequest();
 
     expect(response.status).toBe(409);
     // Exactly what readConflictPaymentStatus() reads. An object, not an array,
@@ -147,9 +284,7 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
   test('the 409 status is reported for non-paid terminal states too', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'failed' }));
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
+    const response = await initRequest();
 
     expect(response.status).toBe(409);
     expect(response.body.error.details.paymentStatus).toBe('failed');
@@ -158,26 +293,333 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
   test('an unknown order is a 404, not a payment failure', async () => {
     models.Order.findByPk.mockResolvedValue(null);
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
+    const response = await initRequest();
 
     expect(response.status).toBe(404);
   });
 
-  test('never returns the razorpay key secret', async () => {
+  test('never returns the secret key', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder());
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
+    const response = await initRequest();
 
-    expect(JSON.stringify(response.body)).not.toContain('test_secret');
+    expect(JSON.stringify(response.body)).not.toContain(process.env.CASHFREE_SECRET_KEY);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation on re-init - "user paid but never came back"
+// ---------------------------------------------------------------------------
+
+describe('reconciliation when a customer returns to an interrupted payment', () => {
+  test('a payment found at the gateway settles the order and answers 409 paid', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
+
+    const response = await initRequest();
+
+    // Same 409 shape a settled order returns, so the Consumer's existing
+    // recovery reads it and moves to confirmation.
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.paymentStatus).toBe('paid');
+
+    expect(models.Order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentStatusId: PAID_STATUS_ID,
+        gatewayPaymentId: GATEWAY_PAYMENT_ID,
+      }),
+      expect.objectContaining({ where: { id: ORDER_ID, paymentStatusId: PENDING_STATUS_ID } })
+    );
+  });
+
+  test('a PENDING payment at the gateway does NOT settle the order', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment({ status: 'PENDING' })]);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test.each([['FAILED'], ['USER_DROPPED'], ['CANCELLED'], ['VOID'], ['NOT_ATTEMPTED']])(
+    'a %s payment does not settle the order and leaves it payable',
+    async (status) => {
+      models.Order.findByPk.mockResolvedValue(buildOrder());
+      cashfree.fetchOrderPayments.mockResolvedValue([payment({ status })]);
+
+      const response = await initRequest();
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.paymentSessionId).toBe(SESSION_ID);
+      expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+    }
+  );
+
+  test('a successful payment for the WRONG amount is refused', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment({ amountPaise: 100 })]);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('a successful payment in the wrong currency is refused', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment({ currency: 'USD' })]);
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('an unreachable gateway does NOT block payment-init', async () => {
+    // payment-init and payment-verify treat unreachability differently on
+    // purpose: here, not knowing is the status quo and the customer must still
+    // be able to pay.
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockRejectedValue(new Error('Cashfree payment fetch timed out'));
+
+    const response = await initRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentSessionId).toBe(SESSION_ID);
+  });
+
+  test('a provider error during reconciliation is swallowed, leaving the order payable', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockRejectedValue(new Error('Cashfree reconciliation timed out'));
+
+    const response = await initRequest();
+
+    // Not knowing is the status quo: the customer can still pay.
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentSessionId).toBe(SESSION_ID);
   });
 });
 
 // ---------------------------------------------------------------------------
 // payment-verify
+// ---------------------------------------------------------------------------
+
+describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
+  test('confirms a payment the gateway reports as successful', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentStatus).toBe('paid');
+  });
+
+  test('takes no payment identity from the caller', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
+
+    // A caller inventing a payment id and a "signature" changes nothing: the
+    // answer comes from the gateway, keyed on OUR stored gateway order id.
+    const response = await request(app)
+      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
+      .send({ gatewayPaymentId: 'attacker_supplied', signature: 'nonsense' });
+
+    expect(response.status).toBe(200);
+    expect(cashfree.fetchOrderPayments).toHaveBeenCalledWith(GATEWAY_ORDER_ID);
+    expect(models.Order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ gatewayPaymentId: GATEWAY_PAYMENT_ID }),
+      expect.anything()
+    );
+  });
+
+  test('a caller cannot settle an order the gateway has not paid', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(409);
+    // "Not yet known", never "failed": the webhook may still settle it.
+    expect(response.body.error.details.paymentStatus).toBe('pending');
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('an UNREACHABLE gateway is a 503, never a "pending" conflict', async () => {
+    // The distinction this protects is the one that prevents a double charge.
+    // The Consumer reads a `pending` conflict as "the gateway holds no
+    // payment, so paying again is safe" and discards the attempt record. If a
+    // network failure were reported that way, a customer whose payment had in
+    // fact succeeded would be invited to pay a second time.
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockRejectedValue(new Error('Cashfree payment fetch timed out'));
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(503);
+    // Crucially NOT a 409 carrying paymentStatus - that shape is what the
+    // Consumer treats as authoritative.
+    expect(response.body.error.details && response.body.error.details.paymentStatus).toBeUndefined();
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('a REACHED gateway reporting no payment is a 409 pending, which is retryable', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.paymentStatus).toBe('pending');
+  });
+
+  // -------------------------------------------------------------------------
+  // In-flight (PENDING) payments - the double-charge guard
+  // -------------------------------------------------------------------------
+
+  /**
+   * A UPI collect sits PENDING while the customer is still in their UPI app,
+   * and it can become SUCCESS minutes later. Reporting that as "nothing was
+   * taken, try again" is how the outstanding payment plus a retry become two
+   * charges, so these assertions are about the exact shape the Consumer reads
+   * to decide whether a Pay button may be shown.
+   */
+  test('a PENDING payment is reported as gatewayPending, not as safely retryable', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment({ status: 'PENDING' })]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.paymentStatus).toBe('pending');
+    // The flag the Consumer branches on to suppress a second payment.
+    expect(response.body.error.details.gatewayPending).toBe(true);
+    // And nothing is settled on the strength of a pending attempt.
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('a PENDING attempt is detected even alongside terminal failures', async () => {
+    // A customer who failed once and then started a UPI collect. The failure
+    // must not mask the outstanding attempt.
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([
+      payment({ status: 'FAILED', paymentId: '1' }),
+      payment({ status: 'PENDING', paymentId: '2' }),
+    ]);
+
+    const response = await verifyRequest();
+
+    expect(response.body.error.details.gatewayPending).toBe(true);
+  });
+
+  test('a PENDING attempt counts even when its amount is not final', async () => {
+    // An in-flight attempt may not carry a settled amount yet. The safe
+    // reading of any outstanding attempt is still "do not invite a retry", so
+    // the pending check is deliberately not amount-filtered.
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([
+      payment({ status: 'PENDING', amountPaise: null }),
+    ]);
+
+    const response = await verifyRequest();
+
+    expect(response.body.error.details.gatewayPending).toBe(true);
+  });
+
+  test.each([['FAILED'], ['USER_DROPPED'], ['CANCELLED'], ['VOID'], ['NOT_ATTEMPTED']])(
+    'a terminal %s payment stays retryable (gatewayPending false)',
+    async (status) => {
+      models.Order.findByPk.mockResolvedValue(buildOrder());
+      cashfree.fetchOrderPayments.mockResolvedValue([payment({ status })]);
+
+      const response = await verifyRequest();
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.details.paymentStatus).toBe('pending');
+      // Nothing was taken, so the Consumer may offer another payment.
+      expect(response.body.error.details.gatewayPending).toBe(false);
+    }
+  );
+
+  test('no payment attempt at all stays retryable', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.gatewayPending).toBe(false);
+  });
+
+  test('an unreachable gateway never claims gatewayPending either way', async () => {
+    // 503 carries no payment claim at all - see the reachability test above.
+    // This guards against the unreachable branch quietly reporting a shape the
+    // Consumer would read as "safe to retry".
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockRejectedValue(new Error('Cashfree payment fetch timed out'));
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.details && response.body.error.details.gatewayPending).toBeUndefined();
+  });
+
+  test('a SUCCESS alongside a PENDING still settles the order exactly once', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([
+      payment({ status: 'PENDING', paymentId: '1' }),
+      payment({ status: 'SUCCESS', paymentId: '2' }),
+    ]);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentStatus).toBe('paid');
+    expect(models.PaymentStatusLog.create).toHaveBeenCalledTimes(1);
+    expect(models.OrderStatusLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('is idempotent: re-verifying an already paid order succeeds without rewriting', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'paid' }));
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentStatus).toBe('paid');
+    // No second transition, no second kitchen ticket.
+    expect(models.Order.update).not.toHaveBeenCalled();
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  test('an order with no gateway order is a 400', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(400);
+  });
+
+  test('an unknown order is a 404', async () => {
+    models.Order.findByPk.mockResolvedValue(null);
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(404);
+  });
+
+  test('a refunded order is refused with its authoritative status', async () => {
+    models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'refunded' }));
+
+    const response = await verifyRequest();
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.paymentStatus).toBe('refunded');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The post-payment seam
 // ---------------------------------------------------------------------------
 
 /**
@@ -189,407 +631,47 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
  * payment, and three kitchen tickets for one order.
  */
 describe('payment starts fulfilment, exactly once', () => {
-  const CONFIRMED_STATUS_ID = 22;
-  const INITIATED_STATUS_ID = 21;
-
   test('a paid order becomes work for the kitchen', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
 
-    await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
+    await verifyRequest();
 
-    // initiated -> confirmed is what makes the order visible to the KDS.
     expect(models.Order.update).toHaveBeenCalledWith(
-      { statusId: CONFIRMED_STATUS_ID },
-      expect.objectContaining({
-        where: { id: ORDER_ID, statusId: INITIATED_STATUS_ID },
-      })
-    );
-    expect(models.OrderStatusLog.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderId: ORDER_ID,
-        newStatusId: CONFIRMED_STATUS_ID,
-        // No human made this change, so the audit row records none.
-        changedByUserId: null,
-        reason: 'Payment confirmed',
-      }),
-      expect.anything()
+      expect.objectContaining({ statusId: CONFIRMED_STATUS_ID }),
+      expect.objectContaining({ where: { id: ORDER_ID, statusId: INITIATED_STATUS_ID } })
     );
   });
 
-  test('the fulfilment write is a compare-and-set on initiated', async () => {
+  test('verify losing the race to the webhook produces no second ticket', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder());
-
-    await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
-
-    const confirmCall = models.Order.update.mock.calls.find(
-      ([values]) => values.statusId === CONFIRMED_STATUS_ID
-    );
-
-    // An order a human already confirmed, or already rejected, is left alone.
-    expect(confirmCall[1].where.statusId).toBe(INITIATED_STATUS_ID);
-  });
-
-  test('a payment that lost the race creates no kitchen work', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    // The paid transition matched zero rows: a webhook got there first, and it
-    // already confirmed the order.
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
+    // The compare-and-set matches zero rows: the webhook already moved it.
     models.Order.update.mockResolvedValue([0]);
 
-    await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
+    const response = await verifyRequest();
 
-    // The seam was never reached, so no second ticket and no second audit row.
+    // Still reported as paid - it IS paid, whoever recorded it.
+    expect(response.status).toBe(200);
+    expect(response.body.data.paymentStatus).toBe('paid');
+    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
     expect(models.OrderStatusLog.create).not.toHaveBeenCalled();
   });
-});
 
-describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
-  test('a valid signature marks the order paid', async () => {
+  test('a duplicate verify call does not produce a second ticket', async () => {
     models.Order.findByPk.mockResolvedValue(buildOrder());
+    cashfree.fetchOrderPayments.mockResolvedValue([payment()]);
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
+    await verifyRequest();
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.paymentStatus).toBe('paid');
-    expect(models.Order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ razorpayPaymentId: RAZORPAY_PAYMENT_ID }),
-      expect.anything()
-    );
-  });
+    const firstTicketCalls = models.OrderStatusLog.create.mock.calls.length;
+    expect(firstTicketCalls).toBe(1);
 
-  test('is idempotent: re-verifying an already-paid order succeeds without rewriting it', async () => {
+    // Second call: the order is now paid, so the idempotent short-circuit
+    // returns before any transition.
     models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'paid' }));
+    await verifyRequest();
 
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: 'anything',
-      });
-
-    // This is the property the whole recovery flow rests on: a Consumer that
-    // lost the response, was refreshed, or reconnected can re-send the same
-    // credentials to learn the truth, and cannot take a second payment by
-    // doing so.
-    expect(response.status).toBe(200);
-    expect(response.body.data.paymentStatus).toBe('paid');
-    expect(models.Order.update).not.toHaveBeenCalled();
+    expect(models.OrderStatusLog.create).toHaveBeenCalledTimes(firstTicketCalls);
   });
-
-  test('an invalid signature is a 400 whose details name the signature field', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: 'definitely-not-the-right-signature',
-      });
-
-    expect(response.status).toBe(400);
-    // isSignatureVerificationFailure() looks for an ARRAY of details with a
-    // `razorpaySignature` field. It treats that as permanent and stops
-    // offering payment, so the shape has to stay exactly this.
-    expect(Array.isArray(response.body.error.details)).toBe(true);
-    expect(response.body.error.details.some((d) => d.field === 'razorpaySignature')).toBe(true);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('an order with no razorpay order id is a 400 that is NOT a signature rejection', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder({ razorpayOrderId: null }));
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: 'whatever',
-      });
-
-    expect(response.status).toBe(400);
-    // Both cases are 400, so status alone cannot separate them. This one must
-    // not look like a signature rejection, or the Consumer would show the
-    // permanent "do not pay again" screen for a recoverable condition.
-    const details = response.body.error.details;
-    const looksLikeSignatureRejection =
-      Array.isArray(details) && details.some((d) => d && d.field === 'razorpaySignature');
-    expect(looksLikeSignatureRejection).toBe(false);
-  });
-
-  test('a refunded order is refused with 409 rather than being re-paid', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder({ paymentStatusCode: 'refunded' }));
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: 'anything',
-      });
-
-    expect(response.status).toBe(409);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('a tampered payment id does not verify against a signature for another payment', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: 'pay_SOMEONE_ELSES',
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
-
-    expect(response.status).toBe(400);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Convergence with the webhook path
-// ---------------------------------------------------------------------------
-
-describe('payment-verify converges with the webhook', () => {
-  test('the paid transition is a compare-and-set, not an unconditional write', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-
-    await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
-
-    // The status read happens outside the transaction, so the webhook can
-    // commit `paid` in between. Without the pending guard in the WHERE clause
-    // this write lands anyway and the two paths both "apply" the transition.
-    expect(models.Order.update).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        where: expect.objectContaining({ paymentStatusId: expect.anything() }),
-      })
-    );
-  });
-
-  test('an order already marked paid by the webhook mid-request writes no second status log', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    // The webhook won: the conditional update matches zero rows.
-    models.Order.update.mockResolvedValue([0]);
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-verify`)
-      .send({
-        razorpayPaymentId: RAZORPAY_PAYMENT_ID,
-        razorpaySignature: validSignature('test_secret', RAZORPAY_ORDER_ID, RAZORPAY_PAYMENT_ID),
-      });
-
-    // The customer is still told the truth: the payment IS paid.
-    expect(response.status).toBe(200);
-    expect(response.body.data.paymentStatus).toBe('paid');
-
-    // But the transition already happened once, so it must not be logged
-    // again. This is the seam where post-payment side effects will be
-    // attached, and a duplicate here becomes a duplicate kitchen ticket.
-    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Reconciliation with Razorpay (payment-init on an already-initialised order)
-// ---------------------------------------------------------------------------
-
-describe('reconciliation against Razorpay records', () => {
-  beforeEach(() => {
-    mockFetchPayments.mockReset();
-  });
-
-  test('a captured payment for the exact amount settles the order and reports it as paid', async () => {
-    // Neither the browser callback nor the webhook ever arrived; Razorpay's
-    // own records are the only remaining source of truth.
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockResolvedValue({
-      items: [{ id: RAZORPAY_PAYMENT_ID, status: 'captured', amount: 25000, currency: 'INR' }],
-    });
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    // The 409 shape payment-init already used for a settled order, so the
-    // Consumer's existing recovery moves straight to confirmation.
-    expect(response.status).toBe(409);
-    expect(response.body.error.details.paymentStatus).toBe('paid');
-    expect(models.Order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ razorpayPaymentId: RAZORPAY_PAYMENT_ID }),
-      expect.objectContaining({
-        where: expect.objectContaining({ paymentStatusId: expect.anything() }),
-      })
-    );
-  });
-
-  test('an authorized-but-uncaptured payment does NOT mark the order paid', async () => {
-    // This codebase never calls payments.capture(), so authorised money has
-    // not been taken. Accepting it would hand out food for nothing.
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockResolvedValue({
-      items: [{ id: RAZORPAY_PAYMENT_ID, status: 'authorized', amount: 25000 }],
-    });
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('a captured payment for the WRONG amount does not mark the order paid', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockResolvedValue({
-      items: [{ id: RAZORPAY_PAYMENT_ID, status: 'captured', amount: 100 }],
-    });
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('a failed payment does not mark the order paid', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockResolvedValue({
-      items: [{ id: RAZORPAY_PAYMENT_ID, status: 'failed', amount: 25000 }],
-    });
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('no payments at all leaves the order payable', async () => {
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockResolvedValue({ items: [] });
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.razorpayOrderId).toBe(RAZORPAY_ORDER_ID);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('a Razorpay outage does not break a legitimate retry', async () => {
-    // Not knowing is the status quo. Failing here would block a customer
-    // retrying a genuinely failed payment whenever Razorpay is unreachable.
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockRejectedValue(new Error('ECONNRESET'));
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.razorpayOrderId).toBe(RAZORPAY_ORDER_ID);
-    expect(models.Order.update).not.toHaveBeenCalled();
-  });
-
-  test('reconciliation is not attempted for an order that was never initialised', async () => {
-    // No razorpay order exists yet, so there is nothing to reconcile against
-    // and no reason to spend a Razorpay API call on every first payment.
-    models.Order.findByPk.mockResolvedValue(buildOrder({ razorpayOrderId: null }));
-    mockFetchPayments.mockResolvedValue({ items: [] });
-
-    await request(app).post(`/api/consumer/orders/${ORDER_ID}/payment-init`).send({});
-
-    expect(mockFetchPayments).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Reconciliation timeout
-// ---------------------------------------------------------------------------
-
-describe('reconciliation is bounded in time', () => {
-  beforeEach(() => {
-    mockFetchPayments.mockReset();
-  });
-
-  test('a Razorpay call that never settles does not hang payment-init', async () => {
-    // A promise that never resolves or rejects - the actual production
-    // failure mode. A rejected promise would prove nothing here, because the
-    // existing catch already handles rejections; what has to be proven is
-    // that we stop WAITING on a request that simply never answers.
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-    mockFetchPayments.mockReturnValue(new Promise(() => {}));
-
-    const startedAt = Date.now();
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-    const elapsed = Date.now() - startedAt;
-
-    // Payment stays usable: the customer is handed their razorpay order.
-    expect(response.status).toBe(200);
-    expect(response.body.data.razorpayOrderId).toBe(RAZORPAY_ORDER_ID);
-
-    // A timeout is not evidence about the payment, so nothing is written.
-    expect(models.Order.update).not.toHaveBeenCalled();
-    expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
-
-    // Bounded, and by the timeout rather than by luck.
-    expect(elapsed).toBeGreaterThanOrEqual(3500);
-    expect(elapsed).toBeLessThan(8000);
-  }, 15000);
-
-  test('a late rejection after the timeout does not crash the process', async () => {
-    // The losing promise rejects after we have already responded. Without an
-    // attached handler this is an unhandled rejection, which Node terminates on
-    // by default.
-    models.Order.findByPk.mockResolvedValue(buildOrder());
-
-    let rejectLate;
-    mockFetchPayments.mockReturnValue(
-      new Promise((_resolve, reject) => {
-        rejectLate = reject;
-      })
-    );
-
-    const unhandled = jest.fn();
-    process.once('unhandledRejection', unhandled);
-
-    const response = await request(app)
-      .post(`/api/consumer/orders/${ORDER_ID}/payment-init`)
-      .send({});
-    expect(response.status).toBe(200);
-
-    rejectLate(new Error('socket hang up'));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(unhandled).not.toHaveBeenCalled();
-    process.off('unhandledRejection', unhandled);
-  }, 15000);
 });

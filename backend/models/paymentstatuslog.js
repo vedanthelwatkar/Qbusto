@@ -40,7 +40,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
-      razorpayPaymentId: {
+      gatewayPaymentId: {
         type: DataTypes.STRING(100),
         allowNull: true,
       },

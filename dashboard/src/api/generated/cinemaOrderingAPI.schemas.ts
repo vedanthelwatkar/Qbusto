@@ -470,7 +470,7 @@ export type KitchenOrderItemsItem = {
 };
 
 /**
- * An order as a kitchen screen sees it. Deliberately narrower than `Order`: a KDS hangs on a wall where anyone can read it, so customer mobile, customer email and the razorpay_* identifiers are not included. Only orders that are paid and in a kitchen-owned fulfilment status are ever returned. Money is a JSON number, as elsewhere in this API.
+ * An order as a kitchen screen sees it. Deliberately narrower than `Order`: a KDS hangs on a wall where anyone can read it, so customer mobile, customer email and the gateway_* identifiers are not included. Only orders that are paid and in a kitchen-owned fulfilment status are ever returned. Money is a JSON number, as elsewhere in this API.
  */
 export interface KitchenOrder {
   /** Also the token number a cook calls out - the schema has no separate one. */
@@ -531,7 +531,7 @@ export interface OrderStatusLog {
      * Payment logs only, and always null in this phase - the staff-operated payment endpoint takes no gateway identifiers.
      * @nullable
      */
-  razorpayPaymentId?: string | null;
+  gatewayPaymentId?: string | null;
   createdAt?: string;
 }
 
@@ -648,12 +648,12 @@ export interface Order {
   /** @nullable */
   whatsappStatus?: OrderWhatsappStatus;
   /**
-     * Written by the Razorpay integration phase. Null otherwise.
+     * The payment gateway's order identifier. Null before payment-init runs.
      * @nullable
      */
-  razorpayOrderId?: string | null;
+  gatewayOrderId?: string | null;
   /** @nullable */
-  razorpayPaymentId?: string | null;
+  gatewayPaymentId?: string | null;
   /** @nullable */
   notes?: string | null;
   /**
@@ -1879,11 +1879,14 @@ export type PostApiConsumerOrdersOrderIdPaymentInitBody = { [key: string]: unkno
 
 export type PostApiConsumerOrdersOrderIdPaymentInit200Data = {
   orderId?: number;
-  /** Razorpay order ID */
-  razorpayOrderId?: string;
-  /** Razorpay public key */
-  razorpayKeyId?: string;
-  /** Amount in paise */
+  /** The payment gateway's order identifier. */
+  gatewayOrderId?: string;
+  /**
+     * Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued; the caller should retry rather than treat it as a failure.
+     * @nullable
+     */
+  paymentSessionId?: string | null;
+  /** Amount in paise. */
   amount?: number;
   currency?: string;
 };
@@ -1892,10 +1895,7 @@ export type PostApiConsumerOrdersOrderIdPaymentInit200 = SuccessResponse & {
   data?: PostApiConsumerOrdersOrderIdPaymentInit200Data;
 };
 
-export type PostApiConsumerOrdersOrderIdPaymentVerifyBody = {
-  razorpayPaymentId: string;
-  razorpaySignature: string;
-};
+export type PostApiConsumerOrdersOrderIdPaymentVerifyBody = { [key: string]: unknown };
 
 export type PostApiConsumerOrdersOrderIdPaymentVerify200DataPaymentStatus = typeof PostApiConsumerOrdersOrderIdPaymentVerify200DataPaymentStatus[keyof typeof PostApiConsumerOrdersOrderIdPaymentVerify200DataPaymentStatus];
 

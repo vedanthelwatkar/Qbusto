@@ -34,7 +34,7 @@ export function createOrder(
 }
 
 /**
- * Initialize Razorpay payment (idempotent)
+ * Initialize a gateway payment session (idempotent)
  * @param orderId Order ID from order creation
  * @param body Request body (empty)
  */
@@ -53,9 +53,9 @@ export function initPayment(
 }
 
 /**
- * Verify payment signature (idempotent)
+ * Confirm the payment with the gateway (idempotent)
  * @param orderId Order ID
- * @param body Razorpay payment details
+ * @param body Request body (empty - the backend asks the gateway directly)
  */
 export function verifyPayment(
   orderId: number,

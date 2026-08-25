@@ -313,7 +313,7 @@ The consumer API requires the `Idempotency-Key` header on every order creation r
 
 ### Payment webhook deliveries
 
-`razorpay_webhook_events` records every webhook delivery Razorpay makes to the
+`payment_webhook_events` records every webhook delivery Cashfree makes to the
 application, and is what makes handling them safe to repeat.
 
 A gateway may deliver the same event more than once, or out of order. The table
@@ -322,7 +322,7 @@ redelivery fails the insert rather than being caught by an application-side
 check. Where a delivery carries no identifier, the handler derives a stable key
 from the event name and its subject, so the column is never null.
 
-`order_id` is deliberately nullable. An event naming a Razorpay order this
+`order_id` is deliberately nullable. An event naming a Cashfree order this
 system does not recognise still needs recording; a NOT NULL foreign key would
 force the delivery to be dropped and lose the evidence that it arrived. This is
 the opposite of `idempotency_keys.order_id`, which is NOT NULL because it only
@@ -335,11 +335,11 @@ The table records deliveries; it does not decide payment state. Moving an order
 from pending to paid is a conditional update on `orders` itself, so even a
 duplicate that somehow got past `event_id` cannot apply the transition twice.
 
-Separately, `orders.razorpay_order_id` carries a **filtered** unique index
-(`WHERE razorpay_order_id IS NOT NULL`). The filter is necessary rather than
+Separately, `orders.gateway_order_id` carries a **filtered** unique index
+(`WHERE gateway_order_id IS NOT NULL`). The filter is necessary rather than
 tidy: SQL Server treats NULLs as equal in a unique index, so an unfiltered one
 would allow only a single order without a gateway order id. With the filter,
-one Razorpay order maps to at most one QBusto order, while unpaid orders stay
+one Cashfree order maps to at most one QBusto order, while unpaid orders stay
 unconstrained.
 
 ---
@@ -527,5 +527,5 @@ Other deferred ideas, such as price change logs and login audit logs, are not re
 - The payment gateway encryption key is outside the database
 - POS credentials remain separate from payment gateway credentials
 - **Consumer API idempotency (Phase 1)**: `idempotency_keys` table maps UUID header values to order IDs, enabling safe retry of order creation
-- **Payment webhooks**: `razorpay_webhook_events` deduplicates gateway deliveries on a unique `event_id`, and `orders.razorpay_order_id` has a filtered unique index
+- **Payment webhooks**: `payment_webhook_events` deduplicates gateway deliveries on a unique `event_id`, and `orders.gateway_order_id` has a filtered unique index
 - `source_discounts` stays deferred

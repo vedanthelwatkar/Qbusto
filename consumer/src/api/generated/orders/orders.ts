@@ -83,7 +83,7 @@ const putApiOrdersIdStatus = (
   /**
  * The staff-operated payment path: cash taken at the counter, a refund granted, a failed attempt written off. Transitions are `pending` to `paid` or `failed`, `failed` back to `pending` or on to `paid`, and `paid` to `refunded`, which is terminal.
  *
- * The order update and the `payment_status_logs` entry are written in one transaction. Asking for the status the payment is already in is a no-op. This endpoint takes no gateway identifiers and does not touch the `razorpay_*` columns - gateway-driven payment confirmation belongs to the Razorpay integration phase. Requires the Orders module edit permission.
+ * The order update and the `payment_status_logs` entry are written in one transaction. Asking for the status the payment is already in is a no-op. This endpoint takes no gateway identifiers and does not touch the `gateway_*` columns - gateway-driven payment confirmation belongs to the payment gateway integration. Requires the Orders module edit permission.
  * @summary Move an order's payment to a new status
  */
 const putApiOrdersIdPaymentStatus = (

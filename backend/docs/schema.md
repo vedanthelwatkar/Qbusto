@@ -1,8 +1,13 @@
 # QBusto Database Schema
 
 > Technical source of truth for the database.
-> Last updated: 2026-08-18
-> Revision: 9 - added `razorpay_webhook_events` and the filtered unique index on `orders.razorpay_order_id`.
+> Last updated: 2026-08-25
+> Revision: 10 - renamed all Razorpay-specific payment columns/table to
+> provider-neutral names (`20260825000100-rename-payment-columns-provider-neutral.js`),
+> ahead of the Razorpay → Cashfree payment gateway migration. Applied to the
+> live database and verified. See below for current names.
+> Revision: 9 - added `razorpay_webhook_events` (since renamed, see Revision 10)
+> and the filtered unique index on `orders.razorpay_order_id` (since renamed).
 
 ---
 
@@ -12,7 +17,7 @@
 
 Active tables:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, razorpay_webhook_events.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, payment_webhook_events.
 
 Deferred and not in the active schema:
 
@@ -30,7 +35,7 @@ chains, cinemas, screens, categories, cinema_categories, products, cinema_produc
 
 Tables intentionally not given audit-user fields:
 
-users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions, idempotency_keys, shows, razorpay_webhook_events.
+users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions, idempotency_keys, shows, payment_webhook_events.
 
 Reasons:
 
@@ -38,7 +43,7 @@ Reasons:
 - `order_pos_context` is immutable after creation.
 - `pos_transactions` is an operational audit trail.
 - `shows` rows are machine-written by the POS sync, not authored by a user.
-- `razorpay_webhook_events` rows are written by the gateway webhook handler, not by a user.
+- `payment_webhook_events` rows are written by the gateway webhook handler, not by a user.
 - `orders` and `order_items` are business/history records where per-row creator/updater FKs add little value.
 - `users` should not be self-referenced with audit fields unless a future requirement explicitly needs it.
 
@@ -361,9 +366,9 @@ Seeded values: pending, paid, failed, refunded.
 | payment_status_id   | int           | FK -> payment_statuses.id, NOT NULL               |
 | sms_status          | varchar(20)   | nullable, CHECK IN ('pending','success','failed') |
 | whatsapp_status     | varchar(20)   | nullable, CHECK IN ('pending','success','failed') |
-| razorpay_order_id   | varchar(100)  | nullable                                          |
-| razorpay_payment_id | varchar(100)  | nullable                                          |
-| razorpay_signature  | varchar(255)  | nullable                                          |
+| gateway_order_id   | varchar(100)  | nullable                                          |
+| gateway_payment_id | varchar(100)  | nullable                                          |
+| gateway_signature  | varchar(255)  | nullable                                          |
 | notes               | varchar(500)  | nullable                                          |
 | delivered_at        | datetime2     | nullable                                          |
 | created_at          | datetime2     | NOT NULL                                          |
@@ -375,17 +380,17 @@ Seeded values: pending, paid, failed, refunded.
 
 The existing status master architecture remains unchanged. `orders.status_id` and `orders.payment_status_id` continue to point to the status master tables.
 
-`razorpay_order_id` carries a filtered unique index:
+`gateway_order_id` carries a filtered unique index:
 
 ```sql
-CREATE UNIQUE INDEX UX_orders_razorpay_order_id
-ON orders(razorpay_order_id)
-WHERE razorpay_order_id IS NOT NULL;
+CREATE UNIQUE INDEX UX_orders_gateway_order_id
+ON orders(gateway_order_id)
+WHERE gateway_order_id IS NOT NULL;
 ```
 
 The filter is required, not cosmetic. SQL Server treats NULLs as equal in a
 unique index, so an unfiltered one would permit only a single order without a
-Razorpay order id. With the filter, one gateway order maps to at most one
+Cashfree order id. With the filter, one gateway order maps to at most one
 QBusto order while unpaid orders remain unconstrained.
 
 ---
@@ -433,7 +438,7 @@ The status update and the log insert must happen in the same database transactio
 | previous_status_id  | int          | FK -> payment_statuses.id, nullable |
 | new_status_id       | int          | FK -> payment_statuses.id, NOT NULL |
 | changed_by_user_id  | int          | FK -> users.id, nullable            |
-| razorpay_payment_id | varchar(100) | nullable                            |
+| gateway_payment_id | varchar(100) | nullable                            |
 | reason              | varchar(500) | nullable                            |
 | created_at          | datetime2    | NOT NULL                            |
 
@@ -657,7 +662,7 @@ original order rather than creating a second one. The guarantee is the
 constraint, not an application-side check-then-write.
 
 `order_id` is NOT NULL: a key only ever exists because an order was created for
-it. This is the opposite of `razorpay_webhook_events.order_id`, which is
+it. This is the opposite of `payment_webhook_events.order_id`, which is
 nullable precisely because a delivery can name an order this system does not
 recognise.
 
@@ -835,17 +840,17 @@ Only one active payment gateway configuration should exist per cinema at a time.
 
 ---
 
-## razorpay_webhook_events
+## payment_webhook_events
 
-Durable record of every Razorpay webhook delivery that reached the application.
+Durable record of every Cashfree webhook delivery that reached the application.
 
 | Column              | Type        | Constraints               |
 | ------------------- | ----------- | ------------------------- |
 | id                  | int         | PK auto                   |
 | event_id            | varchar(64) | NOT NULL, UNIQUE          |
 | event               | varchar(50) | NOT NULL                  |
-| razorpay_order_id   | varchar(50) | nullable                  |
-| razorpay_payment_id | varchar(50) | nullable                  |
+| gateway_order_id   | varchar(50) | nullable                  |
+| gateway_payment_id | varchar(50) | nullable                  |
 | order_id            | int         | FK -> orders.id, nullable |
 | outcome             | varchar(30) | NOT NULL                  |
 | reason              | varchar(60) | nullable                  |
@@ -856,18 +861,18 @@ Indexes:
 
 ```sql
 -- Created as a UNIQUE constraint on event_id.
-CREATE INDEX IX_razorpay_webhook_events_razorpay_order_id
-ON razorpay_webhook_events(razorpay_order_id);
+CREATE INDEX IX_payment_webhook_events_gateway_order_id
+ON payment_webhook_events(gateway_order_id);
 ```
 
-`event_id` is the deduplication key. Razorpay may deliver the same event more
+`event_id` is the deduplication key. Cashfree may deliver the same event more
 than once, or out of order, so the UNIQUE constraint is the entire
 "process this event once" mechanism - a redelivery fails the insert rather than
 being caught by an application-side check-then-write. Where a delivery carries
 no event identifier, the handler derives a stable key from the event name and
 its subject so the column is never null.
 
-`order_id` is **nullable on purpose**. An event naming a Razorpay order this
+`order_id` is **nullable on purpose**. An event naming a Cashfree order this
 system does not recognise must still be recorded, and a NOT NULL foreign key
 would make that impossible - the delivery would have to be dropped, losing the
 evidence that it arrived. `idempotency_keys.order_id` is NOT NULL for the
@@ -930,7 +935,7 @@ Orders and status history:
 - `payment_status_logs.previous_status_id -> payment_statuses.id`
 - `payment_status_logs.new_status_id -> payment_statuses.id`
 - `payment_status_logs.changed_by_user_id -> users.id`
-- `razorpay_webhook_events.order_id -> orders.id`
+- `payment_webhook_events.order_id -> orders.id`
 
 POS and payment gateway:
 
@@ -1008,9 +1013,9 @@ Unique constraints and indexes used in the active schema:
 - `pos_transactions(order_id)` non-unique index
 - `shows(pos_integration_id, external_session_id)` unique
 - `shows(cinema_id, show_time)` non-unique index
-- `razorpay_webhook_events.event_id` unique
-- `razorpay_webhook_events(razorpay_order_id)` non-unique index
-- filtered unique index on `orders(razorpay_order_id)` where `razorpay_order_id IS NOT NULL`
+- `payment_webhook_events.event_id` unique
+- `payment_webhook_events(gateway_order_id)` non-unique index
+- filtered unique index on `orders(gateway_order_id)` where `gateway_order_id IS NOT NULL`
 
 Checks:
 

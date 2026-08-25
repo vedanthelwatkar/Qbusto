@@ -2,7 +2,7 @@
  * The payment screen's state machine.
  *
  * It was previously implicit: six independent booleans on one state object
- * (`isInitializing`, `isProcessing`, `razorpayReady`, `razorpayTimedOut`,
+ * (`isInitializing`, `isProcessing`, `sdkReady`, `sdkTimedOut`,
  * `verificationRejected`, plus a nullable `error`), read in combination at
  * every render. Nothing prevented contradictory combinations, and nothing
  * stopped a late response writing over a newer outcome — a stale failure
@@ -28,7 +28,7 @@ export type PaymentPhase =
   | 'idle'
   /** payment-init in flight. */
   | 'initializing'
-  /** Have a razorpay order and amount; the customer may pay. */
+  /** Have a payment session and amount; the customer may pay. */
   | 'ready'
   /** Provider widget open. Money may or may not have moved. */
   | 'opening'
@@ -120,19 +120,29 @@ const TRANSITIONS: Record<PaymentPhase, readonly PaymentPhase[]> = {
   idle: ['initializing', 'unresolved', 'confirmed', 'rejected', 'error'],
   initializing: ['ready', 'error', 'unresolved', 'confirmed', 'rejected'],
   ready: ['opening', 'error', 'initializing'],
-  // `error` included because `new Razorpay()` / `rzp.open()` can throw. The
+  // `error` included because opening the gateway checkout can throw. The
   // widget never opened in that case, so no money moved and the customer must
   // be able to act; without it the page hung on "Payment window open…" with the
   // back button disabled and no way forward.
   opening: ['verifying', 'failed', 'cancelled', 'unresolved', 'error'],
-  verifying: ['confirmed', 'rejected', 'unresolved'],
+  // `failed` is reachable ONLY on an authoritative negative from the backend:
+  // the gateway was reached and holds no successful payment for this order.
+  // That is evidence nothing was charged, which is what makes offering a retry
+  // safe - and it is a different thing entirely from `unresolved`, which is
+  // "we could not find out" and deliberately never decays into `failed`.
+  //
+  // Without this the commonest outcome of all - the customer closing the
+  // checkout - was refused by `reduce()` and left the screen stuck on the
+  // "Confirming your payment" spinner with no Pay button, no status button and
+  // the back control disabled.
+  verifying: ['confirmed', 'rejected', 'unresolved', 'failed'],
   unresolved: ['verifying', 'confirmed', 'rejected', 'unresolved'],
   confirmed: [],
   rejected: [],
   // `idle` is reachable from each of these so a retry can re-run payment-init
   // from a clean slate. It is safe only because all three mean no money moved.
   //
-  // `verifying`/`unresolved` are reachable from `failed` because Razorpay's
+  // `verifying`/`unresolved` are reachable from `failed` because the gateway's
   // widget stays OPEN after a payment.failed event: the customer can retry
   // inside it and succeed. Without these the success callback was refused, the
   // screen kept saying "Payment failed" beside a live Pay button, and tapping

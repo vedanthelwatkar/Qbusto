@@ -35,7 +35,7 @@ const REQUIRED_ENV = {
   JWT: ['JWT_SECRET'],
 };
 
-const RAZORPAY_ENV = ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'];
+const CASHFREE_ENV = ['CASHFREE_APP_ID', 'CASHFREE_SECRET_KEY'];
 
 const results = [];
 
@@ -44,24 +44,24 @@ function record(passed, label, details = []) {
 }
 
 /**
- * Razorpay is treated as enabled when RAZORPAY_ENABLED says so explicitly, or -
- * when that flag is absent - when any RAZORPAY_* variable has been configured.
- * That way a deployment that half-configures Razorpay is caught rather than
- * silently skipped.
+ * Cashfree is treated as enabled when CASHFREE_ENABLED says so explicitly, or -
+ * when that flag is absent - when any CASHFREE_* credential has been
+ * configured. That way a deployment that half-configures payments is caught
+ * rather than silently skipped.
  */
-function razorpayEnabled() {
-  if (process.env.RAZORPAY_ENABLED !== undefined) {
-    return process.env.RAZORPAY_ENABLED === 'true';
+function cashfreeEnabled() {
+  if (process.env.CASHFREE_ENABLED !== undefined) {
+    return process.env.CASHFREE_ENABLED === 'true';
   }
-  return RAZORPAY_ENV.some((name) => (process.env[name] || '').trim() !== '');
+  return CASHFREE_ENV.some((name) => (process.env[name] || '').trim() !== '');
 }
 
 // ---- Environment variables (no imports, so nothing can crash first) --------
 
 function checkEnvironment() {
   const groups = { ...REQUIRED_ENV };
-  if (razorpayEnabled()) {
-    groups.RAZORPAY = RAZORPAY_ENV;
+  if (cashfreeEnabled()) {
+    groups.CASHFREE = CASHFREE_ENV;
   }
 
   const details = [];
@@ -75,8 +75,8 @@ function checkEnvironment() {
     }
   }
 
-  if (passed && !razorpayEnabled()) {
-    details.push('Razorpay not enabled - RAZORPAY_* not required');
+  if (passed && !cashfreeEnabled()) {
+    details.push('Cashfree not enabled - CASHFREE_* not required');
   }
 
   record(passed, 'Environment variables valid', details);

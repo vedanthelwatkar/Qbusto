@@ -318,6 +318,9 @@
     padding: 0 var(--space-lg) var(--space-lg);
     border-top: 1px solid var(--color-border);
     padding-top: var(--space-lg);
+    /* Same reason as `.field`: this is a block inside a flex column, and its
+       contents must never establish a width the sheet cannot honour. */
+    min-width: 0;
   }
 
   &__fields {
@@ -340,6 +343,13 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-md);
+
+    /* Grid items carry the same `min-width: auto` default that made the show
+       picker overflow. `1fr` alone does not prevent it - a track will still
+       grow past its share for a child that refuses to shrink. */
+    > * {
+      min-width: 0;
+    }
   }
 
   &__secure {

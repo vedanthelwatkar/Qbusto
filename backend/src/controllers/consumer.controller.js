@@ -148,9 +148,9 @@ async function paymentInit(req, res, next) {
       message: 'Payment initialized',
     });
   } catch (error) {
-    if (error.message && error.message.includes('Razorpay API unavailable')) {
+    if (error.message && error.message.includes('Cashfree API unavailable')) {
       return next(
-        new ServiceUnavailableError('Razorpay API temporarily unavailable, please retry')
+        new ServiceUnavailableError('Payment provider temporarily unavailable, please retry')
       );
     }
     next(error);
@@ -160,13 +160,12 @@ async function paymentInit(req, res, next) {
 async function paymentVerify(req, res, next) {
   try {
     const { orderId } = req.params;
-    const { razorpayPaymentId, razorpaySignature } = req.body;
 
-    const result = await consumerService.paymentVerify(
-      parseInt(orderId),
-      razorpayPaymentId,
-      razorpaySignature
-    );
+    // Deliberately takes nothing from the request body. Cashfree's hosted
+    // checkout gives the browser no cryptographic credential, so any payment
+    // identity a caller supplied would be an unverifiable assertion. The
+    // service asks Cashfree directly instead.
+    const result = await consumerService.paymentVerify(parseInt(orderId));
 
     return success(res, {
       data: result,

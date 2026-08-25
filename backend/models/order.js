@@ -104,15 +104,19 @@ module.exports = (sequelize, DataTypes) => {
           isIn: [NOTIFICATION_STATUSES],
         },
       },
-      razorpayOrderId: {
+      // Provider-neutral gateway identifiers. Renamed from razorpay_* in
+      // 20260825000100 so the schema does not name a provider it may outlive.
+      gatewayOrderId: {
         type: DataTypes.STRING(100),
         allowNull: true,
       },
-      razorpayPaymentId: {
+      gatewayPaymentId: {
         type: DataTypes.STRING(100),
         allowNull: true,
       },
-      razorpaySignature: {
+      // Present in the schema but never written. Kept because removing a
+      // column is destructive; see the rename migration.
+      gatewaySignature: {
         type: DataTypes.STRING(255),
         allowNull: true,
       },

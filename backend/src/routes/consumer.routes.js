@@ -399,7 +399,7 @@ router.post('/orders', consumerController.createOrder);
  * /api/consumer/orders/{orderId}/payment-init:
  *   post:
  *     tags: [Consumer - Orders]
- *     summary: Initialize Razorpay payment (idempotent)
+ *     summary: Initialize a Cashfree hosted-checkout payment (idempotent)
  *     parameters:
  *       - name: orderId
  *         in: path
@@ -426,24 +426,31 @@ router.post('/orders', consumerController.createOrder);
  *                       properties:
  *                         orderId:
  *                           type: integer
- *                         razorpayOrderId:
+ *                         gatewayOrderId:
  *                           type: string
- *                           description: Razorpay order ID
- *                         razorpayKeyId:
+ *                           description: The payment gateway's order identifier.
+ *                         paymentSessionId:
  *                           type: string
- *                           description: Razorpay public key
+ *                           nullable: true
+ *                           description: >
+ *                             Short-lived token for the Cashfree hosted checkout.
+ *                             Null when a session could not be issued; the caller
+ *                             should retry rather than treat it as a failure.
  *                         amount:
  *                           type: integer
- *                           description: Amount in paise
+ *                           description: Amount in paise.
  *                         currency:
  *                           type: string
  *                           example: INR
  *       404:
  *         description: Order not found
  *       409:
- *         description: Order not in pending payment state
+ *         description: >
+ *           Order not in pending payment state. `error.details.paymentStatus`
+ *           carries the authoritative status and is what the Consumer's
+ *           recovery flow reads.
  *       503:
- *         description: Razorpay API unavailable
+ *         description: Payment provider temporarily unavailable
  */
 router.post('/orders/:orderId/payment-init', consumerController.paymentInit);
 
@@ -452,27 +459,27 @@ router.post('/orders/:orderId/payment-init', consumerController.paymentInit);
  * /api/consumer/orders/{orderId}/payment-verify:
  *   post:
  *     tags: [Consumer - Orders]
- *     summary: Verify Razorpay payment signature (idempotent)
+ *     summary: Confirm a payment with the gateway (idempotent)
+ *     description: >
+ *       Asks Cashfree directly whether this order has been paid, and settles it
+ *       if so. Takes no payment identity from the caller: Cashfree's hosted
+ *       checkout hands the browser no cryptographic credential, so anything a
+ *       client supplied would be an unverifiable assertion. The request means
+ *       only "my checkout finished, please look".
  *     parameters:
  *       - name: orderId
  *         in: path
  *         required: true
  *         schema: { type: integer }
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [razorpayPaymentId, razorpaySignature]
- *             properties:
- *               razorpayPaymentId:
- *                 type: string
- *               razorpaySignature:
- *                 type: string
  *     responses:
  *       200:
- *         description: Payment verified
+ *         description: Payment confirmed by the gateway
  *         content:
  *           application/json:
  *             schema:
@@ -489,11 +496,25 @@ router.post('/orders/:orderId/payment-init', consumerController.paymentInit);
  *                           type: string
  *                           enum: [paid]
  *       400:
- *         description: Invalid signature or missing Razorpay order
+ *         description: Order has no gateway order
  *       404:
  *         description: Order not found
  *       409:
- *         description: Order not in pending payment state
+ *         description: >
+ *           Either the order has already left the pending state, or the gateway
+ *           was reached and holds no successful payment yet.
+ *           `error.details.paymentStatus` distinguishes the two.
+ *           When `paymentStatus` is `pending`, `error.details.gatewayPending`
+ *           says whether an attempt is still IN FLIGHT at the gateway (a UPI
+ *           collect the customer has not approved yet). `true` means the
+ *           caller must NOT offer another payment - the outstanding attempt can
+ *           still succeed. `false` means every attempt reached a terminal
+ *           non-success, so nothing was charged and retrying is safe.
+ *       503:
+ *         description: >
+ *           The gateway could not be consulted, so the outcome is unknown. This
+ *           is deliberately NOT a 409 `pending`: the caller must treat it as
+ *           "ask again", not as evidence that nothing was charged.
  */
 router.post('/orders/:orderId/payment-verify', consumerController.paymentVerify);
 

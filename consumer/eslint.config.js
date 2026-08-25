@@ -44,9 +44,9 @@ export default defineConfig([
        * This is a React Compiler performance advisory about cascading renders,
        * not a correctness rule. Every current occurrence was inspected: they
        * read external state that only exists after mount (sessionStorage for
-       * the order id, window.Razorpay for the CDN script) or clear results
-       * before a refetch. None has an effect-free alternative that preserves
-       * current behaviour.
+       * the order id, the resolved `loadCashfree()` SDK promise) or clear
+       * results before a refetch. None has an effect-free alternative that
+       * preserves current behaviour.
        *
        * Restructuring proven payment code to satisfy a perf advisory
        * immediately before go-live is the larger risk - two payment bugs this

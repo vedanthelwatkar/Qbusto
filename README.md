@@ -30,7 +30,7 @@ Each application has its own README with full setup and configuration details.
    Kitchen      ─────▶│   (Express)  │
                       └──────┬───────┘
                              │
-                        Razorpay
+                        Cashfree
 ```
 
 The three frontends are static bundles. They hold no business rules: every
@@ -89,7 +89,7 @@ unaffected by that setting and stays where it is.
 | Dashboard  | React, TypeScript, Vite, Ant Design, Zustand, Sass           |
 | Kitchen    | React, TypeScript, Vite, Zustand, Sass                       |
 | API client | Orval, generated from OpenAPI                                |
-| Payments   | Razorpay                                                     |
+| Payments   | Cashfree (Hosted Checkout, `cashfree-pg` SDK)                 |
 | Testing    | Jest, supertest (backend)                                    |
 
 ---
@@ -98,7 +98,7 @@ unaffected by that setting and stays where it is.
 
 - Node.js LTS
 - Microsoft SQL Server (Express edition is sufficient for development)
-- A Razorpay account if payment features are required
+- A Cashfree account if payment features are required
 - GNU Make, if you want to use the convenience targets below
 
 ---
@@ -115,7 +115,7 @@ unaffected by that setting and stays where it is.
    `kitchen/`.
 
 2. **Configure the backend.** Copy `backend/.env.example` to `backend/.env` and
-   fill in the database credentials, a JWT secret, and Razorpay keys if
+   fill in the database credentials, a JWT secret, and Cashfree credentials if
    payments are needed. Every variable is documented in that file.
 
 3. **Create the database and load the schema:**
@@ -215,12 +215,17 @@ verified by TypeScript and ESLint (`npm run typecheck`, `npm run lint`,
 
 ## Production notes
 
-- Serve all applications over HTTPS. Razorpay requires an HTTPS webhook URL,
+- Serve all applications over HTTPS. Cashfree requires an HTTPS webhook URL,
   and browser payment features expect a secure context.
 - Set an explicit `CORS_ALLOWED_ORIGINS` list on the backend. A wildcard is a
   development convenience only and is warned about at startup.
 - Set a `JWT_SECRET` of at least 32 characters; this is enforced in production.
-- Configure `RAZORPAY_WEBHOOK_SECRET`; it is required in production.
+- Configure `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` and set
+  `CASHFREE_ENVIRONMENT=prod` (or `production`); all three are enforced at
+  startup. Register a webhook URL — either `CASHFREE_NOTIFY_URL` or an
+  equivalent endpoint added directly in the Cashfree Dashboard — before
+  go-live, or a payment where the customer never returns to the app has no
+  automatic way to settle.
 - Apply migrations and seeders on the target database before starting.
 - Uploaded images have one shared storage location for the whole platform,
   named by `FILE_STORAGE_PATH` and defaulting to `shared/uploads` beside the

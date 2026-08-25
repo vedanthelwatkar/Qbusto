@@ -308,17 +308,17 @@ export default function OrderDetailsDrawer({
               </Descriptions.Item>
               {/*
                 Shown only when a gateway payment was actually started. It is
-                reference for staff checking against the Razorpay dashboard;
+                reference for staff checking against the Cashfree dashboard;
                 nothing here acts on it.
               */}
-              {order.razorpayOrderId ? (
-                <Descriptions.Item label="Razorpay order">
-                  <Text copyable>{order.razorpayOrderId}</Text>
+              {order.gatewayOrderId ? (
+                <Descriptions.Item label="Gateway order">
+                  <Text copyable>{order.gatewayOrderId}</Text>
                 </Descriptions.Item>
               ) : null}
-              {order.razorpayPaymentId ? (
-                <Descriptions.Item label="Razorpay payment">
-                  <Text copyable>{order.razorpayPaymentId}</Text>
+              {order.gatewayPaymentId ? (
+                <Descriptions.Item label="Gateway payment">
+                  <Text copyable>{order.gatewayPaymentId}</Text>
                 </Descriptions.Item>
               ) : null}
             </Descriptions>
@@ -356,7 +356,7 @@ export default function OrderDetailsDrawer({
           orderId={order.id}
           currentPaymentStatus={order.paymentStatus}
           paymentStatuses={paymentStatuses}
-          razorpayOrderId={order.razorpayOrderId}
+          gatewayOrderId={order.gatewayOrderId}
           onClose={() => setPaymentTransitionOpen(false)}
           onSuccess={handleTransitioned}
         />

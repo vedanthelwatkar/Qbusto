@@ -53,8 +53,8 @@ const PUBLIC_ATTRIBUTES = [
   'paymentStatusId',
   'smsStatus',
   'whatsappStatus',
-  'razorpayOrderId',
-  'razorpayPaymentId',
+  'gatewayOrderId',
+  'gatewayPaymentId',
   'notes',
   'deliveredAt',
   'createdAt',
@@ -191,7 +191,7 @@ function serializeOrder(order) {
 
   if (order.paymentStatusLogs) {
     result.paymentStatusLogs = order.paymentStatusLogs.map((log) =>
-      serializeLog(log, { razorpayPaymentId: log.razorpayPaymentId })
+      serializeLog(log, { gatewayPaymentId: log.gatewayPaymentId })
     );
   }
 
@@ -767,10 +767,10 @@ async function updateOrderStatus(actor, orderId, { status, reason }) {
  * Move an order's payment to a new status, recording the move.
  *
  * This is the staff-operated path: cash taken at the counter, a refund granted,
- * a failed attempt written off. It does not touch the razorpay_* columns and
+ * a failed attempt written off. It does not touch the gateway_* columns and
  * takes no gateway identifiers - a payment is only marked paid here because a
  * human with the Orders permission says it was, and dressing that up as a
- * gateway result would be a lie the Razorpay phase then has to unpick.
+ * gateway result would be a lie the payment integration then has to unpick.
  */
 async function updatePaymentStatus(actor, orderId, { paymentStatus, reason }) {
   await sequelize.transaction(async (transaction) => {
@@ -786,7 +786,7 @@ async function updatePaymentStatus(actor, orderId, { paymentStatus, reason }) {
     const previousStatusId = order.paymentStatusId;
 
     // Compare-and-set, for the same reason the fulfilment transition uses one:
-    // a Razorpay webhook can be marking this order paid at the exact moment a
+    // a gateway webhook can be marking this order paid at the exact moment a
     // staff member writes it off as failed. Whoever matches the row wins; the
     // loser is told to refresh rather than silently overwriting the other.
     const [rowsUpdated] = await models.Order.update(
@@ -802,7 +802,7 @@ async function updatePaymentStatus(actor, orderId, { paymentStatus, reason }) {
       });
     }
 
-    // A counter order paid in cash never touches Razorpay, so it never reaches
+    // A counter order paid in cash never touches the gateway, so it never reaches
     // the post-payment seam - but it is just as ready for the kitchen as a
     // gateway payment is. Same idempotent function as the seam calls, so there
     // is one implementation of "payment starts fulfilment", not two.
@@ -817,7 +817,7 @@ async function updatePaymentStatus(actor, orderId, { paymentStatus, reason }) {
         newStatusId,
         changedByUserId: actor.id,
         // Left null on purpose: this path has no gateway payment to reference.
-        razorpayPaymentId: null,
+        gatewayPaymentId: null,
         reason: reason ?? null,
       },
       { transaction }

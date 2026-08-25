@@ -22,7 +22,12 @@ const { Op } = require('sequelize');
 
 const { models, sequelize } = require('../config/database');
 const logger = require('../config/logger');
-const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
+const {
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+  ServiceUnavailableError,
+} = require('../utils/errors');
 const { PAGINATION, ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } = require('../constants');
 const { sqlDateTimeLiteral } = require('../utils/sqlDate');
 
@@ -59,7 +64,36 @@ const SESSIONS_PER_SCREEN = 2;
 const SESSION_STATUS_OPEN = 'O';
 
 const pricingService = require('./pricing.service');
+const cashfree = require('./cashfree.client');
+const env = require('../config/env');
 const { applyPaidTransition } = require('./paymenttransition.service');
+
+/**
+ * The payment status Cashfree reports for money that actually moved.
+ *
+ * Its other values - PENDING, FAILED, USER_DROPPED, VOID, CANCELLED,
+ * NOT_ATTEMPTED - all mean the money is not ours, and none of them is treated
+ * as success anywhere in this file.
+ */
+const GATEWAY_PAYMENT_SUCCESS = 'SUCCESS';
+
+/**
+ * A payment attempt Cashfree has not finished deciding.
+ *
+ * This is NOT the same as a failure, and the difference is the whole point of
+ * the distinction: a UPI collect sits here while the customer is still in
+ * their UPI app, and it can become SUCCESS minutes later. Every OTHER
+ * non-success value - FAILED, USER_DROPPED, CANCELLED, VOID, NOT_ATTEMPTED -
+ * is terminal, so the money is definitively not ours and the customer may
+ * safely pay again.
+ *
+ * Treating PENDING as terminal is how a customer gets charged twice: they are
+ * told nothing was taken, they pay again, and then the first payment settles.
+ */
+const GATEWAY_PAYMENT_PENDING = 'PENDING';
+
+/** Orders are created in INR only. */
+const GATEWAY_CURRENCY = 'INR';
 
 const {
   toPaise,
@@ -662,163 +696,133 @@ async function createOrder(payload, idempotencyKey) {
 }
 
 /**
- * How long reconciliation may wait on Razorpay.
- *
- * This call sits inside payment-init, which a customer is standing at a kiosk
- * waiting on, so the budget is the customer's patience rather than Razorpay's
- * worst case. Measured against the live test account on this machine, the
- * round trip is ~1s (payment-init 1.69s with reconciliation vs 0.73s without).
- * 4s leaves roughly 4x headroom for a slow-but-healthy Razorpay while capping
- * what a hung endpoint can cost the customer.
- *
- * Erring long would be the wrong trade: a timeout costs only a missed chance to
- * reconcile, which the next attempt retries, whereas a stalled payment-init
- * strands someone mid-purchase.
- */
-const RECONCILIATION_TIMEOUT_MS = 4000;
-
-/**
- * Bound how long we WAIT for a promise. This is not cancellation.
- *
- * If the timeout wins, the underlying HTTP request is still in flight - the
- * axios default set alongside this may abort the socket, but that is
- * best-effort. What is guaranteed is that our caller stops waiting.
- *
- * The loser's rejection is swallowed explicitly: once we have returned, a late
- * rejection would otherwise surface as an unhandled rejection and, under Node's
- * default, take the process down. The timer is always cleared so a fast success
- * cannot leak one.
- */
-function withTimeout(value, ms, label) {
-  let timerId;
-
-  const timeout = new Promise((_resolve, reject) => {
-    timerId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-
-  // Promise.resolve() rather than using `value` directly: if the SDK ever
-  // returns a non-thenable or throws synchronously, calling .catch() on it
-  // would throw AFTER the timer above exists, leaking a timer that fires much
-  // later as an unhandled rejection. Normalising first makes that impossible.
-  const settled = Promise.resolve(value);
-
-  // Attach a handler now, so a rejection arriving after we have already
-  // returned is never unhandled - Node terminates the process on those.
-  settled.catch(() => {});
-
-  return Promise.race([settled, timeout]).finally(() => clearTimeout(timerId));
-}
-
-/**
- * Ask Razorpay whether an already-initialised order was in fact paid.
+ * Ask Cashfree whether an already-initialised order was in fact paid.
  *
  * THE GAP THIS CLOSES
  *
- * Our backend normally learns of a payment two ways: the browser posts the
- * signature, or a webhook arrives. If BOTH fail - the customer's phone dies on
- * cinema wifi and the webhook delivery is exhausted or misconfigured - the
- * money is gone and our order sits `pending` forever, with nothing in the
- * system able to discover otherwise.
+ * Our backend normally learns of a payment two ways: the browser comes back
+ * and payment-verify confirms it, or a webhook arrives. If BOTH fail - the
+ * customer's phone dies on cinema wifi and the webhook delivery is exhausted
+ * or misconfigured - the money is gone and our order sits `pending` forever,
+ * with nothing in the system able to discover otherwise.
  *
- * `orders.fetchPayments` (GET /orders/{id}/payments) is Razorpay's own record
- * of what happened, authenticated with our key secret. It is server-to-server,
- * so unlike the browser callback it cannot be lost, forged or replayed by a
- * customer.
+ * `PGOrderFetchPayments` is Cashfree's own record of what happened,
+ * authenticated with our client secret. It is server-to-server, so unlike a
+ * browser callback it cannot be lost, forged or replayed by a customer.
  *
  * WHAT MAKES IT SAFE
  *
- * - It only ever CONFIRMS. A payment is accepted only when Razorpay itself
- *   reports `status: 'captured'` for the exact amount we expect. Anything else
- *   - authorized-not-captured, failed, refunded, a mismatched amount, an API
- *   error - leaves the order exactly as it was. It never guesses.
- * - `authorized` is deliberately not accepted: this codebase never calls
- *   payments.capture(), so authorised money has not been taken.
+ * - It only ever CONFIRMS. A payment is accepted only when Cashfree itself
+ *   reports `SUCCESS` for the exact amount we expect. Anything else - PENDING,
+ *   FAILED, USER_DROPPED, VOID, CANCELLED, a mismatched amount, an API error -
+ *   leaves the order exactly as it was. It never guesses.
+ * - A payment still IN FLIGHT is reported separately, as `gatewayPending`.
+ *   Not settling it and calling it a failure are different things: a UPI
+ *   collect the customer has not yet approved is neither paid nor refusable,
+ *   and telling the customer "nothing was taken, try again" while it is
+ *   outstanding is what produces a double charge.
  * - The transition goes through applyPaidTransition like every other source,
  *   so it cannot double the state change or the post-payment side effects,
  *   whichever source wins the race.
- * - A failure to reach Razorpay is swallowed: the caller then behaves exactly
- *   as it did before this existed. Reconciliation is an extra chance to learn
- *   the truth, never a new way to fail a legitimate retry.
+ * - A failure to reach Cashfree never becomes a claim about the payment. It is
+ *   reported separately, as `reachable: false`, so callers can tell "the
+ *   gateway says this was not paid" apart from "we could not ask". Those two
+ *   must never be conflated: the first means nothing was charged, the second
+ *   means we do not know, and treating the second as the first is how a
+ *   customer gets charged twice.
  *
- * @returns {Promise<boolean>} true when the order is now paid.
+ * @returns {Promise<{settled: boolean, reachable: boolean, gatewayPending: boolean}>}
+ *   `settled` is true when the order is now paid. `reachable` is false only
+ *   when the provider could not be consulted at all. `gatewayPending` is true
+ *   when the provider holds at least one attempt it has not finished deciding,
+ *   which means paying again is NOT safe.
  */
-async function reconcilePaymentFromRazorpay(order) {
+async function reconcilePaymentFromGateway(order) {
   let payments;
 
   try {
-    const Razorpay = require('razorpay');
-    const razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
-    });
-
-    // Razorpay 2.9.8 exposes no timeout option (its own config sets only
-    // baseURL, headers and auth), so one is applied two ways. The axios
-    // default below is best-effort and does genuinely abort the socket, but it
-    // reaches into SDK internals and would silently stop applying if those
-    // change - so it is never relied on alone.
-    try {
-      if (razorpay.api && razorpay.api.rq && razorpay.api.rq.defaults) {
-        razorpay.api.rq.defaults.timeout = RECONCILIATION_TIMEOUT_MS;
-      }
-    } catch {
-      // Internals not as expected; the bounded wait below still applies.
-    }
-
-    const response = await withTimeout(
-      razorpay.orders.fetchPayments(order.razorpayOrderId),
-      RECONCILIATION_TIMEOUT_MS,
-      'Razorpay reconciliation'
-    );
-    payments = response && Array.isArray(response.items) ? response.items : [];
+    payments = await cashfree.fetchOrderPayments(order.gatewayOrderId);
   } catch (error) {
-    // Razorpay unreachable, credentials wrong, order unknown to them. Not
-    // knowing is the status quo, so carry on rather than blocking a customer
-    // who may simply be retrying a genuinely failed payment.
-    logger.warn('Razorpay reconciliation could not be completed', {
+    // Cashfree unreachable, credentials wrong, order unknown to them. Not
+    // knowing is the status quo for payment-init, which carries on rather than
+    // blocking a customer who may simply be retrying a genuinely failed
+    // payment. payment-verify treats it differently - see `reachable`.
+    logger.warn('Cashfree reconciliation could not be completed', {
       orderId: order.id,
       // Message only - never the payload, and never credentials.
       reason: error && error.message ? error.message : 'unknown',
     });
-    return false;
+    // Unknown, so no claim is made about a pending attempt either.
+    return { settled: false, reachable: false, gatewayPending: false };
   }
 
   const expectedPaise = toPaise(order.total);
 
-  // Integer paise on both sides; no floating-point money comparison.
-  const captured = payments.find(
+  // Integer paise on both sides; no floating-point money comparison. The
+  // client converted Cashfree's rupee decimal on the way in.
+  const settled = payments.find(
     (payment) =>
       payment &&
-      payment.status === 'captured' &&
-      Number.isInteger(payment.amount) &&
-      payment.amount === expectedPaise
+      payment.status === GATEWAY_PAYMENT_SUCCESS &&
+      Number.isInteger(payment.amountPaise) &&
+      payment.amountPaise === expectedPaise &&
+      (!payment.currency || payment.currency === GATEWAY_CURRENCY)
   );
 
-  if (!captured) return false;
+  if (!settled) {
+    // No success, so the question becomes whether anything is still in flight.
+    // Deliberately NOT amount-filtered: an attempt Cashfree has not finished
+    // deciding may not carry a final amount yet, and the safe reading of any
+    // outstanding attempt on this order is "do not invite a second payment".
+    const gatewayPending = payments.some(
+      (payment) => payment && payment.status === GATEWAY_PAYMENT_PENDING
+    );
 
-  logger.info('Razorpay reconciliation found a captured payment', {
+    if (gatewayPending) {
+      logger.info('Cashfree reconciliation found a payment still in flight', {
+        orderId: order.id,
+        gatewayOrderId: order.gatewayOrderId,
+      });
+    }
+
+    return { settled: false, reachable: true, gatewayPending };
+  }
+
+  logger.info('Cashfree reconciliation found a successful payment', {
     orderId: order.id,
-    razorpayOrderId: order.razorpayOrderId,
+    gatewayOrderId: order.gatewayOrderId,
   });
 
   await sequelize.transaction(async (transaction) => {
     await applyPaidTransition(
       {
         orderId: order.id,
-        razorpayPaymentId: captured.id || null,
-        reason: 'Payment confirmed by reconciliation with Razorpay',
+        gatewayPaymentId: settled.paymentId || null,
+        reason: 'Payment confirmed by reconciliation with Cashfree',
       },
       transaction
     );
   });
 
-  return true;
+  return { settled: true, reachable: true, gatewayPending: false };
 }
 
-/** POST /api/consumer/orders/{orderId}/payment-init - Initialize Razorpay payment (IDEMPOTENT) */
+/**
+ * POST /api/consumer/orders/{orderId}/payment-init (IDEMPOTENT)
+ *
+ * Returns a short-lived `paymentSessionId` for the hosted checkout.
+ *
+ * WHY THE SESSION IS NOT STORED
+ *
+ * Unlike the previous provider's order id, a Cashfree payment session is a
+ * short-lived token, not a durable handle. Persisting one would mean handing
+ * a customer an expired session after any meaningful delay. The durable handle
+ * is `gateway_order_id`, which is stored; the session is fetched fresh from
+ * Cashfree whenever an existing order needs to be paid again.
+ */
 async function paymentInit(orderId) {
   const order = await models.Order.findByPk(orderId, {
-    attributes: ['id', 'paymentStatusId', 'total', 'razorpayOrderId'],
+    attributes: ['id', 'paymentStatusId', 'total', 'gatewayOrderId', 'customerMobile', 'customerEmail'],
     include: [
       {
         association: 'paymentStatus',
@@ -836,17 +840,25 @@ async function paymentInit(orderId) {
     });
   }
 
-  // If razorpayOrderId already set, return it (idempotent).
-  if (order.razorpayOrderId) {
-    // Before handing back a payable order, ask Razorpay whether this order was
+  if (!env.cashfree.configured) {
+    throw new Error('Cashfree API unavailable', {
+      cause: new Error('Cashfree credentials are not configured'),
+    });
+  }
+
+  // An attempt already exists for this order.
+  if (order.gatewayOrderId) {
+    // Before handing back a payable order, ask Cashfree whether this order was
     // ALREADY paid. Reaching here means a previous attempt existed, and the
     // dangerous case is the one where that attempt succeeded but neither the
-    // browser callback nor the webhook ever told us — the customer would
-    // otherwise be shown a Pay button for money they have already handed over.
+    // browser nor the webhook ever told us - the customer would otherwise be
+    // shown a Pay button for money they have already handed over.
     //
     // This is the only trigger: a customer-initiated request on an order that
     // has already been initialised. It is not a poller.
-    const reconciled = await reconcilePaymentFromRazorpay(order);
+    // Only `settled` matters here. An unreachable gateway leaves the customer
+    // able to pay, which is the correct status quo for payment-init.
+    const { settled: reconciled } = await reconcilePaymentFromGateway(order);
 
     if (reconciled) {
       // Same 409 shape payment-init already returns for a settled order, so
@@ -857,78 +869,121 @@ async function paymentInit(orderId) {
       });
     }
 
+    // Still unpaid, so re-issue a session against the SAME gateway order
+    // rather than creating a second one.
     return {
       orderId,
-      razorpayOrderId: order.razorpayOrderId,
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+      gatewayOrderId: order.gatewayOrderId,
+      paymentSessionId: await resumePaymentSession(order),
       amount: toPaise(order.total),
-      currency: 'INR',
+      currency: GATEWAY_CURRENCY,
     };
   }
 
-  // Call Razorpay API (OUTSIDE transaction)
-  let razorpayOrderId;
+  // Create the gateway order (OUTSIDE any transaction - it is a network call).
+  let created;
   try {
-    // Razorpay is optional - if not available, log and skip
-    const Razorpay = require('razorpay');
-    const razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    created = await cashfree.createOrder({
+      orderId: order.id,
+      amountPaise: toPaise(order.total),
+      customerMobile: order.customerMobile,
+      customerEmail: order.customerEmail,
     });
-
-    const response = await razorpay.orders.create({
-      amount: toPaise(order.total),
-      currency: 'INR',
-      receipt: `order_${order.id}`,
-    });
-    razorpayOrderId = response.id;
   } catch (error) {
-    // If Razorpay is not available or returns 5xx, return service unavailable
-    if (
-      error.statusCode === 503 ||
-      error.statusCode === 500 ||
-      error.code === 'ERR_MODULE_NOT_FOUND'
-    ) {
-      throw new Error('Razorpay API unavailable', { cause: error });
+    // The gateway order id is deterministic, so a 409 means a previous attempt
+    // created it and we simply lost the record - or two requests raced. Adopt
+    // the existing order instead of failing the customer.
+    if (cashfree.isDuplicateOrderError(error)) {
+      created = {
+        gatewayOrderId: cashfree.buildGatewayOrderId(order.id),
+        paymentSessionId: null,
+      };
+    } else if (cashfree.isTransientError(error)) {
+      throw new Error('Cashfree API unavailable', { cause: error });
+    } else {
+      throw error;
     }
-    throw error;
   }
 
-  // Compare-and-set: UPDATE only if razorpayOrderId is still NULL
+  // Compare-and-set: UPDATE only if gatewayOrderId is still NULL. Backed by
+  // the filtered unique index, so one QBusto order maps to one gateway order
+  // for its lifetime even across instances.
   const [rowsUpdated] = await models.Order.update(
-    { razorpayOrderId },
-    { where: { id: orderId, razorpayOrderId: null } }
+    { gatewayOrderId: created.gatewayOrderId },
+    { where: { id: orderId, gatewayOrderId: null } }
   );
 
   if (rowsUpdated === 1) {
-    // We won the race
     return {
       orderId,
-      razorpayOrderId,
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+      gatewayOrderId: created.gatewayOrderId,
+      paymentSessionId:
+        created.paymentSessionId ||
+        (await resumePaymentSession({ id: orderId, gatewayOrderId: created.gatewayOrderId })),
       amount: toPaise(order.total),
-      currency: 'INR',
+      currency: GATEWAY_CURRENCY,
     };
-  } else {
-    // Another request won, reload and return their ID
-    const reloadedOrder = await models.Order.findByPk(orderId, {
-      attributes: ['razorpayOrderId', 'total'],
-    });
+  }
 
-    return {
-      orderId,
-      razorpayOrderId: reloadedOrder.razorpayOrderId,
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
-      amount: toPaise(reloadedOrder.total),
-      currency: 'INR',
-    };
+  // Another request won the race; reload and return theirs.
+  const reloadedOrder = await models.Order.findByPk(orderId, {
+    attributes: ['id', 'gatewayOrderId', 'total'],
+  });
+
+  return {
+    orderId,
+    gatewayOrderId: reloadedOrder.gatewayOrderId,
+    paymentSessionId: await resumePaymentSession(reloadedOrder),
+    amount: toPaise(reloadedOrder.total),
+    currency: GATEWAY_CURRENCY,
+  };
+}
+
+/**
+ * Fetch a fresh payment session for an order that already exists at Cashfree.
+ *
+ * Returns null rather than throwing when the session cannot be produced. The
+ * caller still has something useful to say - the order exists and its status
+ * is known - and the Consumer treats a missing session as "cannot pay right
+ * now", which is accurate and retryable. Throwing here would turn a
+ * recoverable hiccup into a hard failure on a screen about money.
+ */
+async function resumePaymentSession(order) {
+  try {
+    const fetched = await cashfree.fetchOrder(order.gatewayOrderId);
+    return fetched && fetched.paymentSessionId ? fetched.paymentSessionId : null;
+  } catch (error) {
+    logger.warn('Could not obtain a Cashfree payment session', {
+      orderId: order.id,
+      reason: error && error.message ? error.message : 'unknown',
+    });
+    return null;
   }
 }
 
-/** POST /api/consumer/orders/{orderId}/payment-verify - Verify payment signature (IDEMPOTENT) */
-async function paymentVerify(orderId, razorpayPaymentId, razorpaySignature) {
+/**
+ * POST /api/consumer/orders/{orderId}/payment-verify (IDEMPOTENT)
+ *
+ * THIS IS A SERVER-SIDE CONFIRMATION, NOT A CLIENT ASSERTION
+ *
+ * The previous provider handed the browser a signed payload which the browser
+ * relayed to us and we verified with an HMAC. Cashfree's hosted checkout hands
+ * the browser NO cryptographic credential - by design - so there is nothing a
+ * client could present that would prove anything.
+ *
+ * The endpoint therefore takes no payment identity from the caller at all.
+ * The browser's request means only "my checkout finished, please look"; the
+ * answer comes from asking Cashfree directly, authenticated with our own
+ * credentials. A caller cannot influence the outcome by what it sends, which
+ * is a stronger position than verifying a relayed signature: there is no
+ * client-supplied value in the trust path to get wrong.
+ *
+ * Everything else about the endpoint is unchanged - same path, same idempotent
+ * behaviour, same 409 shape the Consumer's recovery reads.
+ */
+async function paymentVerify(orderId) {
   const order = await models.Order.findByPk(orderId, {
-    attributes: ['id', 'razorpayOrderId', 'paymentStatusId', 'total'],
+    attributes: ['id', 'gatewayOrderId', 'paymentStatusId', 'total'],
     include: [
       {
         association: 'paymentStatus',
@@ -939,7 +994,9 @@ async function paymentVerify(orderId, razorpayPaymentId, razorpaySignature) {
 
   if (!order) throw new NotFoundError('Order');
 
-  // Idempotency: if already paid, return success
+  // Idempotency: if already paid, return success. Covers the browser callback
+  // arriving after the webhook has already settled the order, and a customer
+  // reloading the confirmation screen.
   if (order.paymentStatus.code === PAYMENT_STATUSES.PAID) {
     return {
       orderId,
@@ -954,53 +1011,54 @@ async function paymentVerify(orderId, razorpayPaymentId, razorpaySignature) {
     });
   }
 
-  if (!order.razorpayOrderId) {
-    throw new ValidationError('Order has no Razorpay order ID', { orderId });
+  if (!order.gatewayOrderId) {
+    throw new ValidationError('Order has no gateway order', { orderId });
   }
 
-  // Verify signature
-  const crypto = require('crypto');
-  const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '');
-  hmac.update(`${order.razorpayOrderId}|${razorpayPaymentId}`);
-  const hash = hmac.digest('hex');
+  // The authoritative question, asked of the gateway rather than the caller.
+  // reconcilePaymentFromGateway validates the amount and currency and routes
+  // the transition through the same compare-and-set every other source uses.
+  const { settled, reachable, gatewayPending } = await reconcilePaymentFromGateway(order);
 
-  if (hash !== razorpaySignature) {
-    throw new ValidationError('Invalid payment signature', [
-      { field: 'razorpaySignature', message: 'Signature verification failed' },
-    ]);
-  }
-
-  // Update order status to paid in a transaction.
-  //
-  // The status was read above, OUTSIDE this transaction, so it is a snapshot:
-  // the Razorpay webhook can commit `paid` for the same payment in between.
-  // This used to be an unconditional UPDATE plus an unconditional log insert,
-  // which meant the loser of that race still wrote a second
-  // payment_status_logs row for a transition that had already happened - and,
-  // more dangerously, still ran this block, which is where post-payment side
-  // effects (kitchen ticket, receipt, notification) would naturally be added.
-  //
-  // The write is therefore the same compare-and-set the webhook path uses:
-  // only a still-pending row transitions, so exactly one of the two callers
-  // ever performs the transition and everything hanging off it runs once.
-  return sequelize.transaction(async (transaction) => {
-    // The transition and everything that must happen exactly once with it live
-    // in paymenttransition.service, shared with the webhook and reconciliation
-    // paths. A `false` here means one of those got there first, which is a
-    // normal race outcome, not a failure.
-    await applyPaidTransition(
-      { orderId, razorpayPaymentId, reason: 'Payment verified' },
-      transaction
-    );
-
-    // `paid` either way, and that is the truth: this request verified a
-    // genuine signature, and the order is paid whether this call or another
-    // source was the one to record it. Reporting anything else here would
-    // strand a customer whose payment had in fact succeeded.
+  if (settled) {
     return {
       orderId,
       paymentStatus: PAYMENT_STATUSES.PAID,
     };
+  }
+
+  // We could not ask. This is NOT evidence that nothing was charged, and it
+  // must not be reported as though it were: the Consumer reads a `pending`
+  // conflict as "the gateway holds no payment, so paying again is safe" and
+  // discards the record that stops a second charge. A customer whose payment
+  // succeeded while our connection to Cashfree was briefly down would then be
+  // invited to pay twice.
+  //
+  // 503 says "ask again", which is the only honest answer, and the Consumer
+  // keeps the attempt and stays on "we could not check yet".
+  if (!reachable) {
+    throw new ServiceUnavailableError(
+      'Could not confirm this payment with the provider, please retry'
+    );
+  }
+
+  // The gateway was reached and reports no successful payment for this order.
+  // The order stays pending either way - the webhook and the next
+  // reconciliation remain able to record it - but WHY there is no success
+  // decides whether the customer may safely pay again, so it is reported.
+  //
+  //   gatewayPending true  - an attempt is still in flight (a UPI collect the
+  //                          customer has not approved yet). Paying again is
+  //                          NOT safe: the outstanding attempt can still
+  //                          succeed, and a second payment would double-charge.
+  //   gatewayPending false - every attempt reached a terminal non-success
+  //                          (FAILED / USER_DROPPED / CANCELLED / VOID /
+  //                          NOT_ATTEMPTED), or there was no attempt at all.
+  //                          Nothing was taken, so retrying is safe.
+  throw new ConflictError('Payment has not been confirmed by the gateway yet', {
+    orderId,
+    paymentStatus: PAYMENT_STATUSES.PENDING,
+    gatewayPending,
   });
 }
 

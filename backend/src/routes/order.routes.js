@@ -334,8 +334,8 @@ router.put(
  *       The order update and the `payment_status_logs` entry are written in one
  *       transaction. Asking for the status the payment is already in is a no-op.
  *       This endpoint takes no gateway identifiers and does not touch the
- *       `razorpay_*` columns - gateway-driven payment confirmation belongs to
- *       the Razorpay integration phase.
+ *       `gateway_*` columns - gateway-driven payment confirmation belongs to
+ *       the payment gateway integration.
  *       Requires the Orders module edit permission.
  *     parameters:
  *       - in: path

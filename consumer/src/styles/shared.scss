@@ -246,6 +246,40 @@
   flex-direction: column;
   gap: var(--space-xs);
 
+  /* A flex or grid child defaults to `min-width: auto`, which means it refuses
+     to shrink below the intrinsic width of its content. A <select> takes that
+     intrinsic width from its LONGEST OPTION, and the show picker's options are
+     a full film title plus screen and time - far wider than the sheet.
+
+     The result was a form wider than its container. Because the scroll region
+     sets `overflow-y: auto`, the browser computes the other axis as `auto`
+     too, so the whole form became horizontally scrollable and focusing a field
+     scrolled it sideways - the label and the left edge of every input slid out
+     of view as the customer typed.
+
+     `min-width: 0` lets the field shrink to the space actually available,
+     which is what stops the overflow existing in the first place. Fixing it
+     here rather than with `overflow-x: hidden` on the scroller is deliberate:
+     clipping would also cut the focus ring off the controls. */
+  min-width: 0;
+
+  /* Belt and braces for the control itself: never wider than its field, and
+     truncate rather than demand room. Applies to the native select on iOS,
+     which is the case that surfaced this. */
+  .field__select,
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+  }
+
+  .field__select,
+  select {
+    /* The full option text stays available in the native picker; only the
+       closed control truncates. */
+    text-overflow: ellipsis;
+  }
+
   .field__label {
     display: flex;
     align-items: baseline;

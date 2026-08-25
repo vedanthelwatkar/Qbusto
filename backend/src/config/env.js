@@ -105,30 +105,76 @@ const envSchema = Joi.object({
   /** Largest accepted upload, in megabytes. */
   MAX_UPLOAD_SIZE_MB: Joi.number().integer().positive().max(50).default(5),
 
-  // ---- Razorpay (Phase 2; not required to boot) ----
-  RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
-  RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
+  /**
+   * ---- Cashfree payments (not required to boot) ----
+   *
+   * Optional so development, test and CI can boot with no payment provider at
+   * all; the payment endpoints then refuse rather than half-working.
+   *
+   * NOTE, and it is the important difference from the previous provider: there
+   * is no separate webhook secret. Cashfree signs webhooks with the SAME
+   * secret key used to authenticate API calls, so CASHFREE_SECRET_KEY is both
+   * the API credential and the webhook verification key. One value fewer to
+   * configure, and one fewer way to end up with a deployment that can take
+   * payments but cannot verify the notifications about them.
+   *
+   * The names mirror the Cashfree Dashboard's own labels ("App ID", "Secret
+   * Key") so that copying a credential across does not require translating
+   * what it is called.
+   */
+  CASHFREE_APP_ID: Joi.string().allow('').optional(),
+  CASHFREE_SECRET_KEY: Joi.string().allow('').optional(),
 
   /**
-   * Webhook signing secret, set in the Razorpay Dashboard when the webhook is
-   * created. It is NOT the API key secret — Razorpay generates a separate
-   * value per webhook, and signatures verify against this one.
+   * Which Cashfree environment to talk to. This is an explicit setting rather
+   * than something inferred from NODE_ENV, because the two are genuinely
+   * independent: a staging deployment runs NODE_ENV=production against the
+   * Cashfree sandbox, and that is a legitimate combination a developer must be
+   * able to express. The startup guards below cover the dangerous pairings.
    *
-   * Optional so development and test can boot without it; the webhook route
-   * then refuses every request rather than accepting unverified ones. In
-   * production it is required, because a deployment that silently stopped
-   * verifying signatures would accept forged payment notifications.
+   * Both vocabularies are accepted because both are in circulation: Cashfree's
+   * API documentation says "sandbox"/"production" while its dashboard and SDK
+   * environment enum say TEST/PROD. Refusing one of them would be a startup
+   * failure over a synonym.
    */
-  RAZORPAY_WEBHOOK_SECRET: Joi.string()
-    .allow('')
-    .optional()
-    .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.string().min(MIN_PRODUCTION_SECRET_LENGTH).required().messages({
-        'any.required':
-          'RAZORPAY_WEBHOOK_SECRET is required in production: without it payment webhooks cannot be verified and would have to be rejected.',
-      }),
-    }),
+  CASHFREE_ENVIRONMENT: Joi.string()
+    .valid('test', 'sandbox', 'prod', 'production')
+    .default('test'),
+
+  /**
+   * Where Cashfree should POST payment notifications. Optional: the webhook
+   * URL is normally registered once in the Cashfree Dashboard, and this only
+   * overrides it per order, which is what makes a developer tunnel work
+   * without touching the shared dashboard configuration.
+   */
+  CASHFREE_NOTIFY_URL: Joi.string().uri().allow('').optional(),
+
+  /** Where the hosted checkout returns the customer. Optional; see below. */
+  CASHFREE_RETURN_URL: Joi.string().uri().allow('').optional(),
+
+  /**
+   * Used when an order carries no usable mobile number.
+   *
+   * orders.customer_mobile is nullable, but Cashfree rejects an order create
+   * without a 10-digit customer_phone. This is contact metadata on the
+   * provider's side, never something QBusto authenticates against, so a
+   * placeholder is preferable to refusing a payment for an order that is
+   * otherwise perfectly valid.
+   */
+  CASHFREE_FALLBACK_CUSTOMER_PHONE: Joi.string()
+    .pattern(/^\d{10}$/)
+    .default('9999999999'),
+
+  /**
+   * How long any single Cashfree call may take.
+   *
+   * The binding constraint is payment-init, which a customer is standing at a
+   * kiosk waiting on, so the budget is the customer's patience rather than the
+   * provider's worst case. Erring long is the wrong trade: a timeout costs
+   * only a missed chance to reconcile, which the next attempt retries, whereas
+   * a stalled payment-init strands someone mid-purchase.
+   */
+  CASHFREE_TIMEOUT_MS: Joi.number().integer().positive().max(30000).default(4000),
 }).unknown(true);
 
 const { value, error } = envSchema.validate(process.env, {
@@ -142,65 +188,87 @@ if (error) {
 }
 
 /**
- * A production deployment running on Razorpay test keys is the worst kind of
- * misconfiguration: the checkout works, the webhook verifies, orders are
- * marked paid, food goes out — and no real money was ever taken. Nothing
- * downstream can detect it, because every signal looks healthy. Refusing to
- * boot is the only place it can be caught.
- */
-/**
- * The Joi rule above cannot catch an EMPTY secret in production: `.allow('')`
- * on the base schema puts '' in the valids list, and Joi checks valids before
- * `.min(32)` or `.required()` in the conditional branch — so
- * `RAZORPAY_WEBHOOK_SECRET=` passes validation. Verified against joi directly.
+ * The Joi rules above cannot catch an EMPTY credential: `.allow('')` puts ''
+ * in the valids list and Joi checks valids before any conditional `.required()`
+ * would apply, so `CASHFREE_SECRET_KEY=` passes validation. Verified against
+ * joi directly for the previous provider, and the same trap applies here.
  *
- * The consequence is the worst kind of silent failure: production boots with
- * `webhooksEnabled: false`, every Razorpay delivery is answered 400, and a
- * payment whose browser callback is lost can never be recovered. Nothing in
- * the running system looks wrong.
+ * The consequence is the worst kind of silent failure. Because Cashfree signs
+ * webhooks with the client secret, an empty secret in production means the
+ * app boots, refuses every webhook delivery as unverifiable, and a payment
+ * whose browser callback is lost can never be recovered — with nothing in the
+ * running system looking wrong.
  */
-if (value.NODE_ENV === 'production' && !value.RAZORPAY_WEBHOOK_SECRET) {
+const cashfreeConfigured = Boolean(value.CASHFREE_APP_ID && value.CASHFREE_SECRET_KEY);
+
+/** `prod` and `production` both mean live money. Everything else is sandbox. */
+const cashfreeIsProduction =
+  value.CASHFREE_ENVIRONMENT === 'prod' || value.CASHFREE_ENVIRONMENT === 'production';
+
+if (value.NODE_ENV === 'production' && !cashfreeConfigured) {
   throw new Error(
     'Invalid environment configuration:\n' +
-      '  - RAZORPAY_WEBHOOK_SECRET is empty but NODE_ENV is production. ' +
-      'Webhook deliveries would all be rejected and lost payments could not be recovered.'
+      '  - CASHFREE_APP_ID and CASHFREE_SECRET_KEY must both be set when NODE_ENV is production. ' +
+      'Without them no payment can be taken, and webhook deliveries could not be verified even if one were.'
   );
 }
 
-if (value.NODE_ENV === 'production' && String(value.RAZORPAY_KEY_ID).startsWith('rzp_test_')) {
+/**
+ * A production deployment pointed at the Cashfree SANDBOX is the worst kind of
+ * misconfiguration: checkout works, the webhook verifies, orders are marked
+ * paid, food goes out — and no real money was ever taken. Nothing downstream
+ * can detect it, because every signal looks healthy. Refusing to boot is the
+ * only place it can be caught.
+ */
+if (value.NODE_ENV === 'production' && !cashfreeIsProduction) {
   throw new Error(
     'Invalid environment configuration:\n' +
-      '  - RAZORPAY_KEY_ID is a test-mode key (rzp_test_*) but NODE_ENV is production. ' +
-      'Payments would be simulated and no money collected. Use the live key, or do not run as production.'
+      `  - CASHFREE_ENVIRONMENT is "${value.CASHFREE_ENVIRONMENT}" but NODE_ENV is production. ` +
+      'Payments would be simulated and no money collected. Set it to "prod", or do not run as production.'
   );
 }
 
 /**
  * The mirror image of the check above, and a real footgun: a developer who
- * copies a production .env to run something locally would be taking REAL
- * money from REAL cards on their laptop. A warning rather than a throw,
- * because production-key debugging is occasionally legitimate — but it must
- * never happen without someone noticing.
+ * copies a production .env to run something locally would be taking REAL money
+ * from REAL cards on their laptop. A warning rather than a throw, because
+ * debugging against production is occasionally legitimate — but it must never
+ * happen without someone noticing.
  */
-if (value.NODE_ENV !== 'production' && String(value.RAZORPAY_KEY_ID).startsWith('rzp_live_')) {
+if (value.NODE_ENV !== 'production' && cashfreeIsProduction) {
   console.warn(
-    `[config] RAZORPAY_KEY_ID is a LIVE key but NODE_ENV is "${value.NODE_ENV}". ` +
+    `[config] CASHFREE_ENVIRONMENT is "${value.CASHFREE_ENVIRONMENT}" but NODE_ENV is "${value.NODE_ENV}". ` +
       'Payments made against this instance will charge real cards.'
   );
 }
 
 /**
- * Razorpay configured but webhooks not. The app still runs and customers can
- * still pay, but the backend can only learn of a payment from the customer's
- * browser — so a closed tab or a dropped connection leaves the order pending
- * with no way to recover it. That is precisely the failure the webhook exists
- * to close, and it is silent, so it is called out at startup.
+ * Half-configured. One credential without the other cannot authenticate a
+ * single call, and failing at the first payment rather than at boot makes it
+ * look like a provider outage instead of a deployment mistake.
  */
-if (value.RAZORPAY_KEY_ID && !value.RAZORPAY_WEBHOOK_SECRET) {
+if (Boolean(value.CASHFREE_APP_ID) !== Boolean(value.CASHFREE_SECRET_KEY)) {
   console.warn(
-    '[config] RAZORPAY_KEY_ID is set but RAZORPAY_WEBHOOK_SECRET is not. ' +
-      'Webhook deliveries will be refused, so a payment whose browser callback ' +
-      'is lost cannot be recovered automatically.'
+    '[config] Only one of CASHFREE_APP_ID / CASHFREE_SECRET_KEY is set. ' +
+      'Payments are disabled until both are configured.'
+  );
+}
+
+/**
+ * Short secrets are warned about rather than rejected. The empty case above is
+ * the one that silently breaks settlement; refusing to boot on a legitimate
+ * but unusually short provider-issued credential would be a false alarm that
+ * costs an outage.
+ */
+if (
+  value.NODE_ENV === 'production' &&
+  value.CASHFREE_SECRET_KEY &&
+  value.CASHFREE_SECRET_KEY.length < MIN_PRODUCTION_SECRET_LENGTH
+) {
+  console.warn(
+    `[config] CASHFREE_SECRET_KEY is ${value.CASHFREE_SECRET_KEY.length} characters, ` +
+      `which is shorter than the ${MIN_PRODUCTION_SECRET_LENGTH} expected of a production credential. ` +
+      'Confirm it was copied in full.'
   );
 }
 
@@ -250,14 +318,40 @@ const env = {
     enabled: value.SWAGGER_ENABLED,
   },
 
-  razorpay: {
+  cashfree: {
+    appId: value.CASHFREE_APP_ID || '',
+
     /**
-     * Server-side only. Never reaches the Consumer: the browser is given
-     * `razorpayKeyId` by payment-init and nothing else, and this value is what
-     * proves a webhook actually came from Razorpay.
+     * Server-side only, and it never reaches the Consumer. The browser is given
+     * a short-lived `paymentSessionId` by payment-init and nothing else.
+     *
+     * This value does double duty: it authenticates our API calls AND is the
+     * key Cashfree signs webhooks with, so it is what proves a delivery
+     * actually came from Cashfree.
      */
-    webhookSecret: value.RAZORPAY_WEBHOOK_SECRET || '',
-    webhooksEnabled: Boolean(value.RAZORPAY_WEBHOOK_SECRET),
+    secretKey: value.CASHFREE_SECRET_KEY || '',
+
+    /** Both credentials present. Payment endpoints refuse when false. */
+    configured: cashfreeConfigured,
+
+    /**
+     * Webhook verification needs only the client secret, so it is available on
+     * exactly the same condition as everything else. There is no separate
+     * enable flag because there is no separate secret to be missing.
+     */
+    webhooksEnabled: cashfreeConfigured,
+
+    /** Which Cashfree environment to talk to - independent of NODE_ENV. */
+    isProduction: cashfreeIsProduction,
+    environment: value.CASHFREE_ENVIRONMENT,
+
+    notifyUrl: value.CASHFREE_NOTIFY_URL || '',
+    returnUrl: value.CASHFREE_RETURN_URL || '',
+    fallbackCustomerPhone: value.CASHFREE_FALLBACK_CUSTOMER_PHONE,
+    timeoutMs: value.CASHFREE_TIMEOUT_MS,
+
+    /** Orders are created in INR only. */
+    currency: 'INR',
   },
 
   uploads: {

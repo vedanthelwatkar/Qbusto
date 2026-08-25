@@ -74,7 +74,7 @@ export async function updateOrderStatus(
  *
  * This is the staff-operated path only — cash taken at the counter, a refund
  * granted, a failed attempt written off. It carries no gateway identifiers and
- * performs no Razorpay verification; the backend owns that entirely.
+ * performs no gateway verification; the backend owns that entirely.
  *
  * @param reason Free text stored on the audit log entry. Optional.
  */
