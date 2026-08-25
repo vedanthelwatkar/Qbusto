@@ -169,7 +169,16 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 Every cinema running under this deployment can run its own Cashfree merchant
 account (`payment_gateway_config`, set from `Cinemas → (cinema) → Payment
 gateway` in the Dashboard), resolved ahead of the global `CASHFREE_APP_ID`/
-`CASHFREE_SECRET_KEY` fallback above. For each production cinema:
+`CASHFREE_SECRET_KEY` fallback above.
+
+`POST /api/cinemas` (2026-08-25) now requires `gatewayId`/`secretKey`/
+`environment` and creates the cinema plus its `payment_gateway_config` row in
+one transaction — so **any cinema created through the Dashboard from this
+date onward already has its own credentials by construction**, nothing to
+double-check there. This section still matters for **every cinema created
+before that change**, and for anything inserted directly into the database
+outside the API (a data migration, a manual fixture) — neither is covered by
+that guarantee. For each production cinema:
 
 - [ ] Either it has its own `payment_gateway_config` row with
       `environment: production` and real production credentials, **or** the

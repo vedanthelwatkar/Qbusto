@@ -217,7 +217,12 @@ all.
   .createOrder` clamps `productDiscount + couponDiscount` at the subtotal
   before computing `total`, so two independently-capped discounts (a
   promotional price plus a coupon) can never sum past it and make an order
-  negative.
+  negative. `offer.validators.js` normalises `discount_type` to lower case
+  on every write (like `status`); every **reader** of it still compares
+  case-insensitively too, as defence for rows written before this existed —
+  a code review caught `OfferFormModal.tsx` doing an exact-case comparison
+  and silently nulling `max_disc_amount` on an unrelated edit for any row
+  that wasn't already lower case.
   `offers.offer_category`/`payment_modes` — leftover vocabulary from the
   abandoned Cashfree-offer-mirroring design, never read by any calculation —
   were dropped from the database entirely
@@ -429,6 +434,14 @@ Integrations are Dashboard placeholders.
 14. Don't set `requiredMark={false}` on a Dashboard `<Form>` — it hides
     every field's asterisk, not just the ones that shouldn't have one.
     Leave the prop off entirely and let antd derive it from `rules`.
+15. Don't fight antd for a form label's `::after` — it's already used
+    unconditionally for the trailing colon (`form/style/index.js`), colon
+    visible or not, `layout="vertical"` or not. Only `::before` is free on
+    that element; use `order` (the label is `inline-flex`) to reposition it
+    instead of relocating content into `::after`. Verified live via
+    `node_modules/antd/es/form/style/index.js` and the browser's own
+    inspector, not assumed — see memory.md §10.2 for the two wrong guesses
+    that came first.
 
 ## README drift (verified against code)
 

@@ -1164,6 +1164,50 @@ says is required, nothing else. Files: `BannerFormModal`, `CategoryFormModal`,
 `ProductFormModal`, `ScreenFormModal`, `AvailabilityFormModal`,
 `UserFormModal`.
 
+**Follow-up (2026-08-26): moved the asterisk from before the label to after
+it, in `global.scss`.** This surfaced a genuinely non-obvious antd trap worth
+remembering:
+
+- First attempt: hide antd's own `::before` asterisk (`display: none`) and
+  render a new asterisk on `::after` instead. Result: NOTHING showed, not
+  even in the wrong place. Cause, found by reading antd's actual CSS-in-JS
+  source (`node_modules/antd/es/form/style/index.js`), not by guessing:
+  every form label ALSO uses `::after` for its own purpose - the trailing
+  colon character, `content: ":"`, present UNCONDITIONALLY unless the form
+  passes `colon={false}` (none of this app's forms do). Two rules wanting
+  the same pseudo-element on the same element is not a "higher specificity
+  wins" situation to route around - only one `::after` can exist at all, so
+  the asterisk's content lost outright regardless of `!important`.
+  A second wrong theory along the way: assumed the colon was suppressed by
+  `layout="vertical"` and reached for `.ant-form-item-no-colon::after`
+  instead - but `no-colon` is controlled by the `colon` PROP being `false`,
+  not by vertical layout (vertical layout only skips stripping a trailing
+  ":" character a caller typed into a string label). That class is never
+  applied here either, so that attempt matched nothing and changed nothing -
+  confirmed by inspecting the live DOM in the browser (the class list on the
+  label was plainly just `ant-form-item-required`), not by more guessing.
+- Working fix: leave `::after` (the colon) alone entirely, and instead
+  reorder the EXISTING `::before` asterisk. The label is `display:
+  inline-flex` (same antd source file), so `::before`/`::after` are flex
+  items and obey `order` like any other child - the label's text is an
+  anonymous flex item at the default `order: 0`, so `.ant-form-item-required
+  ::before { order: 1; margin-inline-start: 4px; }` alone moves the
+  asterisk after the text without touching what `::after` renders anywhere.
+  The colon's own box was still visible SPACE between the text and the
+  reordered asterisk (its `content` is real, non-zero-width, confirmed via
+  the browser inspector, not assumed) even though colon isn't rendered
+  as a visible ":" in this app's own screens - so
+  `.ant-form-item-required::after { content: none !important; margin: 0
+  !important; }` was added too, scoped to required fields only so optional
+  fields' colon (never reported as a problem) is untouched.
+- Lesson for next time a pseudo-element fight comes up: read the actual
+  library CSS-in-JS source for the real selector and the real property
+  before writing an override, and confirm the applied CLASS LIST in the
+  browser's own inspector before assuming why something isn't matching -
+  two different wrong theories were tried and shipped (each looking
+  individually plausible) before checking the source and the live DOM
+  settled it in one look.
+
 ### 10.3 Shell layout - sidebar/header no longer scroll with the table (2026-08-25)
 
 Root cause: `.app-shell` used `min-height: 100vh` instead of a fixed
@@ -1184,6 +1228,57 @@ one scrolling region entirely, so it is always visible without any special
 positioning. `Sider` gained `app-shell__sider` (`height:100vh; overflow-y:
 auto`) defensively, so a longer nav list in the future scrolls internally
 too rather than repeating the same bug.
+
+### 10.4 Scrollbar theming, modal header, coupon case-sensitivity, cinema ID (2026-08-26)
+
+Smaller follow-ups, all in `global.scss` unless noted:
+
+- Dashboard-wide themed scrollbars (`--qb-primary-500` thumb, `--qb-page-bg`
+  track, both via `scrollbar-color` for Firefox and `::-webkit-scrollbar*`
+  pseudo-elements for Chromium/Safari) - deliberately UNSCOPED (not
+  `.app-shell *`), because a Modal/Drawer/Select dropdown's scrollable body
+  is portaled to `document.body` by antd, outside `.app-shell` in the DOM
+  entirely, so a scoped rule would miss every one of them.
+- The sidebar's own defensive overflow scroll (§10.3) is hidden entirely
+  (`scrollbar-width: none` + `::-webkit-scrollbar { display: none }`) -
+  still scrollable by wheel/touch, just no visible scrollbar chrome on a
+  nav rail.
+- A table's own horizontal scroll stayed the OS default grey despite the
+  above: antd's `table/style/index.js` sets `scrollbar-color` DIRECTLY on
+  `.ant-table` using antd's own grey theme tokens, and a directly-set
+  property on an element always wins over an inherited value from an
+  ancestor (`html`, in this case) regardless of selector specificity.
+  Fixed by restating `scrollbar-color` on `.ant-table-wrapper .ant-table`
+  itself, `!important`, using `--qb-border` (not the brand orange - a subtle
+  grey scrollbar was the actual ask once the default was pointed out) rather
+  than `--qb-primary-500`.
+- `.ant-modal-header` gained a real `border-bottom: 1px solid var(--qb-border)`
+  plus `margin-bottom: 20px` (initially too tight, widened once flagged) so
+  a Modal's title reads as a header instead of just the form's first line;
+  `.ant-modal-title` bumped to 18px.
+- `OfferFormModal.tsx`'s percentage/flat check (`isPercentage`, and the
+  submit handler's `maxDiscAmount` clamp) was comparing `discountType` with
+  exact-case `===`, while `coupon.service.js` and `OffersPage.tsx`'s table
+  both compare case-insensitively - found in a code review, not reported by
+  the user. An offer stored as anything other than exactly lowercase
+  `'percentage'` had its `maxDiscAmount` field hidden in the edit form, and
+  saving ANY unrelated change on that record silently nulled the field out.
+  Fixed on both sides: the form's two comparisons are now
+  `.toLowerCase() === 'percentage'`, and `offer.validators.js`'s
+  `discountType` schema gained `.lowercase()` so every future write is
+  normalised regardless of what casing a direct API call sends - closing the
+  root cause, not just the symptom. Regression test:
+  `tests/offer.validators.test.js` (new, 4 cases) proves both create and
+  update normalise casing, and specifically that an update payload shaped
+  like the fixed form now sends (unrelated field changed, mixed-case
+  `discountType`, real `maxDiscAmount`) validates with `maxDiscAmount`
+  intact. No Dashboard test infrastructure exists (no Vitest/Jest, zero
+  component tests anywhere in the repo) to also cover the form-level fix
+  directly - verified live instead (create with `"PERCENTAGE"` → stored as
+  `"percentage"`, `maxDiscAmount` preserved) and cleaned up the test row.
+- `CinemaDetailsDrawer.tsx` gained an `ID` row (copyable, matching `Code`'s
+  own style) as the first `Descriptions.Item`, ahead of `Name` - a plain
+  ask, no design decision behind it beyond matching the existing pattern.
 
 ## 11. Consumer app
 
