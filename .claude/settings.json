@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/spec-dirty-check.js"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/format-frontend.js"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/constants-reminder.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/spec-dirty-stop-check.js"
+          }
+        ]
+      }
+    ]
+  }
+}

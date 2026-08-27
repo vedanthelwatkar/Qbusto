@@ -63,8 +63,13 @@ Thumbs.db
 
 # ---------------------------------------------------------------------------
 # Local tooling and scratch work
+#
+# .claude/ itself IS tracked (settings.json, rules/, agents/, skills/, hooks/
+# are shared team config) - only genuinely machine-local files under it are
+# ignored here.
 # ---------------------------------------------------------------------------
-.claude/
+.claude/settings.local.json
+.claude/.spec-dirty
 scratchpad/
 
 # ---------------------------------------------------------------------------

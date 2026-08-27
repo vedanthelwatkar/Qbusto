@@ -1,0 +1,4 @@
+backend/.env
+consumer/.env
+dashboard/.env
+kitchen/.env
