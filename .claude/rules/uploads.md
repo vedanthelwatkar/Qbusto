@@ -10,10 +10,12 @@ paths:
 
 `POST /api/uploads/{entity}` (dashboard) → disk; read via `GET
 /uploads/...`. Entity allowlist: `banners`, `films`, `categories`, `chains`,
-`products`.
+`cinemas`, `products`.
 
 - Entity allowlist → permission module: `banners`→Banners, `films`→Settings,
-  `categories`→Categories, `chains`→Settings, `products`→Products. This is
+  `categories`→Categories, `chains`→Settings, `cinemas`→Settings
+  (the per-cinema screensaver; `MODULES` is frozen and mirrors a DB CHECK
+  constraint, so there is no "Cinemas" module to add), `products`→Products. This is
   the **only** source of directory names, so a caller can never introduce a
   folder and `..`/absolute paths can never reach `path.join`.
 - multer uses **memory storage** — nothing reaches disk until the bytes are
@@ -38,7 +40,9 @@ paths:
   `/uploads/`.
 - Deletion never fails the surrounding request; a missing file is not an
   error (an orphan on disk is recoverable, a failed save is visible to the
-  user).
+  user). `cinema.service.updateCinema` is the first caller: it deletes the
+  previous screensaver **after** the row saves, so a failed save can never
+  orphan a cinema from artwork already removed from disk.
 - `shared/` is the one shared storage location — `openapi.json` beside
   `uploads/`. `FILE_STORAGE_PATH` (default `shared/uploads`) is resolved
   once, absolutely, against the repo root. `openapi.json` is unaffected by

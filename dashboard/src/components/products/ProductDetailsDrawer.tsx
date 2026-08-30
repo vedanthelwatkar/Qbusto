@@ -11,6 +11,7 @@ import { Alert, Descriptions, Drawer, Skeleton, Tag, Typography } from 'antd';
 import type { Product } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as productsService from '@/services/products.service';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text, Paragraph } = Typography;
 
@@ -114,7 +115,7 @@ export default function ProductDetailsDrawer({
           </Descriptions.Item>
           <Descriptions.Item label="Chain">#{product.chainId}</Descriptions.Item>
           <Descriptions.Item label="Created">
-            {product.createdAt ? new Date(product.createdAt).toLocaleString() : '-'}
+            {product.createdAt ? formatDateTime(product.createdAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

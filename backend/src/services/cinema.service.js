@@ -23,6 +23,7 @@ const { models, sequelize } = require('../config/database');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES } = require('../constants');
 const credentials = require('../utils/credentials');
+const { deleteLocalUpload } = require('./upload.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -33,6 +34,7 @@ const PUBLIC_ATTRIBUTES = [
   'city',
   'gstNumber',
   'fssaiNumber',
+  'screensaverUrl',
   'activeSince',
   'smsEnabled',
   'whatsappEnabled',
@@ -202,10 +204,34 @@ async function createCinema(actor, payload) {
   return serializeCinema(cinema);
 }
 
+/**
+ * Update a cinema, replacing its screensaver artwork if a new one was sent.
+ *
+ * A field the caller omitted is left untouched by Sequelize, so leaving
+ * `screensaverUrl` out of the body preserves whatever the cinema already has -
+ * which is what the Dashboard does when the user edits everything except the
+ * image.
+ *
+ * When the value DOES change, the previous file is deleted afterwards. The
+ * order matters: the row is saved first, so a failed save can never orphan a
+ * cinema from artwork that has already been removed from disk. Cleanup is best
+ * effort by design - `deleteLocalUpload` ignores an external URL, ignores an
+ * already-missing file, and never throws - because an orphaned image is
+ * recoverable while a failed save is visible to the user.
+ */
 async function updateCinema(actor, cinemaId, payload) {
   const cinema = await findForUpdate(actor, cinemaId);
 
+  const previousScreensaver = cinema.screensaverUrl;
+  const replacingScreensaver =
+    Object.prototype.hasOwnProperty.call(payload, 'screensaverUrl') &&
+    payload.screensaverUrl !== previousScreensaver;
+
   await cinema.update({ ...payload, updatedBy: actor.id });
+
+  if (replacingScreensaver && previousScreensaver) {
+    await deleteLocalUpload(previousScreensaver);
+  }
 
   return serializeCinema(cinema);
 }

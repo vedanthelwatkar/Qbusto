@@ -49,10 +49,10 @@ const { PosConfigurationError } = require('./posErrors');
  */
 
 /**
- * The synchronization window, as UTC instants.
+ * The synchronization window, as absolute instants (JS Dates).
  *
  * The window is computed from the server clock by the caller (§6.6) and is the
- * same for every provider, which is why it is expressed in UTC rather than in
+ * same for every provider, which is why it is expressed as instants rather than in
  * any cinema's local time.
  *
  * An adapter whose provider requires a *local-time* window must be given that

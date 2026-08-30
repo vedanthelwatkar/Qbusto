@@ -14,7 +14,8 @@ export default function ConfirmationPage() {
   const clearCart = useCartStore((state) => state.clear);
   // From the persisted QR context, so it survives a refresh of this page —
   // unlike the cart, which is in-memory and would vanish.
-  const seatNumber = useContextStore((state) => state.seatNumber);
+  // Joined for display only; the store keeps row and seat apart.
+  const seatNumber = useContextStore((state) => state.seatLabel());
   const clearCustomerData = useContextStore((state) => state.clearCustomerData);
 
   // Safety: orderId must be a strictly positive integer (digits only, no leading zero)

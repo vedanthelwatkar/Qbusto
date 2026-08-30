@@ -21,6 +21,10 @@ async function reportStartup() {
     node: process.version,
     pid: process.pid,
     logLevel: env.log.level,
+    // Logged because it is load-bearing, not cosmetic: the session window and
+    // every client show time are computed in this zone.
+    timeZone: env.timeZone,
+    localTime: new Date().toString(),
   });
 
   logger.info('Configuration loaded', {

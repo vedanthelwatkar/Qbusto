@@ -53,6 +53,7 @@ import type {
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import ChainSelect from '@/components/chains/ChainSelect';
 import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
+import ImageField from '@/components/ImageField';
 import { toApiError } from '@/services/api';
 import * as cinemasService from '@/services/cinemas.service';
 import * as gatewayConfigService from '@/services/paymentGatewayConfig.service';
@@ -69,6 +70,7 @@ interface FormValues {
   city?: string | null;
   gstNumber?: string | null;
   fssaiNumber?: string | null;
+  screensaverUrl?: string | null;
   activeSince?: Dayjs | null;
   smsEnabled: boolean;
   whatsappEnabled: boolean;
@@ -151,6 +153,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           city: full.city,
           gstNumber: full.gstNumber,
           fssaiNumber: full.fssaiNumber,
+          screensaverUrl: full.screensaverUrl,
           activeSince: full.activeSince ? dayjs(full.activeSince) : null,
           smsEnabled: full.smsEnabled === true,
           whatsappEnabled: full.whatsappEnabled === true,
@@ -197,6 +200,13 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           isActive: values.isActive,
         };
 
+        // Sent only when it actually changed. Omitting the key is what tells
+        // the backend to keep the current artwork; sending the unchanged value
+        // would be harmless but sending null would clear it.
+        if (form.isFieldTouched('screensaverUrl')) {
+          body.screensaverUrl = values.screensaverUrl ?? null;
+        }
+
         await cinemasService.updateCinema(cinemaId, body);
         message.success('Cinema updated');
       } else {
@@ -213,6 +223,8 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           city: values.city ?? null,
           gstNumber: values.gstNumber ?? null,
           fssaiNumber: values.fssaiNumber ?? null,
+          // Required by the API on create - see the Form.Item's own rule.
+          screensaverUrl: values.screensaverUrl ?? '',
           activeSince,
           smsEnabled: values.smsEnabled,
           whatsappEnabled: values.whatsappEnabled,
@@ -346,6 +358,28 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
             rules={[{ max: 50, message: 'Use at most 50 characters' }]}
           >
             <Input />
+          </Form.Item>
+
+          {/*
+            Required when creating, optional when editing - the same split the
+            gateway credentials use. A cinema that predates the field has none,
+            and forcing one on every future edit would block unrelated changes;
+            leaving the field untouched keeps the artwork already on file.
+          */}
+          <Form.Item
+            name="screensaverUrl"
+            label="Screensaver"
+            extra={
+              isEdit
+                ? 'Shown full-screen in the Consumer app before a customer starts an order. Leave as-is to keep the current image.'
+                : 'Shown full-screen in the Consumer app before a customer starts an order.'
+            }
+            rules={[
+              ...(isEdit ? [] : [{ required: true, message: 'Choose a screensaver image' }]),
+              { max: 500, message: 'Use at most 500 characters' },
+            ]}
+          >
+            <ImageField entity="cinemas" />
           </Form.Item>
 
           <Typography.Title level={5} style={{ marginTop: 8 }}>

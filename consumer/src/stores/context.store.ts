@@ -5,11 +5,23 @@ type OrderSource = 'qr' | 'seat_qr' | 'kiosk' | 'counter';
 interface ContextState {
   cinemaId: number | null;
   screenId: number | null;
-  seatNumber: string | null;
+  /**
+   * Row and seat, kept SEPARATE end to end.
+   *
+   * The URL carries them separately (`?row=A&seat=5`), the checkout form has a
+   * field for each, and they are stored apart here. They are joined into the
+   * single `seatNumber` string only at the boundary that genuinely requires
+   * one: the order payload, whose column is a single VARCHAR. `seatLabel()`
+   * below is the one place that join happens.
+   */
+  row: string | null;
+  seat: string | null;
   showTime: string | null;
   filmTitle: string | null;
   source: OrderSource;
   setContext(ctx: Partial<ContextState>): void;
+  /** Row and seat as one label, e.g. 'A5'. Null unless both are known. */
+  seatLabel(): string | null;
   loadFromLocalStorage(): void;
   clearCustomerData(): void;
   clear(): void;
@@ -30,25 +42,27 @@ const STORAGE_KEY = 'qbusto_order_context';
  * these values, so there is nothing to preserve between scans.
  */
 const CUSTOMER_FIELDS = {
-  seatNumber: null,
+  row: null,
+  seat: null,
   showTime: null,
   filmTitle: null,
 } as const;
 
 const getInitialState = (): Omit<
   ContextState,
-  'setContext' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'
+  'setContext' | 'seatLabel' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'
 > => ({
   cinemaId: null,
   screenId: null,
-  seatNumber: null,
+  row: null,
+  seat: null,
   showTime: null,
   filmTitle: null,
   source: 'qr',
 });
 
 const saveToLocalStorage = (
-  state: Omit<ContextState, 'setContext' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'>
+  state: Omit<ContextState, 'setContext' | 'seatLabel' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'>
 ) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -59,7 +73,7 @@ const saveToLocalStorage = (
 
 const loadFromStorageOrDefault = (): Omit<
   ContextState,
-  'setContext' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'
+  'setContext' | 'seatLabel' | 'loadFromLocalStorage' | 'clearCustomerData' | 'clear'
 > => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -80,11 +94,21 @@ export const useContextStore = create<ContextState>((set, get) => ({
     saveToLocalStorage({
       cinemaId: state.cinemaId,
       screenId: state.screenId,
-      seatNumber: state.seatNumber,
+      row: state.row,
+      seat: state.seat,
       showTime: state.showTime,
       filmTitle: state.filmTitle,
       source: state.source,
     });
+  },
+  /**
+   * The two halves joined, for the one place that needs a single string: the
+   * order payload's `seatNumber` column. Null unless BOTH are known - a row
+   * with no seat identifies nothing, and 'A' alone could not be split back.
+   */
+  seatLabel: () => {
+    const { row, seat } = get();
+    return row && seat ? `${row}${seat}` : null;
   },
   loadFromLocalStorage: () => {
     set(loadFromStorageOrDefault());
@@ -102,7 +126,8 @@ export const useContextStore = create<ContextState>((set, get) => ({
     saveToLocalStorage({
       cinemaId: state.cinemaId,
       screenId: state.screenId,
-      seatNumber: null,
+      row: null,
+      seat: null,
       showTime: null,
       filmTitle: null,
       source: state.source,

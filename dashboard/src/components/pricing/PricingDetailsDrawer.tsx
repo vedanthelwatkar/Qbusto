@@ -16,6 +16,7 @@ import { dayOfWeekLabel } from '@/components/pricing/days';
 import { formatDiscount, formatMoney } from '@/components/pricing/money';
 import { toApiError } from '@/services/api';
 import * as pricingService from '@/services/pricing.service';
+import { formatDateTime } from '@/utils/datetime';
 
 interface PricingDetailsDrawerProps {
   pricingId: number;
@@ -123,10 +124,10 @@ export default function PricingDetailsDrawer({
             {pricing.isActive === false ? <Tag>Inactive</Tag> : <Tag color="success">Active</Tag>}
           </Descriptions.Item>
           <Descriptions.Item label="Created">
-            {pricing.createdAt ? new Date(pricing.createdAt).toLocaleString() : '-'}
+            {pricing.createdAt ? formatDateTime(pricing.createdAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Updated">
-            {pricing.updatedAt ? new Date(pricing.updatedAt).toLocaleString() : '-'}
+            {pricing.updatedAt ? formatDateTime(pricing.updatedAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

@@ -207,6 +207,15 @@ const definition = {
           city: { type: 'string', nullable: true, example: 'Bengaluru' },
           gstNumber: { type: 'string', nullable: true, example: '29ABCDE1234F1Z5' },
           fssaiNumber: { type: 'string', nullable: true, example: '12345678901234' },
+          screensaverUrl: {
+            type: 'string',
+            nullable: true,
+            maxLength: 500,
+            example: '/uploads/cinemas/9f2c4e18a7b34d5069e1c8f0b2a67d3e.webp',
+            description:
+              'Consumer screensaver artwork. An upload path or an external URL, in one field. ' +
+              'Null for cinemas created before the field existed - the Consumer falls back to its text hero.',
+          },
           activeSince: { type: 'string', format: 'date-time', nullable: true },
           smsEnabled: { type: 'boolean', example: false },
           whatsappEnabled: { type: 'boolean', example: false },
@@ -513,9 +522,20 @@ const definition = {
             type: 'string',
             nullable: true,
             example: 'IMAX',
+            description: 'The auditorium as the source system names it.',
+          },
+          screenId: {
+            type: 'integer',
+            nullable: true,
+            example: 22,
             description:
-              'The auditorium as the source system names it. There is no screen id: ' +
-              'the schedule does not reference one.',
+              "QBusto's own screen id, resolved from screenName ONLY when that name " +
+              'identifies exactly one active screen at the cinema. ' +
+              'Null when no screen matches OR when the name is ambiguous - some ' +
+              "cinemas' screen data is one row per seat row rather than per " +
+              'auditorium, and no row in such a set represents the auditorium. ' +
+              "Send it as the order's screenId when present; when null, rely on " +
+              'screenName, which is always populated.',
           },
           filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
           filmTitle: {

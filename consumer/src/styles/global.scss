@@ -82,7 +82,7 @@ h3 {
 
 /* Links ---------------------------------------------------------------- */
 a {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   text-decoration: none;
   transition: color var(--transition-fast);
 
@@ -141,7 +141,7 @@ textarea {
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--color-primary-text);
     box-shadow: var(--focus-ring);
   }
 

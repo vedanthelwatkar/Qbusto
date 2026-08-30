@@ -33,6 +33,7 @@ import { getCinema } from '@/services/cinemas.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useBannersStore } from '@/stores/banners.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiBannersParams['order']> = {
@@ -196,8 +197,8 @@ export default function BannersPage() {
       render: (_, banner) => {
         if (!banner.startDate && !banner.endDate) return 'Always';
 
-        const from = banner.startDate ? new Date(banner.startDate).toLocaleDateString() : 'Any';
-        const to = banner.endDate ? new Date(banner.endDate).toLocaleDateString() : 'Any';
+        const from = banner.startDate ? formatDate(banner.startDate) : 'Any';
+        const to = banner.endDate ? formatDate(banner.endDate) : 'Any';
 
         return `${from} - ${to}`;
       },

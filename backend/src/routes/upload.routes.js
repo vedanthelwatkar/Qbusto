@@ -74,7 +74,7 @@ router.use(authenticate());
  *         description: Which entity the image belongs to. Determines the folder and the permission required.
  *         schema:
  *           type: string
- *           enum: [banners, categories, chains, films, products]
+ *           enum: [banners, categories, chains, cinemas, films, products]
  *     requestBody:
  *       required: true
  *       content:

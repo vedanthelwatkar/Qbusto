@@ -185,7 +185,14 @@ export default function App() {
     // would persist a context of nulls, wipe the stored cinemaId and eject the
     // user. `source` can never signal presence: it always defaults to 'qr'.
     if (qrContext.cinemaId !== null) {
-      setContext(qrContext);
+      // The store holds row and seat SEPARATELY, so the combined `seatNumber`
+      // the parser also derives is dropped here - it exists only to keep the
+      // legacy ?seatNumber=A5 form readable, and carrying both would leave two
+      // copies of the same fact that could drift apart.
+      const { seatNumber, ...context } = qrContext;
+      void seatNumber;
+
+      setContext(context);
     } else {
       // Otherwise, load from localStorage (if available)
       loadFromLocalStorage();

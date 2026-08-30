@@ -547,9 +547,10 @@ afterwards.
 ## Films and sessions
 
 `GET /api/consumer/cinemas/{cinemaId}/sessions` returns the screenings a cinema
-has scheduled that have not started yet, earliest first, capped at two per
-auditorium and bounded by the 06:00-to-06:00 programming day. The Consumer
-offers them as a single picker at checkout.
+has scheduled within three hours either side of now, earliest first, capped at
+two per auditorium. The window is flat rather than tied to a calendar day, and
+reaches backwards on purpose: a customer twenty minutes into a film is exactly
+who wants food. The Consumer offers them as a single picker at checkout.
 
 ```
 film --< session >-- cinemas   (joined by code, not by id)

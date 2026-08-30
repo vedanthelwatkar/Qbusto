@@ -44,11 +44,16 @@ const TIME_ATTRIBUTES = ['startTime', 'endTime'];
 /**
  * Render a TIME column as 'HH:MM:SS'.
  *
- * The driver hands back a TIME as a Date pinned to 1970-01-01 with the time in
- * UTC, so serialising it untouched would emit '1970-01-01T09:00:00.000Z' - a
- * value this module's own validator rejects, leaving a client unable to send
- * back what it just read. UTC accessors are the right ones precisely because
- * the date half is a placeholder, not a real instant.
+ * The driver hands back a TIME as a Date pinned to 1970-01-01, so serialising
+ * it untouched would emit '1970-01-01T09:00:00.000Z' - a value this module's
+ * own validator rejects, leaving a client unable to send back what it just
+ * read. The date half is a placeholder, not a real instant.
+ *
+ * LOCAL accessors, matching pricing.service.formatStoredTime. Which components
+ * carry the stored digits depends on the connection's `useUTC`, and QBusto
+ * sets `useUTC: false` (config/config.js, the IST storage pair), so a TIME
+ * arrives in local components. Reading it with getUTC* under that setting
+ * shifts every value by the IST offset - 09:00 would serialise as 03:30.
  *
  * Passes strings through unchanged, so a value that arrives already formatted
  * is left alone.
@@ -59,9 +64,7 @@ function formatTime(value) {
 
   const pad = (part) => String(part).padStart(2, '0');
 
-  return [pad(value.getUTCHours()), pad(value.getUTCMinutes()), pad(value.getUTCSeconds())].join(
-    ':'
-  );
+  return [pad(value.getHours()), pad(value.getMinutes()), pad(value.getSeconds())].join(':');
 }
 
 function serializeAvailabilityHour(hour) {

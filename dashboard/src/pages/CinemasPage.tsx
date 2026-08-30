@@ -45,6 +45,7 @@ import * as cinemasService from '@/services/cinemas.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useCinemasStore } from '@/stores/cinemas.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -211,8 +212,7 @@ export default function CinemasPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, cinema) =>
-        cinema.createdAt ? new Date(cinema.createdAt).toLocaleDateString() : '-',
+      render: (_, cinema) => (cinema.createdAt ? formatDate(cinema.createdAt) : '-'),
     },
     {
       title: '',

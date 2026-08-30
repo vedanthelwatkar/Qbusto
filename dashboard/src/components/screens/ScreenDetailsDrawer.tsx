@@ -11,6 +11,7 @@ import { Alert, Descriptions, Drawer, Skeleton, Tag } from 'antd';
 import type { Screen } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as screensService from '@/services/screens.service';
+import { formatDateTime } from '@/utils/datetime';
 
 interface ScreenDetailsDrawerProps {
   screenId: number;
@@ -79,10 +80,10 @@ export default function ScreenDetailsDrawer({
           </Descriptions.Item>
           <Descriptions.Item label="Cinema">{cinemaLabel}</Descriptions.Item>
           <Descriptions.Item label="Created">
-            {screen.createdAt ? new Date(screen.createdAt).toLocaleString() : '-'}
+            {screen.createdAt ? formatDateTime(screen.createdAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Updated">
-            {screen.updatedAt ? new Date(screen.updatedAt).toLocaleString() : '-'}
+            {screen.updatedAt ? formatDateTime(screen.updatedAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

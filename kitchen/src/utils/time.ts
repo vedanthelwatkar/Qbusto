@@ -105,6 +105,20 @@ export function describeDuration(ms: number): string {
   return minutes === 0 ? hourPart : `${hourPart} ${minutes} minutes`;
 }
 
+/**
+ * The cinema's timezone. Mirrors APP_TIMEZONE in the backend's environment.
+ *
+ * Pinned rather than left to the device: a kitchen display is a fixed screen
+ * someone imaged once, and if its clock is on the wrong zone every ticket
+ * shows the wrong time while looking entirely normal. Timestamps arrive as UTC
+ * instants, so rendering them in a chosen zone is well-defined.
+ *
+ * Only the two WALL-CLOCK formatters below use it. The elapsed/urgency maths
+ * above is deliberately untouched: those are differences between instants, and
+ * a duration has no timezone.
+ */
+const CINEMA_TIME_ZONE = 'Asia/Kolkata';
+
 /** Wall-clock time, e.g. "1:35 PM". Empty string for a missing timestamp. */
 export function formatClock(iso: string | null): string {
   if (!iso) return '';
@@ -112,10 +126,19 @@ export function formatClock(iso: string | null): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
 
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString([], {
+    timeZone: CINEMA_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 /** Full date for the header, e.g. "18 Aug 2026". */
 export function formatDate(date: Date): string {
-  return date.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString([], {
+    timeZone: CINEMA_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }

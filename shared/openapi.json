@@ -357,6 +357,13 @@
             "nullable": true,
             "example": "12345678901234"
           },
+          "screensaverUrl": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "example": "/uploads/cinemas/9f2c4e18a7b34d5069e1c8f0b2a67d3e.webp",
+            "description": "Consumer screensaver artwork. An upload path or an external URL, in one field. Null for cinemas created before the field existed - the Consumer falls back to its text hero."
+          },
           "activeSince": {
             "type": "string",
             "format": "date-time",
@@ -978,7 +985,13 @@
             "type": "string",
             "nullable": true,
             "example": "IMAX",
-            "description": "The auditorium as the source system names it. There is no screen id: the schedule does not reference one."
+            "description": "The auditorium as the source system names it."
+          },
+          "screenId": {
+            "type": "integer",
+            "nullable": true,
+            "example": 22,
+            "description": "QBusto's own screen id for that auditorium, resolved from screenName. Send this as the order's screenId. Null when no active screen matches."
           },
           "filmCode": {
             "type": "string",
@@ -2086,6 +2099,7 @@
                 "banners",
                 "categories",
                 "chains",
+                "cinemas",
                 "films",
                 "products"
               ]
@@ -7158,6 +7172,7 @@
                 "required": [
                   "code",
                   "name",
+                  "screensaverUrl",
                   "gatewayId",
                   "secretKey"
                 ],
@@ -7196,6 +7211,11 @@
                     "type": "string",
                     "maxLength": 50,
                     "nullable": true
+                  },
+                  "screensaverUrl": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Consumer screensaver artwork. Required on create: an upload path (/uploads/cinemas/...) or an external URL."
                   },
                   "activeSince": {
                     "type": "string",
@@ -7401,6 +7421,12 @@
                     "type": "string",
                     "maxLength": 50,
                     "nullable": true
+                  },
+                  "screensaverUrl": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "nullable": true,
+                    "description": "Omit to keep the current artwork. A new value replaces it and the old upload is deleted."
                   },
                   "activeSince": {
                     "type": "string",

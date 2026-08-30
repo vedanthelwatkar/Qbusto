@@ -42,7 +42,10 @@ QBusto vocabulary via `field:` mappings only.
 - **There is deliberately no second `films`/`sessions` table.** Earlier
   migrations that created QBusto-owned duplicates were **removed**.
 - `session` has **no `screens.id`** — only `Screen_bytNum`/`Screen_strName`.
-  Session responses return `screenName` as text; no screen id is derived.
+  Session responses return `screenName` as text, plus a `screenId` resolved
+  from it by name (`resolveScreenIdsByName`, lowest active id wins on a
+  duplicate name) so an order records the screen of the show the customer
+  actually picked rather than whichever screen their QR was printed for.
 
 **Session status (`Session_strStatus`) — client-defined:**
 
@@ -57,14 +60,28 @@ leaves the database. `SESSION_STATUS_OPEN = 'O'` in `consumer.service.js`.
 It cannot be bypassed by a client and cannot be lost to a later refactor of
 the response shape.
 
-Consumer session picker (`getSessions`): programming day runs **06:00 →
-06:00** (`PROGRAMMING_DAY_START_HOUR = 6`), so a 01:00 screening belongs to
-the night before, matching the client's own scheduling query. Window starts
-at **now**, not the start of the day — a screening already under way is not
-something food can be ordered against. Capped at **2 per screen**
-(`SESSIONS_PER_SCREEN = 2`) so one busy auditorium can't crowd out the rest.
-Returns `screenName` **as text**; no screen id is derived (see grain
-conflict below). Film join is `required: true`.
+Consumer session picker (`getSessions`): offers screenings starting within
+**3 hours either side of now** (`SESSION_WINDOW_HOURS = 3`) — a flat window
+around the current moment, deliberately **not** tied to a calendar or
+programming day, so a 23:45 screening is still offered at 01:30 the next
+morning. The **lookback half is intentional**: a screening already under way
+is offered, because someone twenty minutes into a film is the customer most
+likely to want food. (This reverses the earlier rule, which started the
+window at `now` and ran to the next 06:00.) Capped at **2 per screen**
+(`SESSIONS_PER_SCREEN = 2`) so one busy auditorium can't crowd out the rest;
+with the lookback, one of a screen's two slots may be a show already running.
+Returns `screenName` as text **and** a resolved `screenId` (see grain conflict
+below). Film join is `required: true`.
+
+`startsAt`/`endsAt` carry **no model getters** — and must not gain any. These
+`datetime` columns hold cinema-local (IST) wall clock with no offset, and the
+connection now sets `useUTC: false` (see the timezone section in CLAUDE.md), so
+tedious already parses them as process-local, with the process pinned to IST by
+`APP_TIMEZONE`. An earlier fix corrected the value in an `asLocalWallClock`
+getter because the connection then parsed it as UTC; once that moved to the
+driver, the getter became a **second** conversion and was removed. Same rule for
+any other offset-less client `datetime` column: the driver handles it, the model
+does not.
 
 Film/Session API routes are **read-only** (`GET` only, `Settings:read`) —
 there is no create/update/delete, this data is the client's.

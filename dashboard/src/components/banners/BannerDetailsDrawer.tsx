@@ -15,6 +15,7 @@ import type { Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as bannersService from '@/services/banners.service';
 import { resolveImageUrl } from '@/utils/imageUrl';
+import { formatDateTime } from '@/utils/datetime';
 
 interface BannerDetailsDrawerProps {
   bannerId: number;
@@ -96,20 +97,20 @@ export default function BannerDetailsDrawer({
             </Descriptions.Item>
             <Descriptions.Item label="Sequence">{banner.sequence ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="Starts">
-              {banner.startDate ? new Date(banner.startDate).toLocaleString() : '-'}
+              {banner.startDate ? formatDateTime(banner.startDate) : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Ends">
-              {banner.endDate ? new Date(banner.endDate).toLocaleString() : '-'}
+              {banner.endDate ? formatDateTime(banner.endDate) : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Status">
               {banner.isActive === false ? <Tag>Inactive</Tag> : <Tag color="success">Active</Tag>}
             </Descriptions.Item>
             <Descriptions.Item label="Image URL">{banner.imageUrl ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="Created">
-              {banner.createdAt ? new Date(banner.createdAt).toLocaleString() : '-'}
+              {banner.createdAt ? formatDateTime(banner.createdAt) : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Updated">
-              {banner.updatedAt ? new Date(banner.updatedAt).toLocaleString() : '-'}
+              {banner.updatedAt ? formatDateTime(banner.updatedAt) : '-'}
             </Descriptions.Item>
           </Descriptions>
         </>

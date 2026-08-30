@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useContextStore } from '@/stores/context.store';
 import { useCartStore } from '@/stores/cart.store';
 import { useUIStore } from '@/stores/ui.store';
 import {
   fetchAllCategories,
-  fetchProducts,
+  fetchAllProducts,
   fetchBanners,
   fetchCinema,
 } from '@/services/catalog.service';
@@ -15,7 +15,7 @@ import Thumbnail from '@/components/Thumbnail';
 import { resolveImageUrl } from '@/utils/imageUrl';
 import { formatApiError, isNotFoundError } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
-import { AlertIcon, BagIcon, CloseIcon, SearchIcon } from '@/components/icons';
+import { AlertIcon, BagIcon } from '@/components/icons';
 import type { Category, Product, Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 import '../styles/pages/catalog.scss';
 
@@ -26,14 +26,17 @@ interface ProductWithPrice extends Product {
 const SKELETON_COUNT = 6;
 
 /**
- * Products per request. The endpoint caps `limit` at 100; this is deliberately
- * well under that so the first paint is quick on a phone on cinema wifi, and
- * "Load more" stays a real, cheap request rather than a token gesture.
+ * The menu is ONE continuous list, grouped into category sections in the rail's
+ * order: reaching the end of a category simply continues into the next, and the
+ * list ends when every category is exhausted. There is no "All items" entry -
+ * the whole menu is always present - and the rail scrolls to a section rather
+ * than refetching a filtered page.
+ *
+ * Everything is therefore loaded once per cinema (see fetchAllProducts, which
+ * pages against the server's own total rather than assuming one page covers
+ * it). A cinema carries on the order of a hundred items, so this is a single
+ * cheap load instead of pagination machinery the data does not need.
  */
-const PAGE_SIZE = 24;
-
-/** Matches the previous debounce. Long enough to skip most keystrokes. */
-const SEARCH_DEBOUNCE_MS = 250;
 
 /** How long each header banner stays on screen before the next one. */
 const BANNER_ROTATE_MS = 3000;
@@ -48,6 +51,13 @@ export default function CatalogPage() {
   // Page chrome: the category rail and the banners. Loaded once per cinema.
   const [categories, setCategories] = useState<Category[]>([]);
   /**
+   * The rail loads on its own request, and the sections are built by matching
+   * products to it. Products can arrive first, and rendering then would show
+   * the item count and "That's the full menu" above an empty grid, because
+   * every product's category is still unknown.
+   */
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  /**
    * All active header banners, in `sequence` order as the API returned them.
    *
    * Previously only the first was kept and the rest were discarded, so a
@@ -56,7 +66,7 @@ export default function CatalogPage() {
   const [headerBanners, setHeaderBanners] = useState<Banner[]>([]);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [innerBanner, setInnerBanner] = useState<Banner | null>(null);
-  /** For the "Welcome to <cinema>" strip shown above the menu search. */
+  /** For the "Welcome to <cinema>" strip shown above the menu. */
   const [cinemaName, setCinemaName] = useState<string | null>(null);
   /**
    * Fatal for the page: without the rail there is nothing to browse. Held
@@ -66,18 +76,21 @@ export default function CatalogPage() {
    */
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // The product grid, which is paginated and refetched whenever a filter moves.
+  // The whole menu, loaded once and grouped for display.
   const [products, setProducts] = useState<ProductWithPrice[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [listLoading, setListLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   /** Non-fatal: the rail still works, so this shows inside the grid area. */
   const [listError, setListError] = useState<string | null>(null);
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  /**
+   * Which section the rail highlights. Follows what is on screen rather than
+   * driving the query - selecting a category scrolls, it does not refetch.
+   */
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  /** One node per rendered section, for scroll-to and for the observer. */
+  const sectionRefs = useRef(new Map<number, HTMLElement>());
+  /** One node per rail button, so the rail can follow the active section. */
+  const railRefs = useRef(new Map<number, HTMLElement>());
 
   /**
    * Guards against out-of-order responses. Switching category twice quickly,
@@ -87,8 +100,6 @@ export default function CatalogPage() {
    * on arrival instead of the request being cancelled.
    */
   const requestRef = useRef(0);
-  /** Tracks which filter actually moved, to pick the right pending treatment. */
-  const lastCategoryRef = useRef<number | null>(null);
 
   // Chrome. Categories page properly — the rail is navigation, and a category
   // missing from it is unreachable.
@@ -106,6 +117,7 @@ export default function CatalogPage() {
 
         if (!active) return;
         setCategories(allCategories);
+        setCategoriesLoading(false);
         setCinemaName(cinema.name ?? null);
         // A banner with no artwork cannot be a slide; keeping it would show a
         // blank frame in the rotation.
@@ -117,6 +129,7 @@ export default function CatalogPage() {
         setPageError(null);
       } catch (error) {
         if (!active) return;
+        setCategoriesLoading(false);
         setPageError(
           isNotFoundError(error)
             ? 'We could not find this cinema. Please scan the QR code at your seat again.'
@@ -132,76 +145,37 @@ export default function CatalogPage() {
   }, [cinemaId]);
 
   /**
-   * One request for one page of products under the current filters.
+   * Load the whole menu.
    *
-   * `append` distinguishes "Load more" from a filter change: the former adds to
-   * the list, the latter replaces it and resets the page counter.
+   * No category and no search parameter: the rail navigates within what is
+   * already here, so browsing costs no further request at all.
    */
-  const loadProducts = useCallback(
-    async (targetPage: number, { append }: { append: boolean }) => {
-      const token = ++requestRef.current;
+  const loadProducts = useCallback(async () => {
+    const token = ++requestRef.current;
 
-      if (append) setLoadingMore(true);
-      else setListLoading(true);
-      setListError(null);
+    setListLoading(true);
+    setListError(null);
 
-      try {
-        const response = await fetchProducts(cinemaId, {
-          categoryId: selectedCategoryId ?? undefined,
-          search: searchQuery || undefined,
-          limit: PAGE_SIZE,
-          page: targetPage,
-        });
+    try {
+      const all = await fetchAllProducts(cinemaId);
 
-        // A newer request has since started; this result is stale.
-        if (token !== requestRef.current) return;
+      // A newer request has since started; this result is stale.
+      if (token !== requestRef.current) return;
 
-        const incoming = response.data as ProductWithPrice[];
-        setProducts((previous) => (append ? [...previous, ...incoming] : incoming));
-        setTotal(response.meta?.pagination?.total ?? incoming.length);
-        setPage(targetPage);
-      } catch (error) {
-        if (token !== requestRef.current) return;
-        setListError(formatApiError(error));
-        // Only a failed first page clears the grid. A failed "Load more" must
-        // keep what the customer already has.
-        if (!append) {
-          setProducts([]);
-          setTotal(0);
-        }
-      } finally {
-        if (token === requestRef.current) {
-          setListLoading(false);
-          setLoadingMore(false);
-        }
-      }
-    },
-    [cinemaId, selectedCategoryId, searchQuery]
-  );
-
-  // Debounce the search box so typing does not fire a request per keystroke.
-  useEffect(() => {
-    const timeoutId = setTimeout(() => setSearchQuery(searchInput.trim()), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timeoutId);
-  }, [searchInput]);
-
-  // Any filter change restarts at page 1.
-  useEffect(() => {
-    const categoryChanged = lastCategoryRef.current !== selectedCategoryId;
-    lastCategoryRef.current = selectedCategoryId;
-
-    // A different category is a different list, so the old rows are dropped
-    // rather than held under the new heading — showing Beverages under
-    // "Snacks", even dimmed, is untrue. Narrowing by search keeps the same
-    // list, so those rows stay and are dimmed instead of flashing skeletons
-    // on every keystroke.
-    if (categoryChanged) {
+      setProducts(all as ProductWithPrice[]);
+    } catch (error) {
+      if (token !== requestRef.current) return;
+      setListError(formatApiError(error));
       setProducts([]);
-      setTotal(0);
+    } finally {
+      if (token === requestRef.current) setListLoading(false);
     }
+  }, [cinemaId]);
 
-    loadProducts(1, { append: false });
-  }, [loadProducts, selectedCategoryId]);
+  // Only the cinema can change what is loaded.
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
 
   /**
    * Which slide is showing.
@@ -234,16 +208,104 @@ export default function CatalogPage() {
     // of whatever was left of the previous slide's.
   }, [headerBanners.length, activeBanner]);
 
-  const loadedAll = products.length >= total;
+  /**
+   * The menu as sections, in the rail's category order.
+   *
+   * Built from what was loaded rather than requested per category, so a product
+   * appears exactly once (it has one categoryId) and a category appears exactly
+   * once. Categories with nothing available are dropped entirely - an empty
+   * heading is noise, and the rail should not offer a section that scrolls to
+   * nothing.
+   */
+  const sections = useMemo(() => {
+    const byCategory = new Map<number, ProductWithPrice[]>();
 
-  const activeCategoryName =
-    selectedCategoryId === null
-      ? 'All items'
-      : (categories.find((c) => c.id === selectedCategoryId)?.name ?? 'Items');
+    for (const product of products) {
+      if (!product.id || product.categoryId === undefined || product.categoryId === null) continue;
+      const bucket = byCategory.get(product.categoryId);
+      if (bucket) bucket.push(product);
+      else byCategory.set(product.categoryId, [product]);
+    }
 
-  const clearSearch = useCallback(() => {
-    setSearchInput('');
-    setSearchQuery('');
+    return categories
+      .map((category) => ({
+        id: category.id as number,
+        name: category.name ?? 'Items',
+        items: (category.id !== undefined && byCategory.get(category.id)) || [],
+      }))
+      .filter((section) => section.id !== undefined && section.items.length > 0);
+  }, [products, categories]);
+
+  const total = products.length;
+
+  /**
+   * Highlight whichever section is in view.
+   *
+   * A single observer over the section headings: the rail follows the customer
+   * as they scroll from one category into the next, which is what makes the
+   * continuous list navigable. `rootMargin` biases the trigger to the top of
+   * the scroller so a heading counts as "current" once it reaches the top
+   * rather than when it first appears at the bottom.
+   */
+  useEffect(() => {
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+
+        if (!visible) return;
+        const id = Number(visible.target.getAttribute('data-category-id'));
+        if (!Number.isNaN(id)) setActiveCategoryId(id);
+      },
+      { rootMargin: '0px 0px -70% 0px', threshold: 0 }
+    );
+
+    for (const section of sections) {
+      const node = sectionRefs.current.get(section.id);
+      if (node) observer.observe(node);
+    }
+
+    return () => observer.disconnect();
+  }, [sections]);
+
+  /**
+   * The rail's highlight. Derived rather than seeded in an effect: before the
+   * customer scrolls, "current" simply means the first section, and writing
+   * that into state on mount would be a render just to reach the value already
+   * available here.
+   */
+  const highlightedCategoryId = activeCategoryId ?? sections[0]?.id ?? null;
+
+  /**
+   * Keep the highlighted category visible in the rail.
+   *
+   * The rail scrolls independently of the product pane, so on a long menu the
+   * current category could be highlighted well outside the rail's own
+   * viewport - the customer scrolls into DESSERTS and the rail still shows
+   * APPETIZERS because it never moved. `nearest` scrolls only when it actually
+   * needs to, so the rail does not jump on every observer tick.
+   */
+  useEffect(() => {
+    if (highlightedCategoryId === null) return;
+
+    railRefs.current.get(highlightedCategoryId)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  }, [highlightedCategoryId]);
+
+  /** Rail click: move to the section, never refetch. */
+  const goToCategory = useCallback((categoryId: number) => {
+    setActiveCategoryId(categoryId);
+    sectionRefs.current.get(categoryId)?.scrollIntoView({
+      // Respecting reduced motion here matters: this scrolls a long list.
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
   }, []);
 
   // Fatal: no rail, nothing to browse.
@@ -265,16 +327,10 @@ export default function CatalogPage() {
     );
   }
 
-  /**
-   * A category switch replaces the list with a different one, so holding the
-   * old products under the new heading would be untrue — those get skeletons.
-   * A search only narrows the same list, so the previous results stay put,
-   * dimmed and marked busy, which avoids a skeleton flash on every keystroke.
-   */
-  const showSkeletons = listLoading && products.length === 0;
-  const showStale = listLoading && products.length > 0;
-  /** A search request is outstanding, or the debounce has yet to fire. */
-  const searching = Boolean(searchInput) && (listLoading || searchInput.trim() !== searchQuery);
+  /** The menu loads once per cinema, so this is the only pending state left. */
+  /* Both halves: the grid is grouped BY category, so products alone are not
+     enough to render it. */
+  const showSkeletons = listLoading || categoriesLoading;
 
   return (
     <div className="catalog">
@@ -317,68 +373,34 @@ export default function CatalogPage() {
 
       {cinemaName && <div className="catalog__welcome">Welcome to {cinemaName}</div>}
 
-      <div className="catalog__searchbar">
-        <div className="catalog__search">
-          {/* The spinner takes the leading slot, not the trailing one: clear
-              has to stay put and stay tappable while a search is running. */}
-          {searching ? (
-            <span className="catalog__search-icon" aria-hidden="true">
-              <span className="spinner spinner--sm" />
-            </span>
-          ) : (
-            <SearchIcon size={18} className="catalog__search-icon" />
-          )}
-
-          <input
-            type="search"
-            className="catalog__search-input"
-            placeholder="Search the menu"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            aria-label="Search products"
-          />
-
-          {searchInput && (
-            <button
-              type="button"
-              className="catalog__search-clear"
-              onClick={clearSearch}
-              aria-label="Clear search"
-            >
-              <CloseIcon size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="catalog__layout">
         <nav className="catalog__sidebar" aria-label="Product categories">
-          <button
-            type="button"
-            className={`catalog__category${selectedCategoryId === null ? ' is-active' : ''}`}
-            onClick={() => setSelectedCategoryId(null)}
-            aria-pressed={selectedCategoryId === null}
-          >
-            <span className="catalog__category-thumb">
-              <BagIcon size={26} />
-            </span>
-            <span className="catalog__category-name">All items</span>
-          </button>
-
-          {categories.map((category) => (
+          {/*
+            No "All items": the list already contains every category, so the
+            entry would have selected what is on screen anyway. Each button
+            moves to its section instead of filtering.
+          */}
+          {sections.map((section) => (
             <button
-              key={category.id}
+              key={section.id}
               type="button"
               className={`catalog__category${
-                selectedCategoryId === category.id ? ' is-active' : ''
+                highlightedCategoryId === section.id ? ' is-active' : ''
               }`}
-              onClick={() => setSelectedCategoryId(category.id || null)}
-              aria-pressed={selectedCategoryId === category.id}
+              onClick={() => goToCategory(section.id)}
+              aria-current={highlightedCategoryId === section.id ? 'true' : undefined}
+              ref={(node) => {
+                if (node) railRefs.current.set(section.id, node);
+                else railRefs.current.delete(section.id);
+              }}
             >
               <span className="catalog__category-thumb">
-                <Thumbnail src={category.imageUrl} iconSize={22} />
+                <Thumbnail
+                  src={categories.find((c) => c.id === section.id)?.imageUrl}
+                  iconSize={22}
+                />
               </span>
-              <span className="catalog__category-name">{category.name}</span>
+              <span className="catalog__category-name">{section.name}</span>
             </button>
           ))}
         </nav>
@@ -414,39 +436,45 @@ export default function CatalogPage() {
           ) : products.length > 0 ? (
             <>
               <div className="catalog__pane-head">
-                <h1 className="catalog__pane-title">
-                  {searchQuery ? `Results for "${searchQuery}"` : activeCategoryName}
-                </h1>
-                {/* Truthful: `total` is the server's count for these filters,
-                    not the number of rows currently in the DOM. */}
+                <h1 className="catalog__pane-title">Menu</h1>
                 <p className="catalog__pane-count" aria-live="polite">
-                  {products.length < total
-                    ? `${products.length} of ${total}`
-                    : total === 1
-                      ? '1 item'
-                      : `${total} items`}
+                  {total === 1 ? '1 item' : `${total} items`}
                 </p>
               </div>
 
-              <div
-                className={`catalog__grid${showStale ? ' is-stale' : ''}`}
-                aria-busy={showStale || undefined}
-              >
-                {products.map((product) => {
-                  if (!product.id) return null;
-                  return (
-                    <ProductCard
-                      key={product.id}
-                      id={product.id}
-                      name={product.name || 'Unknown'}
-                      description={product.description}
-                      imageUrl={product.imageUrl}
-                      price={product.basePrice}
-                      weight={product.weight}
-                    />
-                  );
-                })}
-              </div>
+              {/* One continuous list. Each category is a section in the rail's
+                  order, so scrolling past the end of one simply continues into
+                  the next until every category is exhausted. */}
+              {sections.map((section) => (
+                <section
+                  key={section.id}
+                  className="catalog__section"
+                  data-category-id={section.id}
+                  aria-labelledby={`category-${section.id}`}
+                  ref={(node) => {
+                    if (node) sectionRefs.current.set(section.id, node);
+                    else sectionRefs.current.delete(section.id);
+                  }}
+                >
+                  <h2 className="catalog__section-title" id={`category-${section.id}`}>
+                    {section.name}
+                  </h2>
+
+                  <div className="catalog__grid">
+                    {section.items.map((product) => (
+                      <ProductCard
+                        key={product.id}
+                        id={product.id as number}
+                        name={product.name || 'Unknown'}
+                        description={product.description}
+                        imageUrl={product.imageUrl}
+                        price={product.basePrice}
+                        weight={product.weight}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
 
               {listError && (
                 <div className="alert alert--error catalog__list-error" role="alert">
@@ -455,30 +483,11 @@ export default function CatalogPage() {
                 </div>
               )}
 
-              {!loadedAll && (
-                <div className="catalog__more">
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => loadProducts(page + 1, { append: true })}
-                    // Also disabled while a filter change is in flight. The
-                    // dimmed grid blocks its own pointer events but this
-                    // button sits outside it, and `page` still refers to the
-                    // outgoing filter — clicking here mid-search would append
-                    // a page of the new results onto the old list.
-                    disabled={loadingMore || listLoading}
-                  >
-                    {loadingMore ? (
-                      <>
-                        <span className="spinner spinner--sm" />
-                        Loading…
-                      </>
-                    ) : (
-                      `Load more (${total - products.length} left)`
-                    )}
-                  </button>
-                </div>
-              )}
+              {/* The end of the menu, stated plainly: there is nothing more to
+                  scroll for, which a bare last row does not communicate. */}
+              <p className="catalog__end" role="status">
+                That's the full menu
+              </p>
             </>
           ) : listError ? (
             <StatePanel
@@ -488,10 +497,7 @@ export default function CatalogPage() {
               title="We couldn't load these items"
               body={listError}
               actions={
-                <button
-                  className="btn btn--primary"
-                  onClick={() => loadProducts(1, { append: false })}
-                >
+                <button className="btn btn--primary" onClick={() => loadProducts()}>
                   Try again
                 </button>
               }
@@ -499,45 +505,9 @@ export default function CatalogPage() {
           ) : (
             <StatePanel
               boxed
-              icon={<SearchIcon size={28} />}
-              title={searchQuery ? 'No matches found' : 'Nothing available here'}
-              body={
-                searchQuery
-                  ? selectedCategoryId !== null
-                    ? `Nothing in ${activeCategoryName} matches "${searchQuery}".`
-                    : `We couldn't find anything for "${searchQuery}". Try a different search.`
-                  : selectedCategoryId !== null
-                    ? `Nothing in ${activeCategoryName} is available right now. Some items are only served at certain times.`
-                    : 'This cinema has no items available right now. Please check back later.'
-              }
-              actions={
-                <>
-                  {/* A search inside a category can miss an item that exists
-                      one category over, so offer the wider search rather than
-                      leaving the customer to work it out. */}
-                  {searchQuery && selectedCategoryId !== null && (
-                    <button
-                      className="btn btn--primary"
-                      onClick={() => setSelectedCategoryId(null)}
-                    >
-                      Search the whole menu
-                    </button>
-                  )}
-                  {searchQuery && (
-                    <button className="btn btn--secondary" onClick={clearSearch}>
-                      Clear search
-                    </button>
-                  )}
-                  {!searchQuery && selectedCategoryId !== null && (
-                    <button
-                      className="btn btn--secondary"
-                      onClick={() => setSelectedCategoryId(null)}
-                    >
-                      Browse all items
-                    </button>
-                  )}
-                </>
-              }
+              icon={<AlertIcon size={28} />}
+              title="Nothing available here"
+              body="This cinema has no items available right now. Please check back later."
             />
           )}
         </main>

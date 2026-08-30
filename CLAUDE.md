@@ -64,6 +64,38 @@ per-cinema credentials, coupon rules): see "Scoped rules" below —
 [payments.md](./.claude/rules/payments.md) /
 [coupons.md](./.claude/rules/coupons.md).
 
+## Timezone — IST everywhere, storage included
+
+**The database stores IST wall clock, not UTC.** A client requirement, and the
+one place it is easy to break silently.
+
+Two settings in `backend/config/config.js` are a **matched pair** — change one
+without the other and every timestamp corrupts:
+
+| Setting | Governs | Value |
+| --- | --- | --- |
+| `timezone` | **writes** (Sequelize renders the literal itself) | `'+05:30'` |
+| `dialectOptions.options.useUTC` | **reads** (tedious parses the column) | `false` |
+
+Verified against the live DB — only this pair stores IST *and* preserves the
+instant; the other three combinations each break one half. `tests/
+timezone.storage.test.js` pins both halves and fails if either drifts.
+
+- `APP_TIMEZONE` (`src/config/env.js`) pins `process.env.TZ` and **refuses to
+  boot** if the runtime resolves elsewhere. `useUTC:false` means "parse as
+  process-local", so this is load-bearing for reads, not cosmetic.
+- Vista's `film`/`session` columns already stored IST and are untouched.
+  `models/session.js` has **no** `asLocalWallClock` getters — the driver now
+  parses them correctly, so a getter would be a *second* conversion.
+- Columns stay **`datetime2(7)`**. Do not convert to `datetime`: Sequelize
+  renders `DATE` as `DATETIMEOFFSET`, which `datetime` rejects outright, so
+  every ORM write would fail. Type carries no timezone meaning either way.
+- API responses stay ISO-8601 `Z` (an unambiguous instant); frontends render
+  in `Asia/Kolkata` via each app's `utils/datetime` / kitchen `time.ts`.
+- Historical rows were converted by
+  `20260830000100-store-qbusto-datetimes-as-ist.js` — **not re-runnable**, see
+  its header. `node scripts/tz-inventory.js` reports the current surface.
+
 ## Database & migrations
 
 SQL Server. 37 migrations in `backend/migrations/`. Sequelize CLI reads

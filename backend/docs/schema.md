@@ -1,7 +1,21 @@
 # QBusto Database Schema
 
 > Technical source of truth for the database.
-> Last updated: 2026-08-25
+> Last updated: 2026-08-30
+> Revision: 13 - added `cinemas.screensaver_url` VARCHAR(500) NULL
+> (`20260830000200-add-screensaver-url-to-cinemas.js`), the per-cinema Consumer
+> screensaver artwork. Holds an upload path (`/uploads/cinemas/<file>`) or an
+> external URL in one column, the same convention as `banners.image_url` and
+> `chains.logo_image_url`. Nullable because cinemas created before the field
+> have none and the Consumer falls back to its text hero; `POST /api/cinemas`
+> requires it, `PUT` does not. Applied to the live database and verified.
+> Revision: 12 - QBusto-owned datetime columns now store **IST wall clock**
+> rather than UTC (`20260830000100-store-qbusto-datetimes-as-ist.js`, a
+> data-only migration; no column type, index or constraint changed). Applied to
+> the live database and verified: 1,083 values shifted +05:30, 24 date
+> boundaries normalised to IST midnight, 43 `orders.show_time` values left
+> untouched because they already held IST. See "Datetime storage convention"
+> below.
 > Revision: 11 - renamed the three SQL-Server-auto-generated constraint names
 > on `payment_webhook_events` that still carried the old table name after
 > Revision 10's table rename (`20260825000200-rename-payment-webhook-events-
@@ -16,6 +30,40 @@
 > live database and verified. See below for current names.
 > Revision: 9 - added `razorpay_webhook_events` (since renamed, see Revision 10)
 > and the filtered unique index on `orders.razorpay_order_id` (since renamed).
+
+---
+
+## Datetime storage convention
+
+Four layers, deliberately distinct. Confusing any two of them is how timezone
+bugs get introduced here.
+
+| Layer | Convention | Type / form |
+| --- | --- | --- |
+| **QBusto-owned DB columns** | **IST wall clock** (no offset stored) | `datetime2(7)` |
+| **Vista / client-owned columns** (`film`, `session`) | IST wall clock, as the source system writes it — **never modified by QBusto** | `datetime` |
+| **JS / API** | absolute instant, serialised ISO-8601 (`…Z`) | JS `Date` |
+| **Frontend display** | rendered in `Asia/Kolkata` | — |
+
+Both database layers therefore hold the *same* wall clock in the same zone;
+only the SQL type and the ownership differ.
+
+Storage is produced by a **matched pair** in `backend/config/config.js` —
+`timezone: '+05:30'` governs writes, `dialectOptions.options.useUTC: false`
+governs reads. Either one alone stores plausible values while corrupting the
+instant, so they must never be changed independently;
+`tests/timezone.storage.test.js` pins both halves.
+
+`useUTC: false` parses offset-less columns as *process*-local, so
+`APP_TIMEZONE` (`src/config/env.js`) pins the process to IST and refuses to
+boot otherwise.
+
+**Do not convert QBusto columns to `datetime`.** Sequelize renders a `DATE` as
+`DATETIMEOFFSET`, which `datetime` rejects outright — every ORM write would
+fail. The type carries no timezone meaning either way.
+
+`node scripts/tz-inventory.js` reports the current datetime surface,
+classified by how each column is treated.
 
 ---
 
@@ -92,6 +140,7 @@ In normal operation this is not exercised: soft deletion (`is_active = 0`) is th
 | city             | varchar(100) | nullable                                     |
 | gst_number       | varchar(50)  | nullable                                     |
 | fssai_number     | varchar(50)  | nullable                                     |
+| screensaver_url  | varchar(500) | nullable                                     |
 | active_since     | datetime2    | nullable                                     |
 | sms_enabled      | bit          | NOT NULL, default 0                          |
 | whatsapp_enabled | bit          | NOT NULL, default 0                          |
@@ -701,7 +750,7 @@ Catalog of scheduled shows mirrored from the POS.
 | external_screen_id  | varchar(50)  | nullable                            |
 | external_film_id    | varchar(50)  | nullable                            |
 | film_title          | varchar(200) | NOT NULL                            |
-| show_time           | datetime2    | NOT NULL, UTC instant               |
+| show_time           | datetime2    | NOT NULL, IST wall clock            |
 | status              | varchar(20)  | NOT NULL, default `scheduled`       |
 | last_synced_at      | datetime2    | NOT NULL                            |
 | created_at          | datetime2    | NOT NULL                            |
@@ -725,7 +774,10 @@ ON shows(cinema_id, show_time);
 
 `status` values are `scheduled` and `cancelled`, enforced by `CK_shows_status`. There is deliberately no `is_active` column: the soft-delete convention applies to staff-managed master data, and these rows mirror external state. Lifecycle is carried by `status` plus `last_synced_at`.
 
-`show_time` stores a UTC instant. The POS supplies cinema-local wall clock; conversion is centralized in the synchronization service (Phase B5) rather than in a provider adapter.
+`show_time` stores IST wall clock, like every QBusto-owned datetime column
+(see "Datetime storage convention" at the top of this document). The POS
+supplies cinema-local wall clock; turning that into a Date is centralized in
+the synchronization service (Phase B5) rather than in a provider adapter.
 
 `cinema_id` is denormalized from `pos_integrations` so the window query and tenant scoping do not need a join.
 

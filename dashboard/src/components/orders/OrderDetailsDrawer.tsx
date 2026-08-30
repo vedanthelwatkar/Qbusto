@@ -42,6 +42,7 @@ import {
 } from '@/components/orders/statusPresentation';
 import { toApiError } from '@/services/api';
 import * as ordersService from '@/services/orders.service';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -203,7 +204,7 @@ export default function OrderDetailsDrawer({
           <Descriptions column={2} size="small" bordered>
             <Descriptions.Item label="Order ID">#{order.id}</Descriptions.Item>
             <Descriptions.Item label="Placed">
-              {order.createdAt ? new Date(order.createdAt).toLocaleString() : '-'}
+              {order.createdAt ? formatDateTime(order.createdAt) : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Cinema">
               {order.cinema?.name ?? <Text type="secondary">-</Text>}
@@ -219,7 +220,7 @@ export default function OrderDetailsDrawer({
               {order.filmTitle ?? <Text type="secondary">-</Text>}
             </Descriptions.Item>
             <Descriptions.Item label="Show time">
-              {order.showTime ? new Date(order.showTime).toLocaleString() : '-'}
+              {order.showTime ? formatDateTime(order.showTime) : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Customer mobile">
               {order.customerMobile ?? <Text type="secondary">-</Text>}
@@ -229,7 +230,7 @@ export default function OrderDetailsDrawer({
             </Descriptions.Item>
             {order.deliveredAt ? (
               <Descriptions.Item label="Delivered" span={2}>
-                {new Date(order.deliveredAt).toLocaleString()}
+                {formatDateTime(order.deliveredAt)}
               </Descriptions.Item>
             ) : null}
             {order.notes ? (
@@ -385,9 +386,7 @@ function StatusTimeline({
           <div>
             <strong>{statuses.find((s) => s.code === log.newStatus)?.name ?? log.newStatus}</strong>
             <div>
-              <Text type="secondary">
-                {log.createdAt ? new Date(log.createdAt).toLocaleString() : '-'}
-              </Text>
+              <Text type="secondary">{log.createdAt ? formatDateTime(log.createdAt) : '-'}</Text>
             </div>
             {log.reason ? (
               <div>

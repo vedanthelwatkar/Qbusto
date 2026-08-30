@@ -563,3 +563,201 @@ describe('POST /api/consumer/orders - non-empty cart is enforced server-side', (
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// TIME columns as the driver actually hands them back
+// ---------------------------------------------------------------------------
+
+/**
+ * Regression: a TIME column arrives as a Date, not a string.
+ *
+ * Every case above passes availability hours as 'HH:MM:SS' strings, which
+ * `formatStoredTime` returns untouched - so none of them exercise the branch
+ * that reads the Date's components, and a bug there went unnoticed.
+ *
+ * tedious materialises a SQL TIME as a Date pinned to 1970-01-01. WHICH
+ * components carry the stored digits depends on the connection's `useUTC`,
+ * and QBusto sets `useUTC: false` (config/config.js - the IST storage pair),
+ * so the digits land in LOCAL components. Reading them with getUTC* shifted
+ * every window by the IST offset: a 00:00-23:00 window became 18:30-17:30 and
+ * excluded almost the whole day.
+ *
+ * The effect was invisible for a cinema whose products carry no availability
+ * hours, because `unavailableReason` short-circuits on an empty list - which
+ * is exactly why one cinema showed an empty catalogue while others looked
+ * fine.
+ */
+
+/** A TIME value as the driver builds it under `useUTC: false`: local components. */
+const driverTime = (h, m = 0, s = 0) => new Date(1970, 0, 1, h, m, s);
+
+const driverHours = (start, end, dayOfWeek = ISO_THURSDAY) => [
+  { id: 31, dayOfWeek, startTime: start, endTime: end },
+];
+
+describe('availability hours arriving as Date objects (driver shape)', () => {
+  it('accepts an all-day window that spans the current time', () => {
+    // The real-world shape: 00:00:00 -> 23:00:00, every day. Read with UTC
+    // accessors this became 18:30 -> 17:30 and rejected 15:00.
+    expect(
+      unavailableReason(
+        buildLink({ availabilityHours: driverHours(driverTime(0), driverTime(23), 0) }),
+        NOW
+      )
+    ).toBeNull();
+  });
+
+  it('agrees with the string form for the same window', () => {
+    const asDates = unavailableReason(
+      buildLink({ availabilityHours: driverHours(driverTime(9), driverTime(18)) }),
+      NOW
+    );
+    const asStrings = unavailableReason(
+      buildLink({ availabilityHours: hours('09:00:00', '18:00:00') }),
+      NOW
+    );
+
+    expect(asDates).toBe(asStrings);
+    expect(asDates).toBeNull();
+  });
+
+  it('still rejects a window that genuinely excludes the current time', () => {
+    // Guards against "fixed" by making everything available.
+    expect(
+      unavailableReason(
+        buildLink({ availabilityHours: driverHours(driverTime(9), driverTime(12)) }),
+        NOW
+      )
+    ).toBe('is not available at this time of day');
+  });
+
+  it('lists a product whose Date-shaped window is open right now', async () => {
+    listProducts([
+      buildProduct({
+        link: { availabilityHours: driverHours(driverTime(0), driverTime(23), 0) },
+      }),
+    ]);
+
+    const response = await request(app).get(`/api/consumer/cinemas/${CINEMA_ID}/products`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// screen_id is auditorium-level or it is nothing
+// ---------------------------------------------------------------------------
+
+/**
+ * `orders.screen_id` means "which auditorium", and the seat is carried
+ * separately by `orders.seat_number`.
+ *
+ * Some cinemas' `screens` data is one row per SEAT ROW rather than per
+ * auditorium, so a name covers many rows and no row represents the auditorium.
+ * `getSessions` returns `screenId: null` for those (see consumer.sessions
+ * tests), and the Consumer must send that null through rather than
+ * substituting the QR-printed screenId - which is itself a seat-row record on
+ * exactly those cinemas. Storing it produced live orders reading
+ * `screen_id -> "Screen 1, row A"` against `seat_number = "B5"`.
+ *
+ * These pin the server half of that contract: an omitted or null screenId is
+ * accepted and persisted as NULL, and no lookup is attempted for it.
+ */
+describe('order creation with no resolved auditorium', () => {
+  function arrangeCreatableOrder() {
+    // A local transaction token: TX belongs to the describe block above.
+    sequelize.transaction.mockImplementation((callback) => callback('TX-CREATE'));
+    models.IdempotencyKey.findOne.mockResolvedValue(null);
+    models.IdempotencyKey.create.mockResolvedValue({ id: 1 });
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
+    models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
+    models.ProductPricing.findAll.mockResolvedValue([
+      { productId: 85, dayOfWeek: 0, ...buildPricing() },
+    ]);
+    models.OrderStatus.findOne.mockResolvedValue({ id: 1 });
+    models.PaymentStatus.findOne.mockResolvedValue({ id: 1 });
+    models.Order.create.mockResolvedValue({
+      id: 900,
+      subtotal: '250.00',
+      discount: '0.00',
+      total: '250.00',
+      createdAt: new Date(),
+      items: [],
+    });
+    models.OrderItem.bulkCreate.mockResolvedValue([]);
+    models.OrderStatusLog.create.mockResolvedValue({});
+    models.PaymentStatusLog.create.mockResolvedValue({});
+  }
+
+  it('persists screen_id as NULL when the session resolved no auditorium', async () => {
+    arrangeCreatableOrder();
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-null-screen')
+      .send({
+        cinemaId: CINEMA_ID,
+        // What the Consumer now sends for an unresolved session. It must NOT
+        // be replaced by the QR's own screenId.
+        screenId: null,
+        seatNumber: 'B5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+
+    const [values] = models.Order.create.mock.calls[0];
+    expect(values.screenId).toBeNull();
+    // The seat is unaffected - it travels on its own column.
+    expect(values.seatNumber).toBe('B5');
+
+    // A null screen is not looked up; only a supplied one is validated.
+    expect(models.Screen.findOne).not.toHaveBeenCalled();
+  });
+
+  it('treats an omitted screenId the same as an explicit null', async () => {
+    arrangeCreatableOrder();
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-absent-screen')
+      .send({
+        cinemaId: CINEMA_ID,
+        seatNumber: 'B5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(models.Order.create.mock.calls[0][0].screenId).toBeNull();
+    expect(models.Screen.findOne).not.toHaveBeenCalled();
+  });
+
+  it('still validates and stores a screenId that WAS resolved', async () => {
+    // The unambiguous case must keep working: cinemas whose screen names
+    // identify exactly one active row still get a real auditorium id.
+    arrangeCreatableOrder();
+    models.Screen.findOne.mockResolvedValue({ id: 7, isActive: true });
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-resolved-screen')
+      .send({
+        cinemaId: CINEMA_ID,
+        screenId: 7,
+        seatNumber: 'B5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(models.Screen.findOne).toHaveBeenCalled();
+    expect(models.Order.create.mock.calls[0][0].screenId).toBe(7);
+  });
+});

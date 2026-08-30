@@ -25,9 +25,12 @@
  * TIMEZONE - the rule this module enforces
  * ----------------------------------------
  * `showTimeLocal` is the provider's cinema-local wall clock, exactly as the POS
- * expressed it, with no offset attached and no conversion applied. Conversion
- * to a UTC instant happens once, centrally, in the Phase B5 sync service, so
- * two providers cannot drift apart, per the adapter-boundary rule.
+ * expressed it, with no offset attached and no conversion applied. Turning it
+ * into a Date happens once, centrally, in the Phase B5 sync service, so two
+ * providers cannot drift apart, per the adapter-boundary rule. That Date is
+ * then stored as IST wall clock like every other QBusto datetime column (see
+ * config/config.js); since the cinemas are in IST, the value that lands in
+ * shows.show_time is the same wall clock the POS reported.
  *
  * `normalizeExternalShow` enforces this rather than merely documenting it: a
  * value carrying a `Z` or a `+05:30`, or a JavaScript `Date` (which is an
@@ -123,7 +126,7 @@ function normalizeShowTimeLocal(value, context = {}) {
     throw malformed(
       `ExternalShow.showTimeLocal must be provider wall clock without a UTC offset, got "${raw}". ` +
         'Adapters return the cinema-local time as the POS expressed it; the Phase B5 sync ' +
-        'service converts it to a UTC instant.',
+        'service turns it into a Date.',
       context
     );
   }

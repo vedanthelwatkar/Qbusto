@@ -387,7 +387,7 @@ The natural key is `(pos_integration_id, external_session_id)`. Synchronization 
 - No `is_active`. Soft delete is a staff-managed master-data convention, and these rows mirror external state. Lifecycle is `status` (`scheduled` / `cancelled`) plus `last_synced_at`.
 - `screen_id` is nullable, because a show can arrive before its external screen has been mapped. The alternative — refusing or hiding such shows — would silently lose them. The raw `external_screen_id` is kept so the mapping can be resolved later.
 
-`show_time` stores a UTC instant. The POS supplies cinema-local wall clock; converting it is the synchronization service's job (Phase B5), done in one place so the Vista and Showbiz adapters cannot drift apart. Provider adapters return wall clock and never convert.
+`show_time` stores IST wall clock, like every QBusto-owned datetime column. The POS supplies cinema-local wall clock; turning it into a Date is the synchronization service's job (Phase B5), done in one place so the Vista and Showbiz adapters cannot drift apart. Provider adapters return wall clock and never convert.
 
 ### User permissions
 

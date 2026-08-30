@@ -11,6 +11,7 @@ import { Alert, Descriptions, Drawer, Skeleton, Tag, Typography } from 'antd';
 import type { Chain } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as chainsService from '@/services/chains.service';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -76,10 +77,10 @@ export default function ChainDetailsDrawer({ chainId, onClose }: ChainDetailsDra
             )}
           </Descriptions.Item>
           <Descriptions.Item label="Created">
-            {chain.createdAt ? new Date(chain.createdAt).toLocaleString() : '-'}
+            {chain.createdAt ? formatDateTime(chain.createdAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Updated">
-            {chain.updatedAt ? new Date(chain.updatedAt).toLocaleString() : '-'}
+            {chain.updatedAt ? formatDateTime(chain.updatedAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

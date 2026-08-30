@@ -135,6 +135,47 @@ export async function fetchProducts(
 }
 
 /**
+ * Hard stop for the product paging loop, on the same reasoning as
+ * MAX_CATEGORY_PAGES: it bounds a bad `total`, it is not a claim about how many
+ * products a cinema may carry.
+ */
+const MAX_PRODUCT_PAGES = 20;
+
+/**
+ * Every product the cinema currently sells, in the API's own order.
+ *
+ * The catalogue is one continuous list grouped by category, so it needs the
+ * whole set rather than a page of it. This pages properly against
+ * `meta.pagination.total` instead of asking for one large page and assuming it
+ * covered everything - `total` is the count AFTER the backend's availability
+ * filter (consumer.service.getProducts slices in JS), so it is the honest
+ * number to loop against, and this stays correct if a cinema ever exceeds one
+ * page.
+ *
+ * `search` is passed through because the backend applies it before that filter;
+ * a search therefore returns the whole matching set, not a page of it.
+ */
+export async function fetchAllProducts(
+  cinemaId: number,
+  { search }: { search?: string } = {}
+): Promise<Product[]> {
+  const first = await fetchProducts(cinemaId, { search, limit: MAX_PAGE_SIZE, page: 1 });
+  const total = first.meta?.pagination?.total ?? first.data.length;
+
+  const all = [...first.data];
+  let page = 2;
+
+  while (all.length < total && page <= MAX_PRODUCT_PAGES) {
+    const next = await fetchProducts(cinemaId, { search, limit: MAX_PAGE_SIZE, page });
+    if (next.data.length === 0) break;
+    all.push(...next.data);
+    page += 1;
+  }
+
+  return all;
+}
+
+/**
  * Fetch a single product detail.
  */
 export async function fetchProductDetail(cinemaId: number, productId: number): Promise<Product> {

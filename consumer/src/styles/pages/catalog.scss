@@ -18,16 +18,21 @@
 
   /* Header banner ------------------------------------------------------ */
 
+  /* A FIXED 780x120 frame.
+     The uploaded image's own dimensions must not decide the strip's size: a
+     taller or narrower upload used to change the banner height and shove the
+     menu down as it loaded. The box is constant and the slides are `cover`, so
+     any source crops into it rather than stretching. */
   &__banner {
     position: relative;
     flex-shrink: 0;
+    /* Full width of the page, with a fixed 120px height. The uploaded image's
+       own dimensions never decide the strip's size - a taller or narrower
+       upload used to change the banner height and shove the menu down as it
+       loaded. The slides are `cover`, so any source crops into the frame
+       rather than stretching. */
     width: 100%;
-    /* The slides are stacked, so none of them contributes height and the strip
-       has to size itself. Banner artwork is authored at 3:1; the cap keeps a
-       wide screen from letting that push the scroll regions below it off the
-       page, which matters most on portrait kiosks. */
-    aspect-ratio: 3 / 1;
-    max-height: 22vh;
+    height: 120px;
     overflow: hidden;
     background-color: var(--color-bg-secondary);
   }
@@ -37,7 +42,11 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    /* `fill`, so the artwork occupies the whole 120px strip edge to edge.
+       Unlike `cover` this does not crop, and unlike `contain` it leaves no
+       letterbox - the banner is authored for this slot, so stretching it to
+       the frame is the intended result. */
+    object-fit: fill;
     opacity: 0;
     /* Only opacity animates, and every slide is already decoded, so the strip
        crosses from one promotion to the next with nothing showing through. */
@@ -92,83 +101,10 @@
     flex-shrink: 0;
     padding: var(--space-sm) var(--space-lg);
     background-color: var(--color-primary);
-    color: var(--color-text-inverse);
+    color: var(--color-primary-ink);
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     text-align: center;
-  }
-
-  /* Search ------------------------------------------------------------- */
-
-  &__searchbar {
-    flex-shrink: 0;
-    padding: var(--space-md) var(--space-lg);
-    background-color: var(--color-bg-primary);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  &__search {
-    position: relative;
-    display: flex;
-    align-items: center;
-    width: 100%;
-    max-width: 520px;
-    margin: 0 auto;
-  }
-
-  /* Holds either the magnifier or, while a search is running, the spinner —
-     hence the flex centring: the two glyphs are different sizes and must sit
-     on the same spot. */
-  &__search-icon {
-    position: absolute;
-    left: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    color: var(--color-text-light);
-    pointer-events: none;
-  }
-
-  /* Element+attribute selectors in global.scss outrank a bare class, so the
-     padding that clears the icon has to match that specificity. Without this
-     the placeholder sits underneath the search icon. */
-  input.catalog__search-input {
-    width: 100%;
-    min-height: var(--touch-target-min);
-    /* Right padding clears the 44px clear button at right:2px. */
-    padding: 12px 48px 12px 44px;
-    background-color: var(--color-bg-secondary);
-    border-color: transparent;
-    border-radius: var(--radius-pill);
-
-    &:focus {
-      background-color: var(--color-bg-primary);
-    }
-
-    &::-webkit-search-cancel-button {
-      appearance: none;
-    }
-  }
-
-  /* 44px rather than the 48px minimum: it sits inside a 48px-tall field, so
-     that is the largest target that fits. Meets README §6's 44px floor. */
-  &__search-clear {
-    position: absolute;
-    right: 2px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    color: var(--color-text-secondary);
-    transition: background-color var(--transition-fast);
-
-    &:hover {
-      background-color: var(--color-bg-tertiary);
-    }
   }
 
   /* Two-pane layout ---------------------------------------------------- */
@@ -203,7 +139,10 @@
     align-items: center;
     gap: var(--space-xs);
     width: 100%;
-    padding: var(--space-md) var(--space-sm);
+    /* Tightened so more categories are reachable without scrolling the rail.
+       The row keeps a 44px+ tap height via the thumb and label, so this trims
+       whitespace rather than the target. */
+    padding: var(--space-sm) var(--space-xs);
     border-left: 3px solid transparent;
     color: var(--color-text-secondary);
     text-align: center;
@@ -221,8 +160,8 @@
 
     &.is-active {
       background-color: var(--color-bg-primary);
-      border-left-color: var(--color-primary);
-      color: var(--color-primary);
+      border-left-color: var(--color-primary-text);
+      color: var(--color-primary-text);
     }
   }
 
@@ -284,22 +223,34 @@
     align-items: start;
   }
 
-  /* Results being narrowed by a search. The previous set is held rather than
-     swapped for skeletons — that would flash on every keystroke — but it is
-     dimmed so it reads as superseded, and pointer events are off so nothing
-     can be added from a list that is about to be replaced. */
-  &__grid.is-stale {
-    opacity: 0.45;
-    pointer-events: none;
-    transition: opacity var(--transition-fast);
+  /* Category sections --------------------------------------------------- */
+
+  /* One section per category, stacked into a single continuous scroll.
+     `scroll-margin-top` keeps a heading clear of the sticky pane head when the
+     rail scrolls to it. */
+  &__section {
+    scroll-margin-top: var(--space-xl);
+
+    & + & {
+      margin-top: var(--space-xl);
+    }
   }
 
-  /* Pagination --------------------------------------------------------- */
+  &__section-title {
+    margin: 0 0 var(--space-md);
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
 
-  &__more {
-    display: flex;
-    justify-content: center;
+  /* States plainly that the menu has ended - a list that simply stops reads as
+     though more is still loading. */
+  &__end {
     margin-top: var(--space-xl);
+    padding-bottom: var(--space-lg);
+    text-align: center;
+    font-size: var(--font-size-small);
+    color: var(--color-text-light);
   }
 
   &__list-error {
@@ -410,7 +361,7 @@
     padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
     border-radius: var(--radius-lg);
     background-color: var(--color-primary);
-    color: var(--color-text-inverse);
+    color: var(--color-primary-ink);
     box-shadow: var(--shadow-lg);
     pointer-events: auto;
     transition:
@@ -453,7 +404,7 @@
     justify-content: center;
     border-radius: var(--radius-pill);
     background-color: var(--color-bg-primary);
-    color: var(--color-primary);
+    color: var(--color-primary-text);
     font-size: 11px;
     font-weight: var(--font-weight-bold);
   }

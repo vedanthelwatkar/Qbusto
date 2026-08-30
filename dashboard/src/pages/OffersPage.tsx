@@ -30,6 +30,7 @@ import * as offersService from '@/services/offers.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { hasPermission } from '@/utils/permissions';
 import type { Pagination } from '@/types/api';
+import { formatDate } from '@/utils/datetime';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiOffersParams['order']> = {
@@ -160,15 +161,13 @@ export default function OffersPage() {
       dataIndex: 'validFrom',
       key: 'validFrom',
       sorter: true,
-      render: (_, offer) =>
-        offer.validFrom ? new Date(offer.validFrom).toLocaleDateString() : '-',
+      render: (_, offer) => (offer.validFrom ? formatDate(offer.validFrom) : '-'),
     },
     {
       title: 'Valid until',
       dataIndex: 'validUntil',
       key: 'validUntil',
-      render: (_, offer) =>
-        offer.validUntil ? new Date(offer.validUntil).toLocaleDateString() : '-',
+      render: (_, offer) => (offer.validUntil ? formatDate(offer.validUntil) : '-'),
     },
     {
       title: '',

@@ -16,7 +16,7 @@
 
   /* A single soft warm wash — enough to lift the page off flat white. */
   &::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -25%;
     left: 50%;
@@ -42,7 +42,7 @@
     font-weight: var(--font-weight-bold);
     letter-spacing: var(--tracking-wide);
     text-transform: uppercase;
-    color: var(--color-primary);
+    color: var(--color-primary-text);
     margin-bottom: var(--space-lg);
   }
 
@@ -119,5 +119,104 @@
 @media (min-width: 768px) {
   .screensaver__content {
     max-width: 520px;
+  }
+}
+
+/* Artwork layout ---------------------------------------------------------
+   Used when a cinema has a screensaver configured. The whole stage is one
+   button: "Order Now" above the poster, "Touch Here!" below it, matching the
+   board the cinema prints. The original centred hero above is still the
+   fallback for a cinema with no artwork. */
+
+.screensaver--artwork {
+  /* The stage owns its own padding, so the hero's centring wrapper is not used
+     here and the artwork can run edge to edge on a kiosk. */
+  padding: 0;
+  padding-bottom: max(var(--space-lg), env(safe-area-inset-bottom));
+  /* COLUMN. The base .screensaver is a row flex with a single centred child;
+     this layout has two - the artwork stage and the seat/film chips - and in a
+     row they sat side by side, squeezing the chips into a sliver at the right
+     edge. */
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-md);
+}
+
+.screensaver {
+  &--artwork &__context {
+    margin-top: 0;
+  }
+
+  &__stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    /* Full width: the artwork is the screen, not a card on it. */
+    width: 100%;
+    border: none;
+    background: none;
+    cursor: pointer;
+    /* The cue text is the label; nothing here should look like a form control. */
+    -webkit-tap-highlight-color: transparent;
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+      border-radius: var(--radius-lg);
+    }
+
+    /* Only a whole-screen press should read as a press - a subtle scale keeps
+       the tap acknowledged without animating a full-bleed image. */
+    &:active .screensaver__art {
+      transform: scale(0.995);
+    }
+  }
+
+  &__cue {
+    font-size: clamp(32px, 7vw, 64px);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--tracking-tight);
+    /* The AA-safe gold: the brand gold is only 2.18:1 on white, which fails
+       even the 3:1 large-text threshold. */
+    color: var(--color-primary-text);
+    text-align: center;
+  }
+
+  &__art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    overflow: hidden;
+    background-color: var(--color-bg-secondary);
+    transition: transform var(--transition-fast);
+  }
+
+  &__art-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* `contain` via auto height: the poster is authored art and must never be
+       cropped or stretched, so the frame follows the image's own ratio. */
+    max-height: 70dvh;
+  }
+
+  /* Text hero shown inside the stage when a cinema has no artwork. */
+  &__fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-3xl) var(--space-xl);
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screensaver__art {
+    transition: none;
   }
 }

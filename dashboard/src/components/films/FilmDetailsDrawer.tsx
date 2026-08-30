@@ -12,6 +12,7 @@ import type { Film } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as filmsService from '@/services/films.service';
 import { resolveImageUrl } from '@/utils/imageUrl';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -85,11 +86,7 @@ export default function FilmDetailsDrawer({ filmCode, onClose }: FilmDetailsDraw
             {film.status ?? <Text type="secondary">-</Text>}
           </Descriptions.Item>
           <Descriptions.Item label="Opening date">
-            {film.openingDate ? (
-              new Date(film.openingDate).toLocaleDateString()
-            ) : (
-              <Text type="secondary">-</Text>
-            )}
+            {film.openingDate ? formatDate(film.openingDate) : <Text type="secondary">-</Text>}
           </Descriptions.Item>
           <Descriptions.Item label="Poster">
             {poster ? (

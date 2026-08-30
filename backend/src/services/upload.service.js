@@ -51,6 +51,10 @@ const UPLOAD_ENTITIES = Object.freeze({
   categories: 'Categories',
   chains: 'Settings',
   products: 'Products',
+  // Cinema screensaver artwork. Mapped to Settings, like `chains`: MODULES is
+  // frozen and mirrors a database CHECK constraint, and there is no "Cinemas"
+  // module - cinema administration already lives under Settings.
+  cinemas: 'Settings',
 });
 
 const ENTITY_NAMES = Object.freeze(Object.keys(UPLOAD_ENTITIES));

@@ -39,6 +39,7 @@ import * as categoriesService from '@/services/categories.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useCategoriesStore } from '@/stores/categories.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -151,8 +152,7 @@ export default function CategoriesPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, category) =>
-        category.createdAt ? new Date(category.createdAt).toLocaleDateString() : '-',
+      render: (_, category) => (category.createdAt ? formatDate(category.createdAt) : '-'),
     },
     {
       title: '',

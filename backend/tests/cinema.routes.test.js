@@ -59,6 +59,9 @@ const SETTINGS_READ = [{ moduleName: 'Settings', canRead: true, canEdit: false, 
 const VALID_CINEMA = {
   code: 'BLR-01',
   name: 'Starlight Indiranagar',
+  // Required on create alongside the gateway credentials - a cinema is never
+  // launched without the artwork the customer first sees.
+  screensaverUrl: '/uploads/cinemas/9f2c4e18a7b34d5069e1c8f0b2a67d3e.webp',
   gatewayId: 'TEST_APP_ID_123',
   secretKey: 'test_secret_key_value_at_least_16_chars',
   environment: 'test',
@@ -593,5 +596,79 @@ describe('DELETE /api/cinemas/:id', () => {
     const response = await request(app).delete('/api/cinemas/99').set('Authorization', token);
 
     expect(response.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Screensaver artwork
+// ---------------------------------------------------------------------------
+
+describe('cinema screensaver', () => {
+  it('refuses to create a cinema without a screensaver', async () => {
+    const token = authenticateAs(buildActor());
+    const { screensaverUrl, ...withoutArtwork } = VALID_CINEMA;
+    void screensaverUrl;
+
+    const response = await request(app)
+      .post('/api/cinemas')
+      .set('Authorization', token)
+      .send(withoutArtwork);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'screensaverUrl' })])
+    );
+    expect(models.Cinema.create).not.toHaveBeenCalled();
+  });
+
+  it('stores the screensaver path on create', async () => {
+    const token = authenticateAs(buildActor({ id: 7 }));
+    models.Chain.findByPk.mockResolvedValue({ id: 1, isActive: true });
+    models.Cinema.create.mockResolvedValue(buildCinema({ id: 42 }));
+
+    const response = await request(app)
+      .post('/api/cinemas')
+      .set('Authorization', token)
+      .send(VALID_CINEMA);
+
+    expect(response.status).toBe(201);
+    expect(models.Cinema.create).toHaveBeenCalledWith(
+      expect.objectContaining({ screensaverUrl: VALID_CINEMA.screensaverUrl }),
+      expect.anything()
+    );
+  });
+
+  it('leaves the existing artwork alone when an edit omits it', async () => {
+    // The Dashboard sends the whole form; an edit that did not touch the image
+    // simply has no screensaverUrl key, and Sequelize must not null the column.
+    const token = authenticateAs(buildActor({ id: 7 }));
+    const cinema = buildCinema();
+    models.Cinema.findOne.mockResolvedValue(cinema);
+
+    const response = await request(app)
+      .put('/api/cinemas/3')
+      .set('Authorization', token)
+      .send({ city: 'Mysuru' });
+
+    expect(response.status).toBe(200);
+    const [values] = cinema.update.mock.calls[0];
+    expect(values).not.toHaveProperty('screensaverUrl');
+  });
+
+  it('accepts a replacement screensaver on edit', async () => {
+    const token = authenticateAs(buildActor({ id: 7 }));
+    const cinema = buildCinema();
+    models.Cinema.findOne.mockResolvedValue(cinema);
+
+    const replacement = '/uploads/cinemas/0011223344556677889900aabbccddee.png';
+    const response = await request(app)
+      .put('/api/cinemas/3')
+      .set('Authorization', token)
+      .send({ screensaverUrl: replacement });
+
+    expect(response.status).toBe(200);
+    expect(cinema.update).toHaveBeenCalledWith(
+      expect.objectContaining({ screensaverUrl: replacement })
+    );
   });
 });

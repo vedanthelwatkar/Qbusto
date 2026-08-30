@@ -351,8 +351,13 @@
 
   /* Coupon --------------------------------------------------------------- */
 
+  /* Now the last block in the sheet, below the form rather than above it, so
+     it needs its own top separation instead of relying on the item list above
+     for spacing. The rule keeps it from reading as one more checkout field. */
   &__coupon {
-    padding: 0 var(--space-lg) var(--space-md);
+    margin-top: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    border-top: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
@@ -406,7 +411,7 @@
     flex-shrink: 0;
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-primary);
+    color: var(--color-primary-text);
     text-decoration: underline;
   }
 

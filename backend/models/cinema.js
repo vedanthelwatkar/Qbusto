@@ -60,6 +60,21 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(50),
         allowNull: true,
       },
+      /**
+       * The Consumer screensaver artwork for this cinema.
+       *
+       * Either an application upload path (`/uploads/cinemas/<file>`) or an
+       * external URL, in one column - the same convention as
+       * `chains.logoImageUrl` and `banners.imageUrl`.
+       *
+       * Nullable at the column even though creating a cinema requires it: the
+       * cinemas that predate the field have none, and the Consumer falls back
+       * to its text hero rather than breaking.
+       */
+      screensaverUrl: {
+        type: DataTypes.STRING(500),
+        allowNull: true,
+      },
       activeSince: {
         type: DataTypes.DATE,
         allowNull: true,

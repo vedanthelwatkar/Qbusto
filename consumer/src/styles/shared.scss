@@ -48,7 +48,8 @@
 
 .btn--primary {
   background-color: var(--color-primary);
-  color: var(--color-text-inverse);
+  /* Ink, not white: the brand gold is only 2.18:1 under white. */
+  color: var(--color-primary-ink);
   box-shadow: var(--shadow-xs);
 
   &:hover:not(:disabled) {
@@ -88,7 +89,7 @@
 
 .btn--ghost {
   background-color: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   padding-left: var(--space-md);
   padding-right: var(--space-md);
 
@@ -125,7 +126,7 @@
   height: 36px;
   flex-shrink: 0;
   border: 3px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--color-primary-text);
   border-radius: 50%;
   animation: qb-spin 700ms linear infinite;
 }

@@ -19,7 +19,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: var(--space-md);
+  /* Tight: the 120px media square sits inside this, so generous padding eats
+     the card width and leaves the image looking adrift in it. */
+  padding: var(--space-sm);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -35,18 +37,33 @@
   }
 
   &--in-cart {
-    border-color: var(--color-primary);
+    border-color: var(--color-primary-text);
     box-shadow: 0 0 0 1px var(--color-primary);
   }
 
   /* Media ------------------------------------------------------------- */
 
-  /* Product art is almost always a transparent PNG, so the plate stays
-     transparent and the image is contained rather than cropped. */
+  /* A FIXED 120px square, identical on every card.
+     The source image's own dimensions must not size the card: a portrait and a
+     landscape upload previously produced different card heights and the grid
+     jumped as images loaded. `contain` keeps the whole product visible and
+     never distorts it - product art is usually a transparent PNG, so the plate
+     stays transparent and letterboxing is invisible. */
   &__media {
     position: relative;
-    width: 100%;
+    /* 120px where the card has room, but NEVER wider than the card.
+       The grid is two columns, so on a narrow phone a column's content box is
+       under 120px - a hard 120 then overflowed the card and `margin: 0 auto`
+       had no space left to centre in, which is what read as "off-centre".
+       `aspect-ratio` keeps it square at whatever width it settles on. */
+    width: min(120px, 100%);
     aspect-ratio: 1;
+    flex-shrink: 0;
+    /* Both: `margin` centres it in a block context, `align-self` in the flex
+       column the card actually is - without the latter a stretched item would
+       be pulled off-centre. */
+    margin: 0 auto;
+    align-self: center;
     background-color: transparent;
     display: flex;
     align-items: center;
@@ -54,6 +71,8 @@
   }
 
   &__image {
+    /* `contain`, so the whole product stays visible and is never cropped or
+       distorted. The box centres it (flex, above). */
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -82,7 +101,7 @@
     justify-content: center;
     border-radius: var(--radius-pill);
     background-color: var(--color-primary);
-    color: var(--color-text-inverse);
+    color: var(--color-primary-ink);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-bold);
     box-shadow: var(--shadow-sm);
@@ -115,21 +134,42 @@
     overflow: hidden;
   }
 
-  &__description {
-    font-size: var(--font-size-xs);
-    line-height: var(--line-height-snug);
-    color: var(--color-text-secondary);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+  /* The name and its details trigger share a row; the button never wraps. */
+  &__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-xs);
+    /* The name must be allowed to shrink, or a long one widens the card. */
+    min-width: 0;
   }
 
-  &__weight {
-    font-size: var(--font-size-xs);
+  &__info {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: -2px -4px 0 0;
+    border: none;
+    border-radius: var(--radius-pill);
+    background-color: transparent;
     color: var(--color-text-light);
+    cursor: pointer;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+
+    &:hover {
+      background-color: var(--color-bg-secondary);
+      color: var(--color-primary-text);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
   }
+
 
   /* Price sits directly above a full-width action, as on the reference. */
   &__footer {
@@ -155,16 +195,19 @@
     color: var(--color-text-light);
   }
 
-  /* Full 48px from the narrowest phone up: this and the stepper are the most
-     tapped controls in the app, and mobile is the primary target. They were
-     40px here and only reached 48px at the tablet breakpoint — backwards. */
+  /* 40px rather than the 48px --touch-target-min.
+     A deliberate, bounded exception: the button is full-width, so the tappable
+     area stays far larger than the 44px minimum in the dimension that is
+     actually hard to hit, and only the height is trimmed. The stepper that
+     replaces it once the item is in the cart keeps the full 48px, because its
+     +/- targets are narrow in both dimensions. */
   &__add {
     width: 100%;
-    min-height: var(--touch-target-min);
+    min-height: 40px;
     padding: 0 var(--space-md);
     border-radius: var(--radius-sm);
     background-color: var(--color-primary);
-    color: var(--color-text-inverse);
+    color: var(--color-primary-ink);
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-semibold);
     transition:
@@ -208,7 +251,7 @@
     width: var(--touch-target-min);
     height: var(--touch-target-min);
     flex-shrink: 0;
-    color: var(--color-primary);
+    color: var(--color-primary-text);
     transition: background-color var(--transition-fast);
 
     &:first-child {
@@ -242,14 +285,12 @@
 
 @media (min-width: 768px) {
   .product-card {
-    padding: var(--space-lg);
+    padding: var(--space-md);
 
     &__name {
       font-size: var(--font-size-body);
     }
 
-    &__description {
-      font-size: var(--font-size-small);
-    }
+
   }
 }

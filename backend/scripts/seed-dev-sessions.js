@@ -8,9 +8,8 @@
  *
  * The picker is deliberately narrow (see consumer.service.getSessions):
  *
- *   - the programming day runs 06:00 -> 06:00, so at 03:00 the window is
- *     "now until 06:00 today", not "the next 24 hours"
- *   - only screenings that have NOT started yet are offered
+ *   - only screenings starting within 3 hours either side of now, so at 03:00
+ *     the window is 00:00 -> 06:00, not "the next 24 hours"
  *   - only `Session_strStatus = 'O'` (Open) is offered
  *   - at most 2 per screen
  *
@@ -44,8 +43,8 @@ const { toSqlDateTime } = require('../src/utils/sqlDate');
  */
 const DEV_ID_BASE = 900000;
 
-/** Matches PROGRAMMING_DAY_START_HOUR in consumer.service.js. */
-const PROGRAMMING_DAY_START_HOUR = 6;
+/** Matches SESSION_WINDOW_HOURS in consumer.service.js. */
+const SESSION_WINDOW_HOURS = 3;
 
 /**
  * Minutes from now for each screening.
@@ -57,14 +56,14 @@ const PROGRAMMING_DAY_START_HOUR = 6;
  */
 const OFFSETS_MINUTES = [20, 50, 80, 110];
 
-/** The end of the programming day currently running, as the picker computes it. */
-function programmingDayEnd(now) {
-  const end = new Date(now);
-  end.setHours(PROGRAMMING_DAY_START_HOUR, 0, 0, 0);
-  // Before 06:00 the running programming day started yesterday, so the window
-  // still closes at 06:00 today rather than a day later.
-  if (end <= now) end.setDate(end.getDate() + 1);
-  return end;
+/** The near edge of the picker's window - it reaches back, not just forward. */
+function windowStart(now) {
+  return new Date(now.getTime() - SESSION_WINDOW_HOURS * 60 * 60 * 1000);
+}
+
+/** The far edge of the picker's window, as the picker computes it. */
+function windowEnd(now) {
+  return new Date(now.getTime() + SESSION_WINDOW_HOURS * 60 * 60 * 1000);
 }
 
 async function main() {
@@ -75,7 +74,7 @@ async function main() {
   await sequelize.authenticate();
 
   const now = new Date();
-  const dayEnds = programmingDayEnd(now);
+  const windowEnds = windowEnd(now);
 
   // Always clear previously seeded rows first, so re-running does not pile up
   // stale screenings that have since drifted into the past.
@@ -124,9 +123,9 @@ async function main() {
     for (let index = 0; index < OFFSETS_MINUTES.length; index += 1) {
       const startsAt = new Date(now.getTime() + OFFSETS_MINUTES[index] * 60 * 1000);
 
-      // The picker will not show anything at or past the 06:00 boundary, so
+      // The picker will not show anything at or past the window's far edge, so
       // inserting one would be a confusing no-op rather than a test fixture.
-      if (startsAt >= dayEnds) {
+      if (startsAt >= windowEnds) {
         skipped += 1;
         continue;
       }
@@ -179,12 +178,12 @@ async function main() {
   console.log(`Inserted ${inserted} Open session(s) across ${cinemas.length} cinema(s).`);
   if (skipped > 0) {
     console.log(
-      `Skipped ${skipped} that would have fallen at or after ${toSqlDateTime(dayEnds).slice(0, 16)}, ` +
-        'the end of the programming day the picker is currently showing.'
+      `Skipped ${skipped} that would have fallen at or after ${toSqlDateTime(windowEnds).slice(0, 16)}, ` +
+        'the far edge of the window the picker is currently showing.'
     );
   }
   console.log(
-    `Picker window right now: ${toSqlDateTime(now).slice(0, 16)} -> ${toSqlDateTime(dayEnds).slice(0, 16)}.`
+    `Picker window right now: ${toSqlDateTime(windowStart(now)).slice(0, 16)} -> ${toSqlDateTime(windowEnds).slice(0, 16)}.`
   );
 }
 

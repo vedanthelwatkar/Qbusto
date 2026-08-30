@@ -6,7 +6,18 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Descriptions, Drawer, Skeleton, Space, Tag, Typography } from 'antd';
+import {
+  Alert,
+  App,
+  Button,
+  Descriptions,
+  Drawer,
+  Image,
+  Skeleton,
+  Space,
+  Tag,
+  Typography,
+} from 'antd';
 
 import type { Cinema, PaymentGatewayConfig } from '@/api/generated/cinemaOrderingAPI.schemas';
 import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
@@ -14,7 +25,9 @@ import { toApiError } from '@/services/api';
 import * as cinemasService from '@/services/cinemas.service';
 import * as gatewayConfigService from '@/services/paymentGatewayConfig.service';
 import { useAuthStore } from '@/stores/auth.store';
+import { resolveImageUrl } from '@/utils/imageUrl';
 import { hasPermission } from '@/utils/permissions';
+import { formatDateTime, formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -164,9 +177,24 @@ export default function CinemaDetailsDrawer({
           <Descriptions.Item label="FSSAI number">
             {cinema.fssaiNumber ?? <Text type="secondary">Not set</Text>}
           </Descriptions.Item>
+          <Descriptions.Item label="Screensaver">
+            {cinema.screensaverUrl ? (
+              <Image
+                src={resolveImageUrl(cinema.screensaverUrl)}
+                alt=""
+                width={220}
+                style={{ borderRadius: 8 }}
+                // Same reasoning as the banner drawer: a screensaver that will
+                // not load should read as a broken image, not as no screensaver.
+                fallback="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+              />
+            ) : (
+              <Text type="secondary">Not set</Text>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Active since">
             {cinema.activeSince ? (
-              new Date(cinema.activeSince).toLocaleDateString()
+              formatDate(cinema.activeSince)
             ) : (
               <Text type="secondary">Not set</Text>
             )}
@@ -180,10 +208,10 @@ export default function CinemaDetailsDrawer({
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Created">
-            {cinema.createdAt ? new Date(cinema.createdAt).toLocaleString() : '-'}
+            {cinema.createdAt ? formatDateTime(cinema.createdAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Updated">
-            {cinema.updatedAt ? new Date(cinema.updatedAt).toLocaleString() : '-'}
+            {cinema.updatedAt ? formatDateTime(cinema.updatedAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

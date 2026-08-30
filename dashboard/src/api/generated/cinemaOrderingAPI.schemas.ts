@@ -126,6 +126,12 @@ export interface Cinema {
   gstNumber?: string | null;
   /** @nullable */
   fssaiNumber?: string | null;
+  /**
+     * Consumer screensaver artwork. An upload path or an external URL, in one field. Null for cinemas created before the field existed - the Consumer falls back to its text hero.
+     * @maxLength 500
+     * @nullable
+     */
+  screensaverUrl?: string | null;
   /** @nullable */
   activeSince?: string | null;
   smsEnabled?: boolean;
@@ -421,10 +427,15 @@ export interface ConsumerSession {
   /** The source system's session id, unique within this cinema. */
   id?: number;
   /**
-     * The auditorium as the source system names it. There is no screen id: the schedule does not reference one.
+     * The auditorium as the source system names it.
      * @nullable
      */
   screenName?: string | null;
+  /**
+     * QBusto's own screen id for that auditorium, resolved from screenName. Send this as the order's screenId. Null when no active screen matches.
+     * @nullable
+     */
+  screenId?: number | null;
   /** @nullable */
   filmCode?: string | null;
   /**
@@ -2406,6 +2417,11 @@ export type PostApiCinemasBody = {
      * @nullable
      */
   fssaiNumber?: string | null;
+  /**
+     * Consumer screensaver artwork. Required on create: an upload path (/uploads/cinemas/...) or an external URL.
+     * @maxLength 500
+     */
+  screensaverUrl: string;
   /** @nullable */
   activeSince?: string | null;
   smsEnabled?: boolean;
@@ -2464,6 +2480,12 @@ export type PutApiCinemasIdBody = {
      * @nullable
      */
   fssaiNumber?: string | null;
+  /**
+     * Omit to keep the current artwork. A new value replaces it and the old upload is deleted.
+     * @maxLength 500
+     * @nullable
+     */
+  screensaverUrl?: string | null;
   /** @nullable */
   activeSince?: string | null;
   smsEnabled?: boolean;

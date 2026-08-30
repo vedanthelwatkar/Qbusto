@@ -26,6 +26,7 @@ import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import FilmSelect from '@/components/films/FilmSelect';
 import SessionDetailsDrawer from '@/components/sessions/SessionDetailsDrawer';
 import { useSessionsStore } from '@/stores/sessions.store';
+import { formatDate, formatTime } from '@/utils/datetime';
 
 const { RangePicker } = DatePicker;
 
@@ -45,14 +46,14 @@ const SORTABLE = new Set<string>([
   'status',
 ]);
 
-function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleDateString() : '-';
+/** A column's date, or an em dash when the row has none. */
+function dateCell(value?: string | null) {
+  return value ? formatDate(value) : '-';
 }
 
-function formatTime(value?: string | null) {
-  return value
-    ? new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    : '-';
+/** A column's start/finish time, or an em dash when the row has none. */
+function timeCell(value?: string | null) {
+  return value ? formatTime(value) : '-';
 }
 
 export default function SessionsPage() {
@@ -138,19 +139,19 @@ export default function SessionsPage() {
       key: 'startsAt',
       sorter: true,
       width: 130,
-      render: (_, session) => formatDate(session.startsAt),
+      render: (_, session) => dateCell(session.startsAt),
     },
     {
       title: 'Start',
       key: 'start',
       width: 100,
-      render: (_, session) => formatTime(session.startsAt),
+      render: (_, session) => timeCell(session.startsAt),
     },
     {
       title: 'End',
       key: 'end',
       width: 100,
-      render: (_, session) => formatTime(session.endsAt),
+      render: (_, session) => timeCell(session.endsAt),
     },
     {
       title: 'Seats',

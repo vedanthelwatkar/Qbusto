@@ -43,6 +43,7 @@ import * as chainsService from '@/services/chains.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useChainsStore } from '@/stores/chains.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -158,8 +159,7 @@ export default function ChainsPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, chain) =>
-        chain.createdAt ? new Date(chain.createdAt).toLocaleDateString() : '-',
+      render: (_, chain) => (chain.createdAt ? formatDate(chain.createdAt) : '-'),
     },
     {
       title: '',

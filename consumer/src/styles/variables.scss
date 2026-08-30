@@ -8,13 +8,28 @@
 
 :root {
   /* Brand -------------------------------------------------------------- */
-  --color-primary: #dc3c2c;
-  --color-primary-dark: #b12a1d;
-  --color-primary-darker: #8c1f14;
+  /*
+   * The brand gold. Note it is a LIGHT colour - 2.18:1 against white - so it
+   * works as a SURFACE, not as text on white and not under white text. Two
+   * companion tokens exist for the cases it cannot cover:
+   *
+   *   --color-primary-ink   text/icons ON a gold fill      8.26:1
+   *   --color-primary-text  gold-coloured text on white    4.51:1
+   *
+   * Reach for those rather than reintroducing white-on-gold, which fails AA
+   * on every button.
+   */
+  --color-primary: #dca744;
+  --color-primary-dark: #c6923a;
+  --color-primary-darker: #b07f2f;
+  /* Reads on a gold fill; the same ink the rest of the app uses for body copy. */
+  --color-primary-ink: #1a1614;
+  /* The darkest gold that still clears 4.5:1 on white, for gold text/links. */
+  --color-primary-text: #9a6f14;
   /* Tinted primary surfaces, lightest to strongest. */
-  --color-primary-light: rgba(220, 60, 44, 0.1);
-  --color-primary-subtle: #fdf1ef;
-  --color-primary-muted: #f7d9d4;
+  --color-primary-light: rgba(220, 167, 68, 0.16);
+  --color-primary-subtle: #fdf6e9;
+  --color-primary-muted: #f2e0bb;
 
   /* Neutrals — warm greys read better alongside food photography. */
   --color-text-primary: #1a1614;
@@ -42,8 +57,8 @@
      light-themed product throughout. */
   --gradient-hero: radial-gradient(
     circle,
-    rgba(220, 60, 44, 0.14) 0%,
-    rgba(220, 60, 44, 0.05) 45%,
+    rgba(220, 167, 68, 0.2) 0%,
+    rgba(220, 167, 68, 0.07) 45%,
     transparent 70%
   );
 
@@ -106,7 +121,7 @@
   --shadow-sheet: 0 -8px 32px rgba(26, 22, 20, 0.16);
 
   /* Focus — one ring, used by every interactive element. */
-  --focus-ring: 0 0 0 3px rgba(220, 60, 44, 0.3);
+  --focus-ring: 0 0 0 3px rgba(220, 167, 68, 0.45);
   /* Same ring in the error colour, for controls failing validation. */
   --focus-ring-error: 0 0 0 3px rgba(200, 50, 31, 0.25);
   /* Inner corner of a control nested inside a 1px-bordered container. */

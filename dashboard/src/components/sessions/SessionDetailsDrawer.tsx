@@ -11,6 +11,7 @@ import { Alert, Descriptions, Drawer, Skeleton, Typography } from 'antd';
 import type { Session } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as sessionsService from '@/services/sessions.service';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -80,14 +81,10 @@ export default function SessionDetailsDrawer({ sessionId, onClose }: SessionDeta
             {session.screenName ?? <Text type="secondary">-</Text>}
           </Descriptions.Item>
           <Descriptions.Item label="Starts">
-            {session.startsAt ? new Date(session.startsAt).toLocaleString() : '-'}
+            {session.startsAt ? formatDateTime(session.startsAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Ends">
-            {session.endsAt ? (
-              new Date(session.endsAt).toLocaleString()
-            ) : (
-              <Text type="secondary">-</Text>
-            )}
+            {session.endsAt ? formatDateTime(session.endsAt) : <Text type="secondary">-</Text>}
           </Descriptions.Item>
           <Descriptions.Item label="Seats">
             {session.seatsTotal === null || session.seatsTotal === undefined ? (

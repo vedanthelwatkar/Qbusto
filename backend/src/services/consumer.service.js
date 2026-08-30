@@ -32,20 +32,30 @@ const { PAGINATION, ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } = require(
 const { sqlDateTimeLiteral } = require('../utils/sqlDate');
 
 /**
- * When a cinema's programming day begins, in hours past local midnight.
+ * How far either side of now a screening may start and still be offered.
  *
- * A 01:00 screening belongs to the night before, not to the morning it
- * technically falls in, so the day runs 06:00 to 06:00 rather than midnight to
- * midnight. Matches the window the client's own scheduling query uses.
+ * A flat window around the current moment, deliberately NOT a calendar or
+ * programming day: a customer ordering at 01:30 is choosing between the film
+ * they are sitting in - which may well have started the previous day - and the
+ * one after it. Anchoring to any day boundary makes the list depend on which
+ * side of that boundary the clock happens to be, which is exactly the case
+ * (a 23:45 show, ordered against at 01:30) that has to work.
+ *
+ * The LOOKBACK half is the part worth being explicit about: a screening
+ * already under way is offered on purpose. Someone twenty minutes into a film
+ * is the customer most likely to want food, and refusing them is a worse
+ * answer than letting them order against a show that has started.
  */
-const PROGRAMMING_DAY_START_HOUR = 6;
+const SESSION_WINDOW_HOURS = 3;
+
+const SESSION_WINDOW_MS = SESSION_WINDOW_HOURS * 60 * 60 * 1000;
 
 /**
- * How many upcoming screenings to offer per screen.
+ * How many screenings to offer per screen.
  *
  * A customer ordering food is choosing between the show they are about to sit
  * in and possibly the next one; a full day's listings for every auditorium is
- * a scroll, not a choice. The client's requirement is the next two per screen.
+ * a scroll, not a choice. The client's requirement is two per screen.
  */
 const SESSIONS_PER_SCREEN = 2;
 
@@ -125,7 +135,9 @@ const {
 async function getCinema(cinemaId) {
   const cinema = await models.Cinema.findByPk(cinemaId, {
     where: { isActive: true },
-    attributes: ['id', 'name', 'code', 'location', 'city'],
+    // screensaverUrl is public by design: the Consumer's screensaver is what a
+    // customer sees before they have identified themselves at all.
+    attributes: ['id', 'name', 'code', 'location', 'city', 'screensaverUrl'],
     raw: true,
   });
 
@@ -306,7 +318,9 @@ async function getProducts(
         required: true,
       },
     ],
-    attributes: ['id', 'name', 'description', 'imageUrl'],
+    // categoryId drives the Consumer's category sections; weight is shown on
+    // the card and in the product details dialog.
+    attributes: ['id', 'categoryId', 'name', 'description', 'imageUrl', 'weight'],
     raw: false,
     order: [['name', 'ASC']],
   });
@@ -336,9 +350,11 @@ async function getProducts(
 
     return {
       id: product.id,
+      categoryId: product.categoryId,
       name: product.name,
       description: product.description,
       imageUrl: product.imageUrl,
+      weight: product.weight,
       basePrice: parseFloat(toDecimalString(discountedPaise)),
     };
   });
@@ -395,7 +411,9 @@ async function getProductDetail(cinemaId, productId) {
         required: true,
       },
     ],
-    attributes: ['id', 'name', 'description', 'imageUrl'],
+    // categoryId drives the Consumer's category sections; weight is shown on
+    // the card and in the product details dialog.
+    attributes: ['id', 'categoryId', 'name', 'description', 'imageUrl', 'weight'],
     raw: false,
   });
 
@@ -413,9 +431,11 @@ async function getProductDetail(cinemaId, productId) {
 
   return {
     id: product.id,
+    categoryId: product.categoryId,
     name: product.name,
     description: product.description,
     imageUrl: product.imageUrl,
+    weight: product.weight,
     basePrice: parseFloat(toDecimalString(discountedPaise)),
     addons: [],
   };
@@ -1355,11 +1375,12 @@ async function buildOrderLines(cinema, payload, now, transaction) {
  *
  * WHAT IS OFFERED
  *
- * The rest of the current programming day, and at most the next two screenings
- * per auditorium. The day runs from 06:00 to 06:00 so a late-night show belongs
- * to the evening it follows rather than to the next morning, and screenings
- * that have already started are excluded - a customer cannot order food against
- * a film that is half over.
+ * Screenings starting within SESSION_WINDOW_HOURS either side of now, and at
+ * most two per auditorium. The window is flat rather than tied to a calendar
+ * or programming day, so a 23:45 screening is still offered at 01:30 the next
+ * morning - the customer sitting in it has not changed just because the date
+ * has. A screening that has already started is offered deliberately; see
+ * SESSION_WINDOW_HOURS.
  *
  * Capping per auditorium rather than overall keeps every screen represented: a
  * flat limit would fill the picker with one busy screen's listings and hide the
@@ -1368,9 +1389,10 @@ async function buildOrderLines(cinema, payload, now, transaction) {
  * SCREEN
  *
  * The source system names the auditorium rather than referencing `screens.id`,
- * so `screenName` is what is returned. No screen id is derived: `screens`
- * currently holds several rows per auditorium, and picking one of them would
- * put an arbitrary id on the customer's order.
+ * so the name is resolved to one here (resolveScreenIdsByName) and returned
+ * alongside it as `screenId`, so the order records the screen of the show the
+ * customer actually picked rather than whichever screen their QR was printed
+ * for.
  *
  * STATUS
  *
@@ -1382,6 +1404,66 @@ async function buildOrderLines(cinema, payload, now, transaction) {
  * The exclusion is a SQL predicate, not a step in the mapping below, so a
  * non-Open session never leaves the database at all.
  */
+function normaliseScreenName(name) {
+  return typeof name === 'string' ? name.trim().toLowerCase() : '';
+}
+
+/**
+ * Screen name -> screens.id, for one cinema - ONLY where the name is
+ * unambiguous.
+ *
+ * WHAT THE `screens` TABLE ACTUALLY HOLDS (measured, not assumed)
+ *
+ * Two different shapes live in this one table:
+ *
+ *   - Rows created through screen.service, where `assertNameAvailable`
+ *     enforces one row per (cinema, name). `category` and `seat_row` are NULL.
+ *     One row = one auditorium. This is QBusto's own convention.
+ *   - Rows bulk-loaded from the client, which are ONE ROW PER SEAT ROW:
+ *     `category` is a seat class ("Platinum") and `seat_row` a row label
+ *     ("A".."N"). These never went through the service, so they never met the
+ *     uniqueness rule.
+ *
+ * On the live database the split is total: cinemas 1-7 hold only the first
+ * shape (2-4 rows each, every name unique), and cinema 8 holds only the second
+ * (61 rows, 6 names, EVERY row under a duplicated name - "Screen 1" is 10 rows,
+ * "Screen 2" is 14). Cinema 8 therefore has no auditorium record at all.
+ *
+ * Nothing in the application reads `category` or `seat_row`; they are dormant
+ * columns. So there is no existing, semantically correct way to pick "the"
+ * auditorium out of a seat-row set - any choice is arbitrary, and picking the
+ * lowest id would store a seat-row record as the show's screen.
+ *
+ * THE RULE
+ *
+ * Resolve only when exactly one active screen carries the name. That is the
+ * existing convention (`assertNameAvailable`) and it is correct wherever the
+ * data satisfies it. Where the name is ambiguous the result is NULL and the
+ * caller keeps `screenName`, the external identifier the schedule supplied -
+ * an honest "not known" rather than an invented mapping.
+ *
+ * See CLAUDE.md pitfall #4 and .claude/rules/client-tables.md: the grain
+ * conflict is unresolved and is not resolved here.
+ */
+async function resolveScreenIdsByName(cinemaId) {
+  const screens = await models.Screen.findAll({
+    where: { cinemaId, isActive: true },
+    attributes: ['id', 'name'],
+    order: [['id', 'ASC']],
+  });
+
+  /** name -> the single id, or null once a second row claims the same name. */
+  const byName = new Map();
+
+  for (const screen of screens) {
+    const key = normaliseScreenName(screen.name);
+    if (byName.has(key)) byName.set(key, null);
+    else byName.set(key, screen.id);
+  }
+
+  return byName;
+}
+
 async function getSessions(cinemaId) {
   const cinema = await models.Cinema.findByPk(cinemaId, {
     where: { isActive: true },
@@ -1390,15 +1472,15 @@ async function getSessions(cinemaId) {
 
   if (!cinema) throw new NotFoundError('Cinema');
 
-  // From now, not from the start of the day: a screening already under way is
-  // not something food can be ordered against.
   const now = new Date();
 
-  const dayEnds = new Date(now);
-  dayEnds.setHours(PROGRAMMING_DAY_START_HOUR, 0, 0, 0);
-  // Before 06:00 the programming day that is running started yesterday, so the
-  // window still closes at 06:00 today rather than a day later.
-  if (dayEnds <= now) dayEnds.setDate(dayEnds.getDate() + 1);
+  // A flat window either side of now, so a show that started shortly before
+  // the customer opened checkout - the one they are most likely sitting in -
+  // is offered alongside the ones still to come. Crossing midnight is not a
+  // special case here: these are instants, so a 23:45 screening is simply
+  // within three hours of 01:30 the next morning.
+  const windowStarts = new Date(now.getTime() - SESSION_WINDOW_MS);
+  const windowEnds = new Date(now.getTime() + SESSION_WINDOW_MS);
 
   const sessions = await models.Session.findAll({
     where: {
@@ -1406,8 +1488,13 @@ async function getSessions(cinemaId) {
       // Open only. A Closed or Inactive screening is not selling, so food
       // cannot be ordered against it.
       status: SESSION_STATUS_OPEN,
-      // Formatted, because the source system's column is `datetime`.
-      startsAt: { [Op.gte]: sqlDateTimeLiteral(now), [Op.lt]: sqlDateTimeLiteral(dayEnds) },
+      // Session_dtmRealShow - the scheduled start. Formatted as a literal
+      // because the source system's column is `datetime`, which carries no
+      // offset (see utils/sqlDate).
+      startsAt: {
+        [Op.gte]: sqlDateTimeLiteral(windowStarts),
+        [Op.lt]: sqlDateTimeLiteral(windowEnds),
+      },
     },
     attributes: ['sessionId', 'filmCode', 'screenName', 'startsAt', 'endsAt', 'seatsAvailable'],
     include: [
@@ -1423,22 +1510,50 @@ async function getSessions(cinemaId) {
     ],
   });
 
-  // Capped here rather than in SQL: the window already bounds this to one
-  // cinema's remaining day, so the set is small, and a per-group limit costs a
-  // window function that Sequelize would not express any more clearly.
-  const perScreen = new Map();
+  // Capped here rather than in SQL: the window already bounds this to a
+  // six-hour span for one cinema, so the set is small, and a per-group limit
+  // costs a window function that Sequelize would not express any more clearly.
+  //
+  // Ranked by DISTANCE FROM NOW, not by start time. Taking the first two of a
+  // start-ascending list keeps the two EARLIEST, and since the window now
+  // reaches three hours backwards those can both be screenings that have
+  // already begun - at 20:00 with shows at 17:30, 19:15 and 20:45, the 20:45
+  // the customer is about to sit in was the one dropped. Nearest-first keeps
+  // the screening they are in and the one after it, which is the whole point
+  // of the lookback.
+  const nowMs = now.getTime();
+  const byDistance = [...sessions].sort(
+    (a, b) => Math.abs(a.startsAt - nowMs) - Math.abs(b.startsAt - nowMs)
+  );
 
-  const offered = sessions.filter((session) => {
+  const perScreen = new Map();
+  const kept = new Set();
+
+  for (const session of byDistance) {
     const key = session.screenName || '';
     const taken = perScreen.get(key) || 0;
-    if (taken >= SESSIONS_PER_SCREEN) return false;
+    if (taken >= SESSIONS_PER_SCREEN) continue;
     perScreen.set(key, taken + 1);
-    return true;
-  });
+    kept.add(session);
+  }
+
+  // Back into start order for display: the picker reads as a schedule, so the
+  // selection is by proximity but the presentation stays chronological.
+  const offered = sessions.filter((session) => kept.has(session));
+
+  const screenIdByName = await resolveScreenIdsByName(cinemaId);
 
   return offered.map((session) => ({
     id: session.sessionId,
     screenName: session.screenName,
+    // The screen the CHOSEN show plays in, resolved here rather than taken
+    // from the QR link - a QR's screenId is fixed at print time and does not
+    // change when the customer picks a different show.
+    //
+    // NULL when the cinema's screen names are ambiguous (see
+    // resolveScreenIdsByName). `screenName` below is always present and is the
+    // identifier to rely on in that case.
+    screenId: screenIdByName.get(normaliseScreenName(session.screenName)) ?? null,
     filmCode: session.filmCode,
     filmTitle: session.film ? session.film.title : null,
     certification: session.film ? session.film.certification : null,

@@ -31,6 +31,7 @@ import * as screensService from '@/services/screens.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useScreensStore } from '@/stores/screens.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiScreensParams['order']> = {
@@ -173,8 +174,7 @@ export default function ScreensPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, screen) =>
-        screen.createdAt ? new Date(screen.createdAt).toLocaleDateString() : '-',
+      render: (_, screen) => (screen.createdAt ? formatDate(screen.createdAt) : '-'),
     },
     {
       title: '',

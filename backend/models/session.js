@@ -77,6 +77,16 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         field: 'Screen_strName',
       },
+      /**
+       * Cinema-local (IST) wall clock, as the source system records it.
+       *
+       * No getter: the connection sets `useUTC: false` (see config/config.js),
+       * so tedious already parses these offset-less `datetime` values as
+       * process-local, and the process is pinned to IST by APP_TIMEZONE. An
+       * earlier version corrected the value here because the connection then
+       * parsed it as UTC; with that fixed at the driver, the correction would
+       * be a second conversion.
+       */
       startsAt: {
         type: DataTypes.DATE,
         allowNull: false,

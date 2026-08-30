@@ -36,6 +36,29 @@ const envSchema = Joi.object({
   PORT: Joi.number().port().default(4000),
   API_BASE_URL: Joi.string().uri({ allowRelative: true }).optional(),
 
+  /**
+   * The timezone the business runs in - NOT a display preference.
+   *
+   * The client's `session`/`film` tables store `datetime` with no offset, and
+   * those values are cinema-local wall clock. Every piece of code that reads or
+   * compares them works in PROCESS-LOCAL time to match: utils/sqlDate formats
+   * the bounds of the session window, and models/session re-reads the driver's
+   * UTC-labelled values as local. That is correct only while the process's own
+   * timezone IS the cinema's.
+   *
+   * On a Windows host in India it silently is. In a container or on a cloud VM
+   * it silently is NOT - both default to UTC - and every one of those
+   * comparisons shifts by 5.5 hours with nothing failing loudly. Pinning it
+   * here removes the dependency on how the host happens to be configured.
+   *
+   * SINCE THE IST-STORAGE CHANGE THIS IS ALSO LOAD-BEARING FOR READS.
+   * config/config.js sets `useUTC: false`, which means "parse an offset-less
+   * column as PROCESS-local". That only yields IST while the process is on
+   * IST, so the guard below is what stands between a UTC container and every
+   * timestamp in the database being misread by 5.5 hours.
+   */
+  APP_TIMEZONE: Joi.string().default('Asia/Kolkata'),
+
   // ---- Database ----
   // Consumed by config/config.js; validated here so a missing value is caught
   // at boot rather than on the first query.
@@ -319,6 +342,65 @@ if (value.NODE_ENV === 'production' && !value.CREDENTIALS_ENCRYPTION_KEY) {
   );
 }
 
+/**
+ * Apply the business timezone to the process itself.
+ *
+ * Done here, in the module every entry point loads first, so it is in effect
+ * before any Date is constructed. Node reads TZ lazily and caches it, so an
+ * assignment this early is honoured; one made after the first date operation
+ * would not be.
+ *
+ * Then verified rather than assumed: if the runtime does not actually end up
+ * on the intended offset - an unrecognised zone name, or a Node build without
+ * full ICU, both of which fall back to UTC silently - that must fail at boot.
+ * The alternative is a service that looks perfectly healthy while every
+ * session window and show time is 5.5 hours out.
+ */
+process.env.TZ = value.APP_TIMEZONE;
+
+/**
+ * Compared as WALL CLOCK, not as a zone name.
+ *
+ * Names are not canonical: ICU resolves 'Asia/Kolkata' to its legacy alias
+ * 'Asia/Calcutta' on some builds, and a string comparison would reject that -
+ * an identical zone, refused on a spelling. What actually has to hold is that
+ * the process's own local time IS the business's local time, so that is what
+ * is asserted.
+ */
+function wallClockIn(timeZone, instant) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    dateStyle: 'short',
+    timeStyle: 'medium',
+    hour12: false,
+  }).format(instant);
+}
+
+const bootInstant = new Date();
+let intendedWallClock;
+
+try {
+  intendedWallClock = wallClockIn(value.APP_TIMEZONE, bootInstant);
+} catch {
+  throw new Error(
+    'Invalid environment configuration:\n' +
+      `  - APP_TIMEZONE is "${value.APP_TIMEZONE}", which this runtime does not recognise as a timezone. ` +
+      'Use an IANA name such as Asia/Kolkata.'
+  );
+}
+
+const processWallClock = wallClockIn(undefined, bootInstant);
+
+if (processWallClock !== intendedWallClock) {
+  throw new Error(
+    'Invalid environment configuration:\n' +
+      `  - APP_TIMEZONE is "${value.APP_TIMEZONE}" (${intendedWallClock}) but the process is running at ` +
+      `${processWallClock}. Show times and the session window are computed in ` +
+      'process-local time, so every one of them would be shifted. Check that Node ' +
+      'has full ICU and that APP_TIMEZONE is applied before startup.'
+  );
+}
+
 // Connection settings are intentionally absent: config/config.js owns those and
 // is shared with the Sequelize CLI. They are validated above so a missing value
 // fails at boot, but nothing in src/ should read them from here.
@@ -329,6 +411,9 @@ const env = {
 
   port: value.PORT,
   apiBaseUrl: value.API_BASE_URL || `http://localhost:${value.PORT}`,
+
+  /** The business timezone, already applied to process.env.TZ above. */
+  timeZone: value.APP_TIMEZONE,
 
   jwt: {
     secret: value.JWT_SECRET,

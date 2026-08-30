@@ -1,7 +1,10 @@
+import { useState } from 'react';
+
 import { useCartStore } from '@/stores/cart.store';
 import { formatMoney } from '@/utils/formatMoney';
 import Thumbnail from '@/components/Thumbnail';
-import { MinusIcon, PlusIcon } from '@/components/icons';
+import ProductInfoModal from '@/components/ProductInfoModal';
+import { InfoIcon, MinusIcon, PlusIcon } from '@/components/icons';
 import '../styles/components/product-card.scss';
 
 interface ProductCardProps {
@@ -38,6 +41,8 @@ export default function ProductCard({
     (state) => state.items.find((i) => i.productId === id)?.quantity ?? 0
   );
 
+  const [infoOpen, setInfoOpen] = useState(false);
+
   const inCart = quantity > 0;
   const priceIsValid = hasValidPrice(price);
 
@@ -60,11 +65,29 @@ export default function ProductCard({
       </div>
 
       <div className="product-card__body">
-        <h3 className="product-card__name">{name}</h3>
+        <div className="product-card__heading">
+          <h3 className="product-card__name">{name}</h3>
 
-        {description && <p className="product-card__description">{description}</p>}
+          {/*
+            The description is no longer printed on the card. `stopPropagation`
+            keeps this from reaching the card itself, so opening the details can
+            never be mistaken for selecting or adding the product.
+          */}
+          <button
+            type="button"
+            className="product-card__info"
+            onClick={(event) => {
+              event.stopPropagation();
+              setInfoOpen(true);
+            }}
+            aria-label={`Details for ${name}`}
+          >
+            <InfoIcon size={18} />
+          </button>
+        </div>
 
-        {weight && <span className="product-card__weight">{weight}</span>}
+        {/* Weight is deliberately NOT on the card - it is one of the details
+            behind the info button, alongside the description. */}
 
         <div className="product-card__footer">
           <span className="product-card__price">
@@ -125,6 +148,14 @@ export default function ProductCard({
           )}
         </div>
       </div>
+
+
+      {infoOpen && (
+        <ProductInfoModal
+          product={{ id, name, description, imageUrl, price, weight }}
+          onClose={() => setInfoOpen(false)}
+        />
+      )}
     </article>
   );
 }

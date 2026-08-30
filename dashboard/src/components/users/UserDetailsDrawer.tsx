@@ -17,6 +17,7 @@ import { toApiError } from '@/services/api';
 import * as usersService from '@/services/users.service';
 import type { User, UserPermission } from '@/types/auth';
 import { displayName, roleLabel } from '@/utils/permissions';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -109,7 +110,7 @@ export default function UserDetailsDrawer({ userId, onClose }: UserDetailsDrawer
               {user.cinemaId ? `#${user.cinemaId}` : <Text type="secondary">All cinemas</Text>}
             </Descriptions.Item>
             <Descriptions.Item label="Created">
-              {user.createdAt ? new Date(user.createdAt).toLocaleString() : '-'}
+              {user.createdAt ? formatDateTime(user.createdAt) : '-'}
             </Descriptions.Item>
           </Descriptions>
 

@@ -33,6 +33,7 @@ import {
 import { useAuthStore } from '@/stores/auth.store';
 import { useOrdersStore } from '@/stores/orders.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDateTime } from '@/utils/datetime';
 
 const { RangePicker } = DatePicker;
 
@@ -230,7 +231,7 @@ export default function OrdersPage() {
       width: 180,
       sorter: true,
       defaultSortOrder: 'descend',
-      render: (date: Order['createdAt']) => (date ? new Date(date).toLocaleString() : '-'),
+      render: (date: Order['createdAt']) => (date ? formatDateTime(date) : '-'),
     },
   ];
 

@@ -51,6 +51,11 @@ const create = {
     city: optionalText(100),
     gstNumber: optionalText(50),
     fssaiNumber: optionalText(50),
+    // Required when creating a cinema: the screensaver is the first thing a
+    // customer sees at the seat or kiosk, so a new cinema is never launched
+    // without one. Holds an upload path (/uploads/cinemas/<file>) or an
+    // external URL, matching the column and the other image fields.
+    screensaverUrl: Joi.string().trim().max(500).required(),
     activeSince: Joi.date().iso().allow(null),
     smsEnabled: Joi.boolean().default(false),
     whatsappEnabled: Joi.boolean().default(false),
@@ -79,6 +84,9 @@ const update = {
     city: optionalText(100),
     gstNumber: optionalText(50),
     fssaiNumber: optionalText(50),
+    // Optional on update, and nullable so it can be cleared. Omitting it keeps
+    // whatever the cinema already has - see cinema.service.updateCinema.
+    screensaverUrl: optionalText(500),
     activeSince: Joi.date().iso().allow(null),
     smsEnabled: Joi.boolean(),
     whatsappEnabled: Joi.boolean(),

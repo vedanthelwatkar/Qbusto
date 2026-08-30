@@ -11,6 +11,7 @@ import { Alert, Descriptions, Drawer, Skeleton, Tag, Typography } from 'antd';
 import type { Category } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
 import * as categoriesService from '@/services/categories.service';
+import { formatDateTime } from '@/utils/datetime';
 
 const { Text, Paragraph } = Typography;
 
@@ -84,10 +85,10 @@ export default function CategoryDetailsDrawer({ categoryId, onClose }: CategoryD
           </Descriptions.Item>
           <Descriptions.Item label="Chain">#{category.chainId}</Descriptions.Item>
           <Descriptions.Item label="Created">
-            {category.createdAt ? new Date(category.createdAt).toLocaleString() : '-'}
+            {category.createdAt ? formatDateTime(category.createdAt) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Updated">
-            {category.updatedAt ? new Date(category.updatedAt).toLocaleString() : '-'}
+            {category.updatedAt ? formatDateTime(category.updatedAt) : '-'}
           </Descriptions.Item>
         </Descriptions>
       ) : null}

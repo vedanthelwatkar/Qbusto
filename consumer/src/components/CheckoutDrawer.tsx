@@ -26,6 +26,7 @@ import {
   TrashIcon,
 } from '@/components/icons';
 import '../styles/components/cart-drawer.scss';
+import { formatTime } from '@/utils/datetime';
 
 /** Everything inside the sheet that can hold focus. */
 const FOCUSABLE =
@@ -33,7 +34,9 @@ const FOCUSABLE =
 
 /**
  * Seat identity is captured as row + seat but the API carries a single
- * `seatNumber` string (STRING(20)), so the two are joined as e.g. "A5".
+ * `seatNumber` string (STRING(20)), so the two are joined into e.g. "A5" at
+ * that boundary only - the URL, this form and the context store all keep row
+ * and seat apart.
  */
 const ROW_PATTERN = /^[A-Za-z]{1,2}$/;
 const SEAT_PATTERN = /^\d{1,3}$/;
@@ -73,13 +76,6 @@ const checkoutSchema = z.object({
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
 
-/** Split a stored seat such as "A5" back into its row and seat parts. */
-function splitSeat(seat: string | null): { row: string; seat: string } {
-  if (!seat) return { row: '', seat: '' };
-  const match = seat.trim().match(/^([A-Za-z]{1,2})\s*(\d{1,3})$/);
-  if (!match) return { row: '', seat: '' };
-  return { row: match[1].toUpperCase(), seat: match[2] };
-}
 
 /**
  * One option's label, e.g. "IMAX - Interstellar - 07:30 PM".
@@ -88,16 +84,15 @@ function splitSeat(seat: string | null): { row: string; seat: string } {
  * scheduling report uses, and the order a customer reads it in - they know
  * which auditorium they are sitting in before they think about the title.
  *
- * No date, because the list only ever covers the remainder of the current
- * programming day. Showing one would be the same date on every option.
+ * No date. The list spans at most six hours, so no clock time can repeat
+ * within it and the time alone is unambiguous - even when the window crosses
+ * midnight and the options are not all on the same calendar day.
+ *
+ * Rendered in the cinema's timezone, not the device's: a kiosk or phone set to
+ * the wrong zone would otherwise offer the right shows under the wrong times.
  */
 function sessionLabel(session: ConsumerSession): string {
-  const time = session.startsAt
-    ? new Date(session.startsAt).toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '';
+  const time = formatTime(session.startsAt);
 
   // Joined on the parts that are present: a missing screen name or title must
   // not leave a stray separator, or produce an option labelled " - - 07:30 PM".
@@ -139,8 +134,8 @@ export default function CheckoutDrawer() {
   const toggleCart = useUIStore((state) => state.toggleCart);
 
   const cinemaId = useContextStore((state) => state.cinemaId) as number;
-  const screenId = useContextStore((state) => state.screenId);
-  const seatNumber = useContextStore((state) => state.seatNumber);
+  const contextRow = useContextStore((state) => state.row);
+  const contextSeat = useContextStore((state) => state.seat);
   const filmTitle = useContextStore((state) => state.filmTitle);
   const source = useContextStore((state) => state.source);
   const setContext = useContextStore((state) => state.setContext);
@@ -173,7 +168,8 @@ export default function CheckoutDrawer() {
 
   const subtotal = estimatedSubtotal();
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
-  const prefilledSeat = splitSeat(seatNumber);
+  // Row and seat arrive already separated, so there is nothing to split.
+  const prefilledSeat = { row: contextRow ?? '', seat: contextSeat ?? '' };
 
   const couponDiscount = appliedCoupon?.discount ?? 0;
   // Display only - the backend recomputes this independently at order
@@ -349,9 +345,10 @@ export default function CheckoutDrawer() {
 
     setAppliedCoupon(null);
     setCouponMessage('Your cart changed — please re-apply your coupon.');
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to
-    // external state (the cart store) changing, not a plain render; see the
-    // consumer eslint config's note on this rule for the project's stance.
+    // Reacting to external state (the cart store) changing, not to a plain
+    // render. This previously carried an eslint-disable for
+    // react-hooks/set-state-in-effect; the rule no longer reports here, and
+    // keeping a dead directive is itself a lint warning.
   }, [itemsFingerprint, appliedCoupon]);
 
   const handleApplyCoupon = async () => {
@@ -409,28 +406,37 @@ export default function CheckoutDrawer() {
     setSubmitting(true);
     setFormError(null);
 
-    const submittedSeat = `${data.rowNumber.toUpperCase()}${data.seatNumber}`;
+    const submittedRow = data.rowNumber.toUpperCase();
+    const submittedSeat = data.seatNumber;
+    // Joined only here, for the order payload's single seat column. Everything
+    // upstream - URL, context store, form - keeps the two apart.
+    const seatLabel = `${submittedRow}${submittedSeat}`;
 
     try {
       const order = await placeOrder(
         {
           cinemaId,
           /**
-           * The screen comes from the entry context, not from the session.
+           * ONLY the auditorium the backend actually verified for the chosen
+           * show (consumer.service.resolveScreenIdsByName), or null.
            *
-           * The schedule names its auditorium rather than referencing a screen
-           * id, and one cinema holds several `screens` rows per auditorium, so
-           * deriving an id from that name would put an arbitrary one on the
-           * order. The QR the customer scanned is physically at their screen,
-           * which is the reliable answer; it is null for a lobby code, and the
-           * column is nullable.
+           * There is deliberately NO fallback to the QR's own screenId. A QR is
+           * printed with whatever screens row existed at the time, and for a
+           * cinema whose screen data is one row per SEAT ROW that value is a
+           * seat-row record, not an auditorium - storing it put rows like
+           * `screen_id -> "Screen 1, row A"` on an order whose seat_number was
+           * "B5". `screen_id` must mean the auditorium or mean nothing, so an
+           * unresolved session leaves the nullable column NULL.
+           *
+           * The QR still supplies the customer's position through row/seat,
+           * which is a separate field and unaffected by this.
            */
-          screenId,
+          screenId: session.screenId ?? null,
           // Film and show time come off the one selected session, so they
           // cannot disagree with each other.
           filmTitle: session.filmTitle,
           showTime: new Date(session.startsAt).toISOString(),
-          seatNumber: submittedSeat,
+          seatNumber: seatLabel,
           customerMobile: data.customerMobile,
           customerEmail: data.customerEmail || null,
           items: items.map((item) => ({
@@ -456,7 +462,8 @@ export default function CheckoutDrawer() {
       // Done only after the backend accepted it, so the context can never
       // claim a seat no order exists for.
       const contextChanges: Parameters<typeof setContext>[0] = {};
-      if (submittedSeat !== seatNumber) contextChanges.seatNumber = submittedSeat;
+      if (submittedRow !== contextRow) contextChanges.row = submittedRow;
+      if (submittedSeat !== contextSeat) contextChanges.seat = submittedSeat;
       if (session.filmTitle !== filmTitle) contextChanges.filmTitle = session.filmTitle;
       contextChanges.showTime = new Date(session.startsAt).toISOString();
 
@@ -618,64 +625,6 @@ export default function CheckoutDrawer() {
                 ))}
               </ul>
 
-              <div className="cart-drawer__coupon">
-                {appliedCoupon ? (
-                  <div className="cart-drawer__coupon-applied">
-                    <span className="cart-drawer__coupon-applied-text">
-                      <TagIcon size={16} />
-                      <strong>{appliedCoupon.code}</strong> applied · −{formatMoney(couponDiscount)}
-                    </span>
-                    <button
-                      type="button"
-                      className="cart-drawer__coupon-remove"
-                      onClick={handleRemoveCoupon}
-                      disabled={busy}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <div className="cart-drawer__coupon-input">
-                    <div className="field cart-drawer__coupon-field">
-                      <label className="sr-only" htmlFor="checkout-coupon">
-                        Coupon code
-                      </label>
-                      <input
-                        id="checkout-coupon"
-                        type="text"
-                        placeholder="Have a coupon code?"
-                        autoCapitalize="characters"
-                        value={couponInput}
-                        disabled={busy || couponChecking}
-                        onChange={(event) => {
-                          setCouponInput(event.target.value);
-                          if (couponMessage) setCouponMessage(null);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault();
-                            void handleApplyCoupon();
-                          }
-                        }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn--secondary cart-drawer__coupon-apply"
-                      disabled={busy || couponChecking || !couponInput.trim()}
-                      onClick={() => void handleApplyCoupon()}
-                    >
-                      {couponChecking ? <span className="spinner spinner--sm" /> : 'Apply'}
-                    </button>
-                  </div>
-                )}
-                {couponMessage && (
-                  <span className="cart-drawer__coupon-message" role="alert">
-                    {couponMessage}
-                  </span>
-                )}
-              </div>
-
               <form
                 className="cart-drawer__form"
                 id="checkout-drawer-form"
@@ -822,6 +771,71 @@ export default function CheckoutDrawer() {
                   </div>
                 )}
               </form>
+
+              {/*
+                Last in the sheet, after the order details.
+                Position only - this is the same block, with the same state and
+                the same handlers. It sits OUTSIDE the <form> exactly as it did
+                before, so its Enter key is still handled manually and the Apply
+                button still cannot submit the checkout.
+              */}
+              <div className="cart-drawer__coupon">
+                {appliedCoupon ? (
+                  <div className="cart-drawer__coupon-applied">
+                    <span className="cart-drawer__coupon-applied-text">
+                      <TagIcon size={16} />
+                      <strong>{appliedCoupon.code}</strong> applied · −{formatMoney(couponDiscount)}
+                    </span>
+                    <button
+                      type="button"
+                      className="cart-drawer__coupon-remove"
+                      onClick={handleRemoveCoupon}
+                      disabled={busy}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="cart-drawer__coupon-input">
+                    <div className="field cart-drawer__coupon-field">
+                      <label className="sr-only" htmlFor="checkout-coupon">
+                        Coupon code
+                      </label>
+                      <input
+                        id="checkout-coupon"
+                        type="text"
+                        placeholder="Have a coupon code?"
+                        autoCapitalize="characters"
+                        value={couponInput}
+                        disabled={busy || couponChecking}
+                        onChange={(event) => {
+                          setCouponInput(event.target.value);
+                          if (couponMessage) setCouponMessage(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void handleApplyCoupon();
+                          }
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn--secondary cart-drawer__coupon-apply"
+                      disabled={busy || couponChecking || !couponInput.trim()}
+                      onClick={() => void handleApplyCoupon()}
+                    >
+                      {couponChecking ? <span className="spinner spinner--sm" /> : 'Apply'}
+                    </button>
+                  </div>
+                )}
+                {couponMessage && (
+                  <span className="cart-drawer__coupon-message" role="alert">
+                    {couponMessage}
+                  </span>
+                )}
+              </div>
             </div>
 
             <footer className="cart-drawer__footer">

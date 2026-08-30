@@ -43,6 +43,7 @@ import * as productsService from '@/services/products.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProductsStore } from '@/stores/products.store';
 import { hasPermission } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -221,8 +222,7 @@ export default function ProductsPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, product) =>
-        product.createdAt ? new Date(product.createdAt).toLocaleDateString() : '-',
+      render: (_, product) => (product.createdAt ? formatDate(product.createdAt) : '-'),
     },
     {
       title: '',

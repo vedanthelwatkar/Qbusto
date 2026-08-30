@@ -1,0 +1,184 @@
+/**
+ * Product details dialog.
+ *
+ * Centred rather than a bottom sheet: it is a short read the customer dismisses
+ * immediately, not a form they work through, so it does not need the drawer's
+ * full-height treatment. Sizing and the overlay tint follow cart-drawer.scss so
+ * the two dialogs feel like one system.
+ */
+
+.product-info-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+  background-color: rgba(26, 22, 20, 0.5);
+  animation: product-info-fade var(--transition-fast) both;
+  /* Matches the cart overlay: the page behind must not scroll under it. */
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+@keyframes product-info-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.product-info {
+  position: fixed;
+  z-index: var(--z-modal);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - var(--space-xl)));
+  max-height: min(80dvh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-primary);
+  box-shadow: var(--shadow-lg);
+  animation: product-info-rise var(--transition-normal) both;
+}
+
+@keyframes product-info-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-info,
+  .product-info-overlay {
+    animation: none;
+  }
+}
+
+.product-info {
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  &__title {
+    margin: 0;
+    /* min-width:0 lets a flex item shrink below its content; without it a long
+       unbroken product name pushes the header wider than the panel and the
+       whole dialog overflows. break-word then wraps the name itself. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-snug);
+    text-wrap: balance;
+  }
+
+  &__close {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      background-color: var(--color-bg-tertiary);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+  }
+
+  /* Same fixed square as the card, so the image reads consistently in both. */
+  &__media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 180px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    overflow: hidden;
+  }
+
+  &__image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  &__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--color-text-light);
+  }
+
+  &__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    margin: 0;
+  }
+
+  &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    dt {
+      font-size: var(--font-size-xs);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-wide);
+      color: var(--color-text-secondary);
+    }
+
+    dd {
+      margin: 0;
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+  }
+
+  &__unavailable {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+  }
+
+  &__description {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-secondary);
+
+    &--empty {
+      font-style: italic;
+      color: var(--color-text-light);
+    }
+  }
+}

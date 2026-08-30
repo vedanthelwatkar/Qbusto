@@ -53,8 +53,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(200),
         allowNull: false,
       },
-      // UTC instant. The POS supplies cinema-local wall clock; conversion happens
-      // centrally in the sync service (Phase B5), never in a provider adapter.
+      // Stored as IST wall clock, like every QBusto datetime column - see the
+      // matched timezone/useUTC pair in config/config.js. The POS supplies
+      // cinema-local wall clock (ExternalShow.showTimeLocal); turning that into
+      // a Date happens centrally in the sync service (Phase B5), never in a
+      // provider adapter.
       showTime: {
         type: DataTypes.DATE,
         allowNull: false,

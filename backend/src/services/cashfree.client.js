@@ -101,7 +101,31 @@ async function resolveCredentials(cinemaId) {
   });
 
   if (config) {
-    const secretKey = credentials.decrypt(config.gatewaySecretEncrypted);
+    let secretKey;
+
+    try {
+      secretKey = credentials.decrypt(config.gatewaySecretEncrypted);
+    } catch (error) {
+      /*
+       * The row exists but its secret cannot be decrypted - almost always
+       * because CREDENTIALS_ENCRYPTION_KEY has changed since it was saved
+       * (AES-GCM fails its auth tag, it does not return garbage).
+       *
+       * Re-thrown as the "not configured" error so the caller folds it into
+       * the same clean 503 a cinema with no credentials gets. Left as a raw
+       * crypto error it escaped every handler in consumer.service.paymentInit
+       * and reached the customer as a 500 with a full stack trace - exactly
+       * what the "never leak a bad config row to a customer-facing endpoint"
+       * rule exists to prevent. The operator detail goes to the log instead.
+       */
+      logger.error(
+        'Stored Cashfree secret could not be decrypted - re-save this cinema credentials',
+        { cinemaId, reason: error.message }
+      );
+
+      throw new Error('Cashfree is not configured for this cinema');
+    }
+
     const isProduction = config.environment === 'prod' || config.environment === 'production';
 
     return { appId: config.gatewayId, secretKey, isProduction };

@@ -178,15 +178,21 @@ describe('GET /api/product-availability-hours/:id', () => {
   });
 
   it('renders a driver-supplied Date time as HH:MM:SS', async () => {
-    // The driver returns a TIME column as a Date pinned to 1970-01-01 in UTC.
+    // The driver returns a TIME column as a Date pinned to 1970-01-01.
     // Emitting that untouched would produce '1970-01-01T09:00:00.000Z', which
     // this endpoint's own validator rejects - a client could not send back what
     // it just read.
+    //
+    // The date is built from LOCAL components because that is what tedious
+    // produces under `useUTC: false` (config/config.js - the IST storage pair).
+    // This fixture previously used Date.UTC, which encoded the pre-IST driver
+    // behaviour; keeping it would have asserted against a shape the driver no
+    // longer returns.
     const token = authenticateAs(buildActor());
     models.ProductAvailabilityHour.findOne.mockResolvedValue(
       buildHour({
-        startTime: new Date(Date.UTC(1970, 0, 1, 9, 0, 0)),
-        endTime: new Date(Date.UTC(1970, 0, 1, 17, 5, 30)),
+        startTime: new Date(1970, 0, 1, 9, 0, 0),
+        endTime: new Date(1970, 0, 1, 17, 5, 30),
       })
     );
 

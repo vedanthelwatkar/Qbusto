@@ -148,7 +148,7 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [code, name, gatewayId, secretKey]
+ *             required: [code, name, screensaverUrl, gatewayId, secretKey]
  *             properties:
  *               chainId:         { type: integer, description: Owners only; ignored otherwise. }
  *               code:            { type: string, minLength: 2, maxLength: 10, pattern: '^[A-Z0-9-]+$' }
@@ -157,6 +157,7 @@ router.get(
  *               city:            { type: string, maxLength: 100, nullable: true }
  *               gstNumber:       { type: string, maxLength: 50, nullable: true }
  *               fssaiNumber:     { type: string, maxLength: 50, nullable: true }
+ *               screensaverUrl:  { type: string, maxLength: 500, description: "Consumer screensaver artwork. Required on create: an upload path (/uploads/cinemas/...) or an external URL." }
  *               activeSince:     { type: string, format: date-time, nullable: true }
  *               smsEnabled:      { type: boolean, default: false }
  *               whatsappEnabled: { type: boolean, default: false }
@@ -224,6 +225,7 @@ router.post(
  *               city:            { type: string, maxLength: 100, nullable: true }
  *               gstNumber:       { type: string, maxLength: 50, nullable: true }
  *               fssaiNumber:     { type: string, maxLength: 50, nullable: true }
+ *               screensaverUrl:  { type: string, maxLength: 500, nullable: true, description: "Omit to keep the current artwork. A new value replaces it and the old upload is deleted." }
  *               activeSince:     { type: string, format: date-time, nullable: true }
  *               smsEnabled:      { type: boolean }
  *               whatsappEnabled: { type: boolean }

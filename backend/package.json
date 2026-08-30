@@ -7,6 +7,8 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "test": "jest",
+    "test:integration": "jest --runInBand --testPathIgnorePatterns=/node_modules/ --testPathPatterns=integration",
+    "test:all": "npm test && npm run test:integration",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint .",
@@ -30,7 +32,11 @@
     "collectCoverageFrom": [
       "src/**/*.js"
     ],
-    "clearMocks": true
+    "clearMocks": true,
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.integration\\.test\\.js$"
+    ]
   },
   "keywords": [],
   "author": "",

@@ -42,6 +42,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useUsersStore } from '@/stores/users.store';
 import { ROLES, type User } from '@/types/auth';
 import { ROLE_LABELS, hasPermission, roleLabel } from '@/utils/permissions';
+import { formatDate } from '@/utils/datetime';
 
 const { Text } = Typography;
 
@@ -193,7 +194,7 @@ export default function UsersPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
-      render: (_, user) => (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'),
+      render: (_, user) => (user.createdAt ? formatDate(user.createdAt) : '-'),
     },
     {
       title: '',

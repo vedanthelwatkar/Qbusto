@@ -26,7 +26,7 @@ import { customInstance } from '../../../services/api';
  * @summary Upload an image for an entity
  */
 const postApiUploadsEntity = (
-    entity: 'banners' | 'categories' | 'chains' | 'films' | 'products',
+    entity: 'banners' | 'categories' | 'chains' | 'cinemas' | 'films' | 'products',
     postApiUploadsEntityBody: PostApiUploadsEntityBody,
  ) => {const formData = new FormData();
 formData.append(`file`, postApiUploadsEntityBody.file);

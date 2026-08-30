@@ -79,15 +79,31 @@ function timeOfDay(date) {
   return [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join(':');
 }
 
-/** Render whatever the driver hands back for a TIME column as 'HH:MM:SS'. */
+/**
+ * Render whatever the driver hands back for a TIME column as 'HH:MM:SS'.
+ *
+ * LOCAL getters, deliberately, and they must stay in step with `timeOfDay`
+ * above - the two strings are compared directly in `unavailableReason`.
+ *
+ * A SQL `time` has no date and no offset; tedious still materialises it as a
+ * JS Date, and which components carry the stored digits depends on the
+ * connection's `useUTC`. QBusto sets `useUTC: false` (config/config.js, the
+ * IST storage pair), so the value arrives in LOCAL components: a column
+ * holding 00:00:00 reads back as local midnight. Reading it with getUTC*
+ * under that setting returns 18:30:00 instead - and an availability window of
+ * 00:00-23:00 becomes 18:30-17:30, which excludes almost the whole day.
+ *
+ * That is not hypothetical: it made every product with availability hours
+ * vanish from the consumer catalogue (cinema 8 showed zero products while
+ * cinemas without availability-hours rows were unaffected, because
+ * `unavailableReason` short-circuits when there are none).
+ */
 function formatStoredTime(value) {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') return value;
 
   const pad = (part) => String(part).padStart(2, '0');
-  return [pad(value.getUTCHours()), pad(value.getUTCMinutes()), pad(value.getUTCSeconds())].join(
-    ':'
-  );
+  return [pad(value.getHours()), pad(value.getMinutes()), pad(value.getSeconds())].join(':');
 }
 
 /**
