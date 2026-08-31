@@ -50,6 +50,15 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: true,
       },
+      // Membership of the fixed "All Time Favourite" section of the Consumer
+      // catalogue. It lives here, on the per-cinema link, because the section
+      // is per-cinema: categories are chain-scoped and cannot express it.
+      // A favourite keeps its own products.category_id and appears in both.
+      isAllTimeFavourite: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       createdBy: {
         type: DataTypes.INTEGER,
         allowNull: true,

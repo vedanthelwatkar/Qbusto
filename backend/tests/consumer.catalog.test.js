@@ -25,7 +25,8 @@ jest.mock('../src/config/database', () => {
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
     Screen: { findOne: jest.fn(), findAll: jest.fn() },
     Product: { findAll: jest.fn(), findOne: jest.fn() },
-    CinemaProduct: { findAll: jest.fn() },
+    Category: { findAll: jest.fn() },
+    CinemaProduct: { findAll: jest.fn(), count: jest.fn() },
     ProductPricing: { findAll: jest.fn() },
     Order: { findByPk: jest.fn(), create: jest.fn(), count: jest.fn() },
     OrderItem: { bulkCreate: jest.fn() },
@@ -39,7 +40,12 @@ jest.mock('../src/config/database', () => {
 
   return {
     models,
-    sequelize: { transaction: jest.fn(), query: jest.fn(), authenticate: jest.fn() },
+    sequelize: {
+      transaction: jest.fn(),
+      query: jest.fn(),
+      authenticate: jest.fn(),
+      QueryTypes: { SELECT: 'SELECT' },
+    },
     Sequelize: {},
   };
 });
@@ -804,5 +810,230 @@ describe('order creation with server-resolved screen id', () => {
 
     expect(response.status).toBe(400);
     expect(models.Order.create).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The fixed "All Time Favourite" section
+//
+// Membership is per-cinema and lives on cinema_products.is_all_time_favourite,
+// NOT on a categories row: categories.chain_id is NOT NULL and there is no
+// cinema_id, so a category is shared by every cinema in the chain and could
+// never hold a per-cinema selection. These tests pin both halves - the flag
+// reaching the catalogue, and the section appearing in the rail.
+// ---------------------------------------------------------------------------
+
+describe('the fixed All Time Favourite section', () => {
+  it('reports the favourite state of each product for the cinema being browsed', async () => {
+    listProducts([
+      buildProduct({ id: 17, name: 'Cheese Nachos', link: { isAllTimeFavourite: true } }),
+      buildProduct({ id: 18, name: 'Cold Coffee', link: { isAllTimeFavourite: false } }),
+    ]);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/products?limit=20&page=1`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((product) => [product.name, product.isAllTimeFavourite])).toEqual(
+      [
+        ['Cheese Nachos', true],
+        ['Cold Coffee', false],
+      ]
+    );
+  });
+
+  it('keeps a favourite in its own category as well', async () => {
+    listProducts([buildProduct({ id: 17, categoryId: 21, link: { isAllTimeFavourite: true } })]);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/products?limit=20&page=1`
+    );
+
+    // The flag adds a second place the product appears; it does not move it.
+    expect(response.body.data[0]).toMatchObject({ categoryId: 21, isAllTimeFavourite: true });
+  });
+
+  it('heads the category list when the cinema has marked something', async () => {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, isActive: true });
+    sequelize.query
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ id: 21, name: 'MOCKTAILS' }]);
+    models.Category.findAll.mockResolvedValue([
+      { id: 21, name: 'MOCKTAILS', imageUrl: null, description: null },
+    ]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=20&page=1`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0]).toMatchObject({ id: -1, name: 'ALL TIME FAVOURITE' });
+    expect(response.body.data[0].imageUrl).toEqual(expect.stringContaining('/uploads/categories/'));
+    // A negative id cannot collide with a real category row.
+    expect(response.body.data[1]).toMatchObject({ id: 21 });
+    // Counted, so a client paging until it has `total` entries still terminates.
+    expect(response.body.meta.pagination.total).toBe(2);
+    // Only this cinema's live links decide it.
+    expect(models.CinemaProduct.count).toHaveBeenCalledWith({
+      where: { cinemaId: CINEMA_ID, isActive: true, isAllTimeFavourite: true },
+    });
+  });
+
+  it('is absent when the cinema has marked nothing', async () => {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, isActive: true });
+    sequelize.query
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ id: 21, name: 'MOCKTAILS' }]);
+    models.Category.findAll.mockResolvedValue([
+      { id: 21, name: 'MOCKTAILS', imageUrl: null, description: null },
+    ]);
+    models.CinemaProduct.count.mockResolvedValue(0);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=20&page=1`
+    );
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({ id: 21 });
+    expect(response.body.meta.pagination.total).toBe(1);
+  });
+
+  it('is added once, at the head of the whole list, not once per page', async () => {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, isActive: true });
+    sequelize.query
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ id: 21, name: 'MOCKTAILS' }]);
+    models.Category.findAll.mockResolvedValue([
+      { id: 21, name: 'MOCKTAILS', imageUrl: null, description: null },
+    ]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=20&page=2`
+    );
+
+    expect(response.body.data.every((category) => category.id !== -1)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paging the fixed section
+//
+// The section is prepended, not selected, so it is the one entry that does not
+// come out of the OFFSET/FETCH window. It still has to OCCUPY a slot: page 1
+// must show one fewer real category to stay within `limit`, and every later
+// page must start one row earlier than its raw offset, or the category the
+// section displaced is skipped. The regression these pin is a page returning
+// `limit + 1` entries.
+// ---------------------------------------------------------------------------
+
+describe('the fixed section takes a slot in the page it appears on', () => {
+  /** The two reads getCategories issues: the count, then the id window. */
+  function catalogueOf(ids) {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, isActive: true });
+    // Reset, not just clear: jest is configured with `clearMocks`, which drops
+    // recorded calls but LEAVES an unconsumed mockResolvedValueOnce queued. The
+    // one-entry page below deliberately issues fewer queries than it queues, so
+    // without this the leftover surfaces in whichever test runs next.
+    sequelize.query.mockReset();
+    sequelize.query
+      .mockResolvedValueOnce([{ total: ids.length }])
+      // Honours the OFFSET/FETCH it is handed, exactly as SQL Server would. A
+      // mock that returned every id whatever the window asked for would pass
+      // even if the arithmetic under test were wrong.
+      .mockImplementationOnce((sql, options) => {
+        const [, , , , offset, take] = options.replacements;
+        return Promise.resolve(
+          ids.slice(offset, offset + take).map((id) => ({ id, name: `CAT ${id}` }))
+        );
+      });
+    models.Category.findAll.mockImplementation(({ where }) => {
+      const wanted = where.id[Object.getOwnPropertySymbols(where.id)[0]] ?? [];
+      return Promise.resolve(
+        wanted.map((id) => ({ id, name: `CAT ${id}`, imageUrl: null, description: null }))
+      );
+    });
+  }
+
+  /** The OFFSET and FETCH NEXT actually sent for the id window. */
+  function windowAsked() {
+    const idQuery = sequelize.query.mock.calls[1];
+    if (!idQuery) return null;
+    const replacements = idQuery[1].replacements;
+    return { offset: replacements[4], limit: replacements[5] };
+  }
+
+  it('never returns more than `limit` entries on page 1', async () => {
+    catalogueOf([21, 22, 23]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=2&page=1`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.data.map((category) => category.id)).toEqual([-1, 21]);
+    // One real row fetched, not two: the section is the other half of the page.
+    expect(windowAsked()).toEqual({ offset: 0, limit: 1 });
+  });
+
+  it('fills a one-entry page with the section alone, and asks for no rows', async () => {
+    catalogueOf([21, 22, 23]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=1&page=1`
+    );
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({ id: -1 });
+    // FETCH NEXT 0 ROWS is a syntax error in SQL Server, so the window query
+    // must be skipped rather than issued with a zero.
+    expect(sequelize.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a later page one row early, so no category is skipped', async () => {
+    catalogueOf([21, 22, 23]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=2&page=2`
+    );
+
+    // Raw offset would be 2, which would skip the row the section displaced.
+    expect(windowAsked()).toEqual({ offset: 1, limit: 2 });
+    expect(response.body.data.map((category) => category.id)).toEqual([22, 23]);
+    expect(response.body.data.every((category) => category.id !== -1)).toBe(true);
+  });
+
+  it('leaves the window untouched when the cinema has no favourites', async () => {
+    catalogueOf([21, 22, 23]);
+    models.CinemaProduct.count.mockResolvedValue(0);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=2&page=2`
+    );
+
+    // No section, no shift: the raw offset is correct on its own.
+    expect(windowAsked()).toEqual({ offset: 2, limit: 2 });
+    expect(response.body.meta.pagination.total).toBe(3);
+  });
+
+  it('counts the section in `total`, so paging to the end still terminates', async () => {
+    catalogueOf([21, 22, 23]);
+    models.CinemaProduct.count.mockResolvedValue(2);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/categories?limit=100&page=1`
+    );
+
+    // Three real categories plus the section, and the whole lot on one page -
+    // the Consumer always asks for 100, so this is the path it actually takes.
+    expect(response.body.meta.pagination.total).toBe(4);
+    expect(response.body.data).toHaveLength(4);
+    expect(windowAsked()).toEqual({ offset: 0, limit: 99 });
   });
 });

@@ -1,7 +1,15 @@
 # QBusto Database Schema
 
 > Technical source of truth for the database.
-> Last updated: 2026-08-30
+> Last updated: 2026-09-01
+> Revision: 14 - added `cinema_products.is_all_time_favourite` BIT NOT NULL
+> DEFAULT 0 (`20260831000100-add-all-time-favourite-to-cinema-products.js`),
+> membership of the fixed "All Time Favourite" section of the Consumer
+> catalogue. It sits on the cinema/product link because the section is
+> per-cinema: `categories.chain_id` is NOT NULL and there is no `cinema_id`, so
+> a category row is shared by every cinema in the chain and could never hold a
+> per-cinema selection. A favourite keeps its own `products.category_id` and
+> appears in both places. Applied to the live database and verified.
 > Revision: 13 - added `cinemas.screensaver_url` VARCHAR(500) NULL
 > (`20260830000200-add-screensaver-url-to-cinemas.js`), the per-cinema Consumer
 > screensaver artwork. Holds an upload path (`/uploads/cinemas/<file>`) or an
@@ -258,6 +266,7 @@ Complementary pricing is not part of V1.
 | available_from  | datetime2 | nullable                                     |
 | available_until | datetime2 | nullable                                     |
 | is_active       | bit       | NOT NULL, default 1                          |
+| is_all_time_favourite | bit | NOT NULL, default 0                        |
 | created_by      | int       | nullable, FK -> users.id, ON DELETE SET NULL |
 | updated_by      | int       | nullable, FK -> users.id, ON DELETE SET NULL |
 | created_at      | datetime2 | NOT NULL                                     |
@@ -268,6 +277,8 @@ Unique constraint: `(cinema_id, product_id)`.
 `available_from` and `available_until` control date-range availability such as festival offers. `is_active` remains the primary enable or disable flag.
 
 `sequence` is the display order within a cinema and is deliberately not unique, matching the legacy `DAE_ItemCinemaPrice.Sequence`.
+
+`is_all_time_favourite` puts the product in the fixed "All Time Favourite" section at the head of the Consumer catalogue, for this cinema only. It is not a category: the section has no `categories` row, because a category is chain-scoped and the selection is per-cinema. A product marked here keeps its own `category_id` and appears in both its category and the fixed section. The section's name and artwork are constants (`constants.ALL_TIME_FAVOURITE`); the consumer categories endpoint prepends it with a negative id so it can never collide with a real category, and omits it entirely when a cinema has marked nothing.
 
 This table is the parent of `product_availability_hours`, so a window is always scoped to one product at one cinema. It is exposed at `/api/cinema-products` and guarded by the `Products` permission module - the frozen module list has none of its own, and availability hours are guarded the same way.
 

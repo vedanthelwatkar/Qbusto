@@ -159,6 +159,13 @@ router.get(
  *                 nullable: true
  *                 description: End of a date-range offer. Null means no upper bound.
  *               isActive: { type: boolean, default: true }
+ *               isAllTimeFavourite:
+ *                 type: boolean
+ *                 default: false
+ *                 description: >
+ *                   Put this product in the fixed "All Time Favourite" section
+ *                   of the Consumer catalogue, at this cinema only. The product
+ *                   keeps its own category as well.
  *     responses:
  *       201:
  *         description: Link created
@@ -225,6 +232,7 @@ router.post(
  *               availableFrom:  { type: string, format: date-time, nullable: true }
  *               availableUntil: { type: string, format: date-time, nullable: true }
  *               isActive:       { type: boolean }
+ *               isAllTimeFavourite: { type: boolean }
  *     responses:
  *       200:
  *         description: Link updated

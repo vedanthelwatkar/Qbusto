@@ -159,7 +159,7 @@
     /* Tightened so more categories are reachable without scrolling the rail.
        The row keeps a 44px+ tap height via the thumb and label, so this trims
        whitespace rather than the target. */
-    padding: var(--space-sm) var(--space-xs);
+    padding: var(--space-xs);
     border-left: 3px solid transparent;
     color: var(--color-text-secondary);
     text-align: center;
@@ -187,8 +187,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 62px;
-    height: 62px;
+    /* 90px is a client requirement, at every width - the rail's artwork is
+       their branding and they set its size. The rail is 108px wide, so the
+       square fits inside it; the row's padding was tightened to pay for the
+       extra height rather than the rail growing. */
+    width: 90px;
+    height: 90px;
     border-radius: var(--radius-md);
     background-color: var(--color-bg-primary);
     border: 1px solid var(--color-border);
@@ -447,17 +451,10 @@
   }
 }
 
-/* Very narrow phones: reclaim width from the rail. */
+/* Very narrow phones: reclaim width from the rail.
+   The thumb is deliberately NOT shrunk here - 90px is the client's requirement
+   at every width - so the rail cannot narrow past the artwork it holds. */
 @media (max-width: 380px) {
-  .catalog__sidebar {
-    width: 92px;
-  }
-
-  .catalog__category-thumb {
-    width: 54px;
-    height: 54px;
-  }
-
   .catalog__products {
     padding-left: var(--space-sm);
     padding-right: var(--space-sm);
@@ -479,8 +476,8 @@
   }
 
   .catalog__category-thumb {
-    width: 86px;
-    height: 86px;
+    width: 90px;
+    height: 90px;
   }
 
   .catalog__category-name {

@@ -456,6 +456,17 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "cinemaIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ids of the cinemas this category is assigned to, active links only. Returned by the single-category read, not by the list.",
+            "example": [
+              8,
+              9
+            ]
           }
         }
       },
@@ -517,6 +528,41 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "isAllTimeFavourite": {
+            "type": "boolean",
+            "example": false,
+            "description": "Consumer catalogue only: whether this product is in the fixed \"All Time Favourite\" section at the cinema being browsed. Absent from the staff list."
+          },
+          "cinemaProduct": {
+            "type": "object",
+            "nullable": true,
+            "description": "This product at ONE cinema. Returned by the list only when it was called with `cinemaId`, and null when that cinema does not carry the product.",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "example": 12
+              },
+              "isActive": {
+                "type": "boolean",
+                "example": true
+              },
+              "isAllTimeFavourite": {
+                "type": "boolean",
+                "example": false
+              }
+            }
+          },
+          "cinemaIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ids of the cinemas that carry this product, active links only. Returned by the single-product read, not by the list.",
+            "example": [
+              8,
+              9
+            ]
           }
         }
       },
@@ -556,6 +602,11 @@
           "isActive": {
             "type": "boolean",
             "example": true
+          },
+          "isAllTimeFavourite": {
+            "type": "boolean",
+            "example": false,
+            "description": "Membership of the fixed \"All Time Favourite\" section of the Consumer catalogue, for this cinema only. The product keeps its own category as well."
           },
           "createdAt": {
             "type": "string",
@@ -2833,6 +2884,14 @@
             "in": "query",
             "name": "chainId",
             "description": "Owners only; ignored for every other role.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cinemaId",
+            "description": "Annotate every row with `cinemaProduct` - this product's link at this cinema, or null when it is not carried there. Does not filter the list.\n",
             "schema": {
               "type": "integer"
             }
@@ -6847,6 +6906,11 @@
                   "isActive": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "isAllTimeFavourite": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Put this product in the fixed \"All Time Favourite\" section of the Consumer catalogue, at this cinema only. The product keeps its own category as well.\n"
                   }
                 }
               }
@@ -7007,6 +7071,9 @@
                     "nullable": true
                   },
                   "isActive": {
+                    "type": "boolean"
+                  },
+                  "isAllTimeFavourite": {
                     "type": "boolean"
                   }
                 }

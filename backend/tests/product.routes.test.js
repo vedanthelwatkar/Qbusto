@@ -20,6 +20,9 @@ jest.mock('../src/config/database', () => {
       create: jest.fn(),
       destroy: jest.fn(),
     },
+    // The single-product read reports which cinemas carry it, and the list
+    // annotates each row with its link at one cinema when asked for.
+    CinemaProduct: { findAll: jest.fn() },
   };
 
   return {
@@ -113,6 +116,48 @@ describe('GET /api/products', () => {
     expect(response.body.meta.pagination).toMatchObject({ page: 1, limit: 20, total: 1 });
   });
 
+  // -------------------------------------------------------------------------
+  // ?cinemaId= annotates, it does not filter.
+  //
+  // Products are chain-scoped and have no cinema of their own, so "is this a
+  // favourite" is a question about the cinema_products link. The Dashboard
+  // needs the whole catalogue on screen with that answer attached, which is
+  // why an unlinked product still appears - with a null link rather than being
+  // dropped.
+  // -------------------------------------------------------------------------
+
+  it('annotates each row with its link at the requested cinema', async () => {
+    const token = authenticateAs(buildActor({ permissions: READ_ONLY }));
+    models.Product.findAndCountAll.mockResolvedValue({
+      rows: [buildProduct(), buildProduct({ id: 18, name: 'Cold Coffee' })],
+      count: 2,
+    });
+    models.CinemaProduct.findAll.mockResolvedValue([
+      { id: 12, productId: 17, isActive: true, isAllTimeFavourite: true },
+    ]);
+
+    const response = await request(app).get('/api/products?cinemaId=8').set('Authorization', token);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0].cinemaProduct).toMatchObject({
+      id: 12,
+      isAllTimeFavourite: true,
+    });
+    // Not carried at this cinema - still listed, with nothing to toggle.
+    expect(response.body.data[1].cinemaProduct).toBeNull();
+    expect(response.body.meta.pagination.total).toBe(2);
+  });
+
+  it('leaves rows unannotated when no cinema is named', async () => {
+    const token = authenticateAs(buildActor({ permissions: READ_ONLY }));
+    models.Product.findAndCountAll.mockResolvedValue({ rows: [buildProduct()], count: 1 });
+
+    const response = await request(app).get('/api/products').set('Authorization', token);
+
+    expect(response.body.data[0].cinemaProduct).toBeUndefined();
+    expect(models.CinemaProduct.findAll).not.toHaveBeenCalled();
+  });
+
   it('confines a non-owner to their own chain', async () => {
     const token = authenticateAs(buildActor({ chainId: 4 }));
     models.Product.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
@@ -150,14 +195,24 @@ describe('GET /api/products', () => {
 });
 
 describe('GET /api/products/:id', () => {
-  it('returns the product', async () => {
+  it('returns the product, with the cinemas that carry it', async () => {
     const token = authenticateAs(buildActor());
     models.Product.findOne.mockResolvedValue(buildProduct());
+    models.CinemaProduct.findAll.mockResolvedValue([{ cinemaId: 8 }, { cinemaId: 9 }]);
 
     const response = await request(app).get('/api/products/17').set('Authorization', token);
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toMatchObject({ id: 17, name: 'Salted Popcorn' });
+    expect(response.body.data).toMatchObject({
+      id: 17,
+      name: 'Salted Popcorn',
+      cinemaIds: [8, 9],
+    });
+    // Active links only - a deactivated link is not somewhere the product is
+    // sold.
+    expect(models.CinemaProduct.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { productId: 17, isActive: true } })
+    );
   });
 
   it('reports a product in another chain as 404', async () => {

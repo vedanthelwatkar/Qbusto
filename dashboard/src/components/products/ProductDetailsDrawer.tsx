@@ -116,6 +116,14 @@ export default function ProductDetailsDrawer({
             )}
           </Descriptions.Item>
           <Descriptions.Item label="Chain">#{product.chainId}</Descriptions.Item>
+          {/* A product is chain-scoped and has no cinema of its own; these are the cinemas whose cinema_products link is live. */}
+          <Descriptions.Item label="Cinemas">
+            {product.cinemaIds && product.cinemaIds.length > 0 ? (
+              product.cinemaIds.map((cinemaId) => `#${cinemaId}`).join(', ')
+            ) : (
+              <Text type="secondary">Not carried anywhere</Text>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Created">
             {product.createdAt ? formatDateTime(product.createdAt) : '-'}
           </Descriptions.Item>

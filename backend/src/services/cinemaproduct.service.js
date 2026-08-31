@@ -44,6 +44,7 @@ const PUBLIC_ATTRIBUTES = [
   'availableFrom',
   'availableUntil',
   'isActive',
+  'isAllTimeFavourite',
   'createdAt',
   'updatedAt',
 ];

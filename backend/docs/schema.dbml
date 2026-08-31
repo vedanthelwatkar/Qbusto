@@ -108,6 +108,7 @@ Table cinema_products [note: 'Application code must validate that the linked pro
   available_from     datetime2
   available_until    datetime2
   is_active          bit       [not null, default: 1]
+  is_all_time_favourite bit    [not null, default: 0, note: 'Membership of the fixed "All Time Favourite" section of the Consumer catalogue, per cinema. Not a category - the product keeps its own category_id as well.']
   created_by int       [note: 'Nullable FK to users.id.']
   updated_by int       [note: 'Nullable FK to users.id.']
   created_at         datetime2 [not null]

@@ -131,6 +131,31 @@ const ERROR_CODES = Object.freeze({
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
 });
 
+/**
+ * The fixed "All Time Favourite" section of the Consumer catalogue.
+ *
+ * NOT a categories row, and deliberately so: `categories.chain_id` is NOT NULL
+ * and there is no `cinema_id`, so a real category is shared by every cinema in
+ * the chain and could never hold a per-cinema selection. Membership lives on
+ * `cinema_products.is_all_time_favourite`; this is only the section's own name
+ * and artwork, which are the same everywhere.
+ *
+ * `ID` is negative so it can never collide with a real category id - the
+ * Consumer keys its sections by category id, and this one has to sit in the
+ * same list without pretending to be a row that exists.
+ *
+ * IMAGE_URL is the artwork the client already uploaded for their hand-made
+ * version of this section. It is an ordinary upload path under
+ * FILE_STORAGE_PATH, read through GET /uploads/... like every other image, and
+ * it survives the deletion of that category row (deletion is soft; the file is
+ * never removed).
+ */
+const ALL_TIME_FAVOURITE = Object.freeze({
+  ID: -1,
+  NAME: 'ALL TIME FAVOURITE',
+  IMAGE_URL: '/uploads/categories/40c7df5b954bafdca9ce4d8f0c97bef3.jpg',
+});
+
 const PAGINATION = Object.freeze({
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: 20,
@@ -154,5 +179,6 @@ module.exports = {
   POS_PROVIDERS,
   POS_PROVIDER_NAMES,
   ERROR_CODES,
+  ALL_TIME_FAVOURITE,
   PAGINATION,
 };

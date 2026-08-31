@@ -10,6 +10,13 @@
  * rows on screen are resolved by id and kept in a cache that grows as pages are
  * visited. That is a handful of small requests per page rather than a fixed
  * slice of the catalogue, so it stays correct however many categories exist.
+ *
+ * ALL TIME FAVOURITE is the one column that is not a property of the product.
+ * It is a property of the cinema_products link - the fixed section it drives is
+ * per-cinema, and products are chain-scoped - so the column only has an answer
+ * once a cinema is chosen. Choosing one adds `cinemaId` to the query, which
+ * annotates every row with its link there (`cinemaProduct`) without filtering
+ * the list, and the checkbox writes to that link rather than to the product.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -18,6 +25,7 @@ import {
   App,
   Button,
   Card,
+  Checkbox,
   Empty,
   Input,
   Select,
@@ -34,11 +42,13 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { GetApiProductsParams, Product } from '@/api/generated/cinemaOrderingAPI.schemas';
 import PageHeader from '@/components/PageHeader';
 import CategorySelect from '@/components/categories/CategorySelect';
+import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import ProductAvailabilityDrawer from '@/components/products/ProductAvailabilityDrawer';
 import ProductDetailsDrawer from '@/components/products/ProductDetailsDrawer';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { toApiError } from '@/services/api';
 import { getCategory } from '@/services/categories.service';
+import { updateCinemaProduct } from '@/services/cinema-products.service';
 import * as productsService from '@/services/products.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProductsStore } from '@/stores/products.store';
@@ -87,6 +97,12 @@ export default function ProductsPage() {
    * product's chain, and both are already on the row.
    */
   const [availabilityProduct, setAvailabilityProduct] = useState<Product | undefined>();
+
+  /**
+   * Links being written right now, by product id. One checkbox at a time is
+   * disabled rather than the whole column: the writes are independent rows.
+   */
+  const [savingFavourite, setSavingFavourite] = useState<Set<number>>(new Set());
 
   /** Category names by id, filled in as pages of products are shown. */
   const [categoryNames, setCategoryNames] = useState<Map<number, string>>(new Map());
@@ -173,14 +189,48 @@ export default function ProductsPage() {
     });
   };
 
+  /**
+   * Write the favourite flag on the cinema link.
+   *
+   * Refetches instead of patching the row in place: the checkbox reflects a row
+   * in another table, and re-reading it is what proves the write landed. The
+   * optimistic alternative would show a tick for a write the server rejected.
+   */
+  const toggleFavourite = async (product: Product, next: boolean) => {
+    const cinemaProductId = product.cinemaProduct?.id;
+    if (product.id === undefined || cinemaProductId === undefined) return;
+
+    setSavingFavourite((current) => new Set(current).add(product.id as number));
+
+    try {
+      await updateCinemaProduct(cinemaProductId, { isAllTimeFavourite: next });
+      await fetch();
+    } catch (caught) {
+      message.error(toApiError(caught).message);
+    } finally {
+      setSavingFavourite((current) => {
+        const remaining = new Set(current);
+        remaining.delete(product.id as number);
+        return remaining;
+      });
+    }
+  };
+
   const columns: ColumnsType<Product> = [
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
       sorter: true,
+      // Wrapping, not truncated: a product name is what the row is, and half of
+      // one identifies nothing. `table-link--wrap` unpins antd's single-line
+      // button height so a long name runs onto a second line in full.
       render: (_, product) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(product.id)}>
+        <Button
+          type="link"
+          className="table-link table-link--wrap"
+          onClick={() => setDetailsId(product.id)}
+        >
           {product.name}
         </Button>
       ),
@@ -208,6 +258,33 @@ export default function ProductsPage() {
       dataIndex: 'weight',
       key: 'weight',
       render: (_, product) => product.weight ?? <Text type="secondary">-</Text>,
+    },
+    {
+      title: 'All Time Favourite',
+      key: 'isAllTimeFavourite',
+      width: 160,
+      render: (_, product) => {
+        if (!query.cinemaId) return <Text type="secondary">Pick a cinema</Text>;
+
+        // No link means the cinema does not carry the product, so there is
+        // nothing to mark. Adding one here would be a different decision than
+        // the one this checkbox makes.
+        if (!product.cinemaProduct) {
+          return (
+            <Tooltip title="Not carried at this cinema">
+              <Text type="secondary">-</Text>
+            </Tooltip>
+          );
+        }
+
+        return (
+          <Checkbox
+            checked={product.cinemaProduct.isAllTimeFavourite === true}
+            disabled={!canEdit || (product.id !== undefined && savingFavourite.has(product.id))}
+            onChange={(event) => void toggleFavourite(product, event.target.checked)}
+          />
+        );
+      },
     },
     {
       title: 'Status',
@@ -334,6 +411,16 @@ export default function ProductsPage() {
             value={query.categoryId}
             onChange={(categoryId) => setQuery({ categoryId: categoryId ?? undefined })}
             style={{ width: 200 }}
+          />
+
+          {/* Not a filter on the rows - it decides which cinema the ALL TIME
+              FAVOURITE column is answering for. Every product still lists. */}
+          <CinemaSelect
+            allowClear
+            placeholder="Favourites for cinema"
+            value={query.cinemaId}
+            onChange={(cinemaId) => setQuery({ cinemaId: cinemaId ?? undefined })}
+            style={{ width: 220 }}
           />
 
           <Select

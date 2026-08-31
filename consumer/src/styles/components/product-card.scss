@@ -126,12 +126,11 @@
     line-height: var(--line-height-snug);
     letter-spacing: 0;
     color: var(--color-text-primary);
-    /* Two lines max keeps every card in a row the same height. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    /* Shown in full, however many lines it takes. A truncated name is a
+       customer guessing what they are buying, which matters more than cards in
+       a row being the same height - the grid rows already stretch to the
+       tallest card, so nothing overlaps. */
+    overflow-wrap: anywhere;
   }
 
   /* The name and its details trigger share a row; the button never wraps. */

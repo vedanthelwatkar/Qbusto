@@ -144,7 +144,16 @@ async function getCategory(actor, categoryId) {
 
   if (!category) throw new NotFoundError('Category');
 
-  return serializeCategory(category);
+  // Which cinemas this category is assigned to. Categories are chain-scoped and
+  // carry no cinema of their own, so cinema_categories is the only answer to
+  // "where does this appear" - the details drawer shows it beside the chain.
+  const links = await models.CinemaCategory.findAll({
+    where: { categoryId, isActive: true },
+    attributes: ['cinemaId'],
+    order: [['cinemaId', 'ASC']],
+  });
+
+  return { ...serializeCategory(category), cinemaIds: links.map((link) => link.cinemaId) };
 }
 
 async function createCategory(actor, payload) {

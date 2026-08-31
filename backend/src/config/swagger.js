@@ -250,6 +250,14 @@ const definition = {
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+          cinemaIds: {
+            type: 'array',
+            items: { type: 'integer' },
+            description:
+              'Ids of the cinemas this category is assigned to, active links only. Returned by ' +
+              'the single-category read, not by the list.',
+            example: [8, 9],
+          },
         },
       },
       Product: {
@@ -272,6 +280,33 @@ const definition = {
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+          isAllTimeFavourite: {
+            type: 'boolean',
+            example: false,
+            description:
+              'Consumer catalogue only: whether this product is in the fixed "All Time ' +
+              'Favourite" section at the cinema being browsed. Absent from the staff list.',
+          },
+          cinemaProduct: {
+            type: 'object',
+            nullable: true,
+            description:
+              'This product at ONE cinema. Returned by the list only when it was called with ' +
+              '`cinemaId`, and null when that cinema does not carry the product.',
+            properties: {
+              id: { type: 'integer', example: 12 },
+              isActive: { type: 'boolean', example: true },
+              isAllTimeFavourite: { type: 'boolean', example: false },
+            },
+          },
+          cinemaIds: {
+            type: 'array',
+            items: { type: 'integer' },
+            description:
+              'Ids of the cinemas that carry this product, active links only. Returned by the ' +
+              'single-product read, not by the list.',
+            example: [8, 9],
+          },
         },
       },
       CinemaProduct: {
@@ -300,6 +335,13 @@ const definition = {
             description: 'End of a date-range offer. Null means no upper bound.',
           },
           isActive: { type: 'boolean', example: true },
+          isAllTimeFavourite: {
+            type: 'boolean',
+            example: false,
+            description:
+              'Membership of the fixed "All Time Favourite" section of the Consumer catalogue, ' +
+              'for this cinema only. The product keeps its own category as well.',
+          },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
@@ -531,7 +573,7 @@ const definition = {
             description:
               "QBusto's own screen id, resolved from screenName ONLY when that name " +
               'identifies exactly one active screen at the cinema. Null when no ' +
-              'screen matches OR when the cinema\'s screen data is one row per seat ' +
+              "screen matches OR when the cinema's screen data is one row per seat " +
               'row rather than per auditorium - see seatRows below for that case. ' +
               'Not sent by the client: the order endpoint resolves the real id ' +
               'itself from screenName and seatRow.',
@@ -544,7 +586,7 @@ const definition = {
               'The seat rows available under this screen name, sorted, when the ' +
               "cinema's screen data is one row per seat row (screenId above is " +
               'null in that case). Empty when it is not - the row field is then ' +
-              'free text. Send the row the customer picks as the order\'s seatRow.',
+              "free text. Send the row the customer picks as the order's seatRow.",
           },
           filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
           filmTitle: {

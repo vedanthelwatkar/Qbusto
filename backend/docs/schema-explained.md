@@ -219,6 +219,8 @@ A client turns a (cinema, product) pair into the `cinemaProductId` that availabi
 
 `cinema_products.is_active` remains the main enable or disable flag.
 
+`cinema_products.is_all_time_favourite` marks the product as part of the fixed "All Time Favourite" section at the head of the Consumer catalogue, for that one cinema. It lives on the link rather than being a category because the selection differs per cinema and a category cannot: `categories.chain_id` is NOT NULL and there is no `cinema_id`, so one category row is shared by every cinema in the chain. A favourite is not moved out of its own category - it appears in both. Staff set it from the Dashboard's Products table, which is why that page has a cinema picker: the column has no answer until a cinema is chosen.
+
 Where both bounds are set, the API requires `available_until` to be later than `available_from`. The database carries no CHECK for this, and the legacy table had only a `ToDate`, so the rule is enforced in the service layer.
 
 ### Product availability hours

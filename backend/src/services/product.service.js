@@ -158,6 +158,32 @@ async function findForUpdate(actor, productId) {
 }
 
 /**
+ * The cinema links for a set of products, keyed by product id.
+ *
+ * `cinemaId` NARROWS the listing's annotation, it never widens its scope: the
+ * products themselves are still selected by `tenantScope`, and a cinema in
+ * another chain simply matches no links rather than exposing anything. The
+ * cinema is not resolved or validated here for the same reason - there is
+ * nothing to leak, an unknown id yields an empty map and every row reads as
+ * "not carried".
+ */
+async function cinemaLinksByProduct(cinemaId, productIds) {
+  if (!cinemaId || productIds.length === 0) return new Map();
+
+  const links = await models.CinemaProduct.findAll({
+    where: { cinemaId, productId: { [Op.in]: productIds } },
+    attributes: ['id', 'productId', 'isActive', 'isAllTimeFavourite'],
+  });
+
+  return new Map(
+    links.map((link) => [
+      link.productId,
+      { id: link.id, isActive: link.isActive, isAllTimeFavourite: link.isAllTimeFavourite },
+    ])
+  );
+}
+
+/**
  * Paginated, filtered product list.
  *
  * @param {object} actor The authenticated user making the request.
@@ -166,7 +192,19 @@ async function findForUpdate(actor, productId) {
  */
 async function listProducts(
   actor,
-  { page, limit, sort, order, search, categoryId, chainId, isAddon, addonParentId, isActive }
+  {
+    page,
+    limit,
+    sort,
+    order,
+    search,
+    categoryId,
+    chainId,
+    cinemaId,
+    isAddon,
+    addonParentId,
+    isActive,
+  }
 ) {
   const where = { ...tenantScope(actor) };
 
@@ -186,7 +224,23 @@ async function listProducts(
     offset: (page - 1) * limit,
   });
 
-  return { products: rows.map(serializeProduct), total: count };
+  const products = rows.map(serializeProduct);
+
+  // Annotation, not a filter: a product the cinema does not carry still appears,
+  // with `cinemaProduct: null`. The Dashboard needs the whole catalogue on
+  // screen to be able to say which of it is a favourite here.
+  if (cinemaId) {
+    const links = await cinemaLinksByProduct(
+      cinemaId,
+      products.map((product) => product.id)
+    );
+
+    for (const product of products) {
+      product.cinemaProduct = links.get(product.id) ?? null;
+    }
+  }
+
+  return { products, total: count };
 }
 
 /**
@@ -201,7 +255,16 @@ async function getProduct(actor, productId) {
 
   if (!product) throw new NotFoundError('Product');
 
-  return serializeProduct(product);
+  // Which cinemas actually carry it. Products are chain-scoped and have no
+  // cinema of their own, so this join is the only answer to "where is this
+  // sold" - the details drawer shows it beside the chain.
+  const links = await models.CinemaProduct.findAll({
+    where: { productId, isActive: true },
+    attributes: ['cinemaId'],
+    order: [['cinemaId', 'ASC']],
+  });
+
+  return { ...serializeProduct(product), cinemaIds: links.map((link) => link.cinemaId) };
 }
 
 async function createProduct(actor, payload) {

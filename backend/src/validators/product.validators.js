@@ -31,6 +31,9 @@ const list = {
       .default('createdAt'),
     categoryId: id,
     chainId: id,
+    // Annotates each row with its link at this cinema; it does not filter the
+    // list. See services/product.service.listProducts.
+    cinemaId: id,
     isAddon: Joi.boolean(),
     addonParentId: id,
     isActive: Joi.boolean(),

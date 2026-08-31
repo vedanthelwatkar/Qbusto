@@ -59,6 +59,13 @@ router.use(authenticate());
  *         description: Owners only; ignored for every other role.
  *         schema: { type: integer }
  *       - in: query
+ *         name: cinemaId
+ *         description: >
+ *           Annotate every row with `cinemaProduct` - this product's link at
+ *           this cinema, or null when it is not carried there. Does not filter
+ *           the list.
+ *         schema: { type: integer }
+ *       - in: query
  *         name: isAddon
  *         schema: { type: boolean }
  *       - in: query

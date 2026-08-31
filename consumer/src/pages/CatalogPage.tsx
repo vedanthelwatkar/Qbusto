@@ -25,6 +25,16 @@ import { AlertIcon, BagIcon } from '@/components/icons';
 import type { Category, Product, Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 import '../styles/pages/catalog.scss';
 
+/**
+ * The fixed "All Time Favourite" section, as the catalogue API reports it.
+ *
+ * Negative because it is not a categories row and must never collide with one -
+ * see backend constants.ALL_TIME_FAVOURITE. It arrives in the category list
+ * like any other entry, so the rail and the scroll anchors need no special
+ * case; only the section's contents are found differently.
+ */
+const ALL_TIME_FAVOURITE_ID = -1;
+
 interface ProductWithPrice extends Product {
   basePrice?: number;
 }
@@ -252,11 +262,20 @@ export default function CatalogPage() {
       else byCategory.set(product.categoryId, [product]);
     }
 
+    // The fixed "All Time Favourite" section. The backend puts it at the head
+    // of the category list with a negative id, because it is NOT a category row
+    // - membership is per-cinema and lives on the cinema/product link, which a
+    // chain-scoped category could never express. So it is the one section whose
+    // products are not found by categoryId: a favourite keeps its own category
+    // and appears in both places.
     return categories
       .map((category) => ({
         id: category.id as number,
         name: category.name ?? 'Items',
-        items: (category.id !== undefined && byCategory.get(category.id)) || [],
+        items:
+          category.id === ALL_TIME_FAVOURITE_ID
+            ? products.filter((product) => product.isAllTimeFavourite)
+            : (category.id !== undefined && byCategory.get(category.id)) || [],
       }))
       .filter((section) => section.id !== undefined && section.items.length > 0);
   }, [products, categories]);

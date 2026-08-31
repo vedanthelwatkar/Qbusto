@@ -28,7 +28,13 @@ const {
   ValidationError,
   ServiceUnavailableError,
 } = require('../utils/errors');
-const { PAGINATION, ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } = require('../constants');
+const {
+  PAGINATION,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  ORDER_SOURCES,
+  ALL_TIME_FAVOURITE,
+} = require('../constants');
 const { sqlDateTimeLiteral } = require('../utils/sqlDate');
 
 /**
@@ -187,6 +193,16 @@ async function getCategories(
 
   if (!cinema) throw new NotFoundError('Cinema');
 
+  // The fixed "All Time Favourite" section is not a categories row - see
+  // constants.ALL_TIME_FAVOURITE - so it is added here rather than selected. It
+  // is resolved FIRST because it occupies the first slot of the combined list,
+  // which shifts the window of real categories that every page shows.
+  const favouriteCount = await models.CinemaProduct.count({
+    where: { cinemaId, isActive: true, isAllTimeFavourite: true },
+  });
+
+  const hasFavourites = favouriteCount > 0;
+
   // Get total count first
   const countResult = await sequelize.query(
     `
@@ -203,11 +219,26 @@ async function getCategories(
     }
   );
 
-  const total = countResult[0]?.total || 0;
+  const realTotal = countResult[0]?.total || 0;
 
-  // Get distinct category ids with SQL Server pagination (OFFSET...FETCH)
-  const categoryIds = await sequelize.query(
-    `
+  // Paged over the COMBINED list - the fixed section plus the real categories -
+  // rather than over the real ones alone. The section takes the first slot, so
+  // page 1 has one fewer real row to show and every later page starts one row
+  // earlier than its raw offset suggests. Getting this wrong is how a page ends
+  // up returning `limit + 1` entries, or skipping the category the section
+  // displaced.
+  const offset = (page - 1) * limit;
+  const showsFixedSection = hasFavourites && offset === 0;
+  const realOffset = hasFavourites ? Math.max(0, offset - 1) : offset;
+  const realLimit = showsFixedSection ? limit - 1 : limit;
+
+  // `limit: 1` on page 1 is the whole page: the section fills it and there is
+  // no room for a real category. Skipped rather than issued, because
+  // `FETCH NEXT 0 ROWS` is a syntax error in SQL Server.
+  const categoryIds =
+    realLimit > 0
+      ? await sequelize.query(
+          `
     SELECT DISTINCT c.id, c.name
     FROM categories c
     INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
@@ -217,32 +248,52 @@ async function getCategories(
     ORDER BY c.name ASC
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `,
-    {
-      replacements: [
-        cinemaId,
-        cinemaId,
-        EVERY_DAY,
-        isoDayOfWeek(new Date()),
-        (page - 1) * limit,
-        limit,
-      ],
-      type: sequelize.QueryTypes.SELECT,
-    }
-  );
+          {
+            replacements: [
+              cinemaId,
+              cinemaId,
+              EVERY_DAY,
+              isoDayOfWeek(new Date()),
+              realOffset,
+              realLimit,
+            ],
+            type: sequelize.QueryTypes.SELECT,
+          }
+        )
+      : [];
 
   const ids = categoryIds.map((row) => row.id);
 
   // Fetch full category data
-  const categories = await models.Category.findAll({
-    where: { id: { [Op.in]: ids.length > 0 ? ids : [0] } },
-    attributes: ['id', 'name', 'imageUrl', 'description'],
-    order: [['name', 'ASC']],
-    raw: true,
-  });
+  const categories =
+    ids.length > 0
+      ? await models.Category.findAll({
+          where: { id: { [Op.in]: ids } },
+          attributes: ['id', 'name', 'imageUrl', 'description'],
+          order: [['name', 'ASC']],
+          raw: true,
+        })
+      : [];
+
+  if (!hasFavourites) {
+    return { categories, total: realTotal };
+  }
 
   return {
-    categories,
-    total,
+    categories: showsFixedSection
+      ? [
+          {
+            id: ALL_TIME_FAVOURITE.ID,
+            name: ALL_TIME_FAVOURITE.NAME,
+            imageUrl: ALL_TIME_FAVOURITE.IMAGE_URL,
+            description: null,
+          },
+          ...categories,
+        ]
+      : categories,
+    // Counts the fixed section, so a client paging until it has `total` entries
+    // still terminates.
+    total: realTotal + 1,
   };
 }
 
@@ -300,7 +351,14 @@ async function getProducts(
     include: [
       {
         association: 'cinemaProducts',
-        attributes: ['id', 'productId', 'availableFrom', 'availableUntil', 'isActive'],
+        attributes: [
+          'id',
+          'productId',
+          'availableFrom',
+          'availableUntil',
+          'isActive',
+          'isAllTimeFavourite',
+        ],
         where: { cinemaId, isActive: true },
         required: true,
         include: [
@@ -368,6 +426,10 @@ async function getProducts(
       imageUrl: product.imageUrl,
       weight: product.weight,
       basePrice: parseFloat(toDecimalString(discountedPaise)),
+      // Per-cinema, and read off the link that is already joined here rather
+      // than fetched again. The product keeps its own categoryId: a favourite
+      // appears in the fixed section AND in its real category.
+      isAllTimeFavourite: Boolean(product.cinemaProducts[0].isAllTimeFavourite),
     };
   });
 

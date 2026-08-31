@@ -20,7 +20,7 @@ jest.mock('../src/config/database', () => ({
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
     Screen: { findOne: jest.fn(), findAll: jest.fn() },
     Product: { findAll: jest.fn(), findOne: jest.fn() },
-    CinemaProduct: { findAll: jest.fn() },
+    CinemaProduct: { findAll: jest.fn(), count: jest.fn() },
     ProductPricing: { findAll: jest.fn() },
     ProductAvailabilityHour: { findAll: jest.fn() },
     Category: { findAll: jest.fn(), findOne: jest.fn() },
@@ -66,6 +66,7 @@ describe('catalogue reads go through the cache', () => {
   it('getCategories keys on the page and limit', async () => {
     models.Category.findAll.mockResolvedValue([]);
     models.Product.findAll.mockResolvedValue([]);
+    models.CinemaProduct.count.mockResolvedValue(0);
 
     await consumerService.getCategories(8, 20, 2);
 

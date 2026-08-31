@@ -60,6 +60,7 @@ const create = {
     availableFrom: availableFrom.default(null),
     availableUntil: availableUntil.default(null),
     isActive: Joi.boolean().default(true),
+    isAllTimeFavourite: Joi.boolean().default(false),
   }),
 };
 
@@ -74,6 +75,7 @@ const update = {
     availableFrom,
     availableUntil,
     isActive: Joi.boolean(),
+    isAllTimeFavourite: Joi.boolean(),
   })
     .min(1)
     .messages({ 'object.min': 'Provide at least one field to update' }),

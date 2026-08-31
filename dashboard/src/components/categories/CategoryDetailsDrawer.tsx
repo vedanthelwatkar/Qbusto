@@ -86,6 +86,14 @@ export default function CategoryDetailsDrawer({ categoryId, onClose }: CategoryD
             )}
           </Descriptions.Item>
           <Descriptions.Item label="Chain">#{category.chainId}</Descriptions.Item>
+          {/* A category is chain-scoped and has no cinema of its own; these are the cinemas whose cinema_categories link is live. */}
+          <Descriptions.Item label="Cinemas">
+            {category.cinemaIds && category.cinemaIds.length > 0 ? (
+              category.cinemaIds.map((cinemaId) => `#${cinemaId}`).join(', ')
+            ) : (
+              <Text type="secondary">Not assigned anywhere</Text>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Created">
             {category.createdAt ? formatDateTime(category.createdAt) : '-'}
           </Descriptions.Item>

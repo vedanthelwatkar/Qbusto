@@ -162,7 +162,19 @@ export interface Category {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Ids of the cinemas this category is assigned to, active links only. Returned by the single-category read, not by the list. */
+  cinemaIds?: number[];
 }
+
+/**
+ * This product at ONE cinema. Returned by the list only when it was called with `cinemaId`, and null when that cinema does not carry the product.
+ * @nullable
+ */
+export type ProductCinemaProduct = {
+  id?: number;
+  isActive?: boolean;
+  isAllTimeFavourite?: boolean;
+} | null;
 
 export interface Product {
   id?: number;
@@ -184,6 +196,15 @@ export interface Product {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Consumer catalogue only: whether this product is in the fixed "All Time Favourite" section at the cinema being browsed. Absent from the staff list. */
+  isAllTimeFavourite?: boolean;
+  /**
+     * This product at ONE cinema. Returned by the list only when it was called with `cinemaId`, and null when that cinema does not carry the product.
+     * @nullable
+     */
+  cinemaProduct?: ProductCinemaProduct;
+  /** Ids of the cinemas that carry this product, active links only. Returned by the single-product read, not by the list. */
+  cinemaIds?: number[];
 }
 
 /**
@@ -206,6 +227,8 @@ export interface CinemaProduct {
      */
   availableUntil?: string | null;
   isActive?: boolean;
+  /** Membership of the fixed "All Time Favourite" section of the Consumer catalogue, for this cinema only. The product keeps its own category as well. */
+  isAllTimeFavourite?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1109,6 +1132,10 @@ categoryId?: number;
  * Owners only; ignored for every other role.
  */
 chainId?: number;
+/**
+ * Annotate every row with `cinemaProduct` - this product's link at this cinema, or null when it is not carried there. Does not filter the list.
+ */
+cinemaId?: number;
 isAddon?: boolean;
 /**
  * List the add-ons attached to one product.
@@ -2366,6 +2393,8 @@ export type PostApiCinemaProductsBody = {
      */
   availableUntil?: string | null;
   isActive?: boolean;
+  /** Put this product in the fixed "All Time Favourite" section of the Consumer catalogue, at this cinema only. The product keeps its own category as well. */
+  isAllTimeFavourite?: boolean;
 };
 
 export type PostApiCinemaProducts201 = SuccessResponse & {
@@ -2384,6 +2413,7 @@ export type PutApiCinemaProductsIdBody = {
   /** @nullable */
   availableUntil?: string | null;
   isActive?: boolean;
+  isAllTimeFavourite?: boolean;
 };
 
 export type PutApiCinemaProductsId200 = SuccessResponse & {

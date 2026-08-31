@@ -342,6 +342,16 @@ body {
   height: auto;
 }
 
+// A name is what identifies the row, so it is shown in full rather than cut
+// short. antd's button is one nowrap line by default; this releases it onto as
+// many lines as the name needs and left-aligns the wrapped text, which the
+// button would otherwise centre.
+.table-link--wrap {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.4;
+}
+
 .details-drawer__section {
   margin-top: 24px;
 }

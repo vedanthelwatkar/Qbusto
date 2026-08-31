@@ -20,6 +20,8 @@ jest.mock('../src/config/database', () => {
       create: jest.fn(),
       destroy: jest.fn(),
     },
+    // getCategory reports which cinemas carry the category alongside its chain.
+    CinemaCategory: { findAll: jest.fn() },
   };
 
   return {
@@ -163,14 +165,20 @@ describe('GET /api/categories', () => {
 });
 
 describe('GET /api/categories/:id', () => {
-  it('returns the category', async () => {
+  it('returns the category, with the cinemas it is assigned to', async () => {
     const token = authenticateAs(buildActor());
     models.Category.findOne.mockResolvedValue(buildCategory());
+    models.CinemaCategory.findAll.mockResolvedValue([{ cinemaId: 8 }, { cinemaId: 9 }]);
 
     const response = await request(app).get('/api/categories/4').set('Authorization', token);
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toMatchObject({ id: 4, name: 'Beverages' });
+    expect(response.body.data).toMatchObject({ id: 4, name: 'Beverages', cinemaIds: [8, 9] });
+    // Active links only - a deactivated assignment is not where the category
+    // appears.
+    expect(models.CinemaCategory.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { categoryId: 4, isActive: true } })
+    );
   });
 
   it('reports a category in another chain as 404', async () => {
