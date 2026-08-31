@@ -29,6 +29,7 @@
 const { models } = require('../config/database');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES, ORDER_SOURCES } = require('../constants');
+const cache = require('./cache.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -56,6 +57,70 @@ const SOURCE_DISCOUNT_COLUMN = Object.freeze({
   [ORDER_SOURCES.KIOSK]: 'discountOnKiosk',
   [ORDER_SOURCES.COUNTER]: 'discountOnCounter',
 });
+
+/**
+ * Coerce anything into one of the four real order sources.
+ *
+ * Every catalogue read now takes `source` from the query string, and that
+ * value reaches TWO places where an unbounded string would be a problem: the
+ * discount column lookup, and - more importantly - the Redis cache key. An
+ * un-normalised source would let one unauthenticated caller mint unlimited
+ * distinct cache entries just by varying the parameter, so the value is
+ * squeezed down to a member of a fixed set of four here, at the boundary,
+ * rather than being trusted anywhere downstream.
+ *
+ * Unknown, missing or malformed falls back to QR - the lobby rate, and the
+ * value the catalogue used unconditionally before it varied by source at all.
+ */
+function normaliseSource(source) {
+  if (typeof source !== 'string') return ORDER_SOURCES.QR;
+
+  const candidate = source.trim().toLowerCase();
+
+  // Object.hasOwn, not a truthiness test on the lookup: `__proto__` and
+  // `constructor` resolve through the prototype chain and would otherwise be
+  // accepted as valid sources - reaching the cache key, and reaching
+  // unitDiscountPaise's column lookup, as strings no pricing row has.
+  // Object.freeze does not close this; only an own-property check does.
+  return Object.hasOwn(SOURCE_DISCOUNT_COLUMN, candidate) ? candidate : ORDER_SOURCES.QR;
+}
+
+/**
+ * The source a request is ENTITLED to, given the evidence it actually carries.
+ *
+ * `source` is client-declared: it arrives in the QR's query string and nothing
+ * authenticates it, so on its own it is a claim, not a fact. It is also not
+ * cosmetic - it selects the discount column above, so a claim that goes
+ * unchecked is a claim on a price.
+ *
+ * `seat_qr` is the one source whose claim the request itself can substantiate,
+ * because a seat QR is by definition a QR that carries a seat. A request
+ * claiming the seat rate while naming no seat is not a seat order in any
+ * meaningful sense - there is nowhere to deliver it - so it is served the
+ * lobby rate instead. This is the same shape as `screenId`, which is likewise
+ * never taken from the client and is resolved server-side from the evidence
+ * (screen name + row) the request carries; see consumer.service.resolveScreenId.
+ *
+ * The downgrade direction is deliberately the conservative one. A genuine seat
+ * scan always re-supplies its seat, so a legitimate customer is unaffected;
+ * getting it wrong costs them the lobby rate rather than handing out a
+ * discount that was never earned. The Consumer already reasons this way about
+ * a STALE stored source (see context.store.loadFromStorageOrDefault) - this
+ * moves the same rule to the server, where it cannot be edited out of a URL.
+ *
+ * `kiosk` and `counter` describe a provisioned DEVICE, and a request carries
+ * no evidence of what device sent it, so neither can be checked here. That is
+ * a known and deliberately bounded gap rather than an oversight: see
+ * .claude/rules/coupons.md and the note on this function's limits in
+ * consumer.service.createOrder.
+ */
+function deriveSource(claimed, { hasSeat = false } = {}) {
+  const source = normaliseSource(claimed);
+
+  if (source === ORDER_SOURCES.SEAT_QR && !hasSeat) return ORDER_SOURCES.QR;
+
+  return source;
+}
 
 /** '250.00' | 250 -> 25000. */
 function toPaise(value) {
@@ -161,7 +226,13 @@ function selectPricing(pricings, day) {
 function unitDiscountPaise(pricing, source, unitPricePaise) {
   if (!pricing.discountType) return 0;
 
-  const column = source ? SOURCE_DISCOUNT_COLUMN[source] : undefined;
+  // Own-property check for the same reason as normaliseSource: an inherited
+  // key must never resolve to a column name. Every caller normalises first;
+  // this is the second lock on the same door.
+  const column =
+    typeof source === 'string' && Object.hasOwn(SOURCE_DISCOUNT_COLUMN, source)
+      ? SOURCE_DISCOUNT_COLUMN[source]
+      : undefined;
   const channelValue = column ? pricing[column] : null;
   const raw =
     channelValue !== null && channelValue !== undefined ? channelValue : pricing.discountValue;
@@ -339,12 +410,17 @@ async function deactivatePricing(actor, pricingId) {
   return serializePricing(pricing);
 }
 
+// Catalogue writes drop the read-through cache - see services/cache.service.js.
+// Wrapped at the export boundary rather than inside each function, so every
+// invalidation point in this file is visible in one place.
 module.exports = {
+  normaliseSource,
+  deriveSource,
   listPricings,
   getPricing,
-  createPricing,
-  updatePricing,
-  deactivatePricing,
+  createPricing: cache.invalidatingAfter(createPricing),
+  updatePricing: cache.invalidatingAfter(updatePricing),
+  deactivatePricing: cache.invalidatingAfter(deactivatePricing),
   serializePricing,
   PUBLIC_ATTRIBUTES,
   toPaise,

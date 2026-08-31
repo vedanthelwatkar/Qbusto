@@ -6,7 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Skeleton, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Typography } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Session } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
@@ -62,7 +64,7 @@ export default function SessionDetailsDrawer({ sessionId, onClose }: SessionDeta
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
+      {loading ? <DetailsSkeleton rows={5} /> : null}
 
       {session ? (
         <Descriptions column={1} size="small" bordered>

@@ -448,9 +448,10 @@ The table stores:
 The encryption key is never stored in the database. It remains in secure server configuration or a secrets manager.
 
 **Implemented, not just designed**: `cashfree.client.resolveCredentials(cinemaId)`
-reads this table first, falling back to the deployment-wide `CASHFREE_APP_ID`/
-`CASHFREE_SECRET_KEY` env vars only when a cinema has no active row. Managed
-from the Dashboard under `Cinemas -> (cinema) -> Payment gateway`.
+reads this table and nothing else - there are no deployment-wide Cashfree
+credentials to fall back to, so a cinema with no active row cannot take
+payments and answers 503 at payment-init. Managed from the Dashboard under
+`Cinemas -> (cinema) -> Payment gateway`.
 
 Payment gateway credentials are therefore kept separate from POS credentials:
 

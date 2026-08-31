@@ -530,12 +530,21 @@ const definition = {
             example: 22,
             description:
               "QBusto's own screen id, resolved from screenName ONLY when that name " +
-              'identifies exactly one active screen at the cinema. ' +
-              'Null when no screen matches OR when the name is ambiguous - some ' +
-              "cinemas' screen data is one row per seat row rather than per " +
-              'auditorium, and no row in such a set represents the auditorium. ' +
-              "Send it as the order's screenId when present; when null, rely on " +
-              'screenName, which is always populated.',
+              'identifies exactly one active screen at the cinema. Null when no ' +
+              'screen matches OR when the cinema\'s screen data is one row per seat ' +
+              'row rather than per auditorium - see seatRows below for that case. ' +
+              'Not sent by the client: the order endpoint resolves the real id ' +
+              'itself from screenName and seatRow.',
+          },
+          seatRows: {
+            type: 'array',
+            items: { type: 'string' },
+            example: ['A', 'B', 'C'],
+            description:
+              'The seat rows available under this screen name, sorted, when the ' +
+              "cinema's screen data is one row per seat row (screenId above is " +
+              'null in that case). Empty when it is not - the row field is then ' +
+              'free text. Send the row the customer picks as the order\'s seatRow.',
           },
           filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
           filmTitle: {

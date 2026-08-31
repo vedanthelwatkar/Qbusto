@@ -251,16 +251,14 @@ body {
     background: var(--qb-ink);
   }
 
+  // The real app icon, not a letter in a tinted tile. It carries its own
+  // colour and transparent ground, so the primary-500 plate that used to sit
+  // behind the bare "Q" is gone - it would only show through the artwork.
   &__mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 6px;
-    background: var(--qb-primary-500);
-    color: var(--qb-surface);
-    font-weight: 700;
+    flex-shrink: 0;
+    object-fit: contain;
   }
 
   &__wordmark {
@@ -294,6 +292,17 @@ body {
     h3 {
       margin-bottom: 4px;
     }
+  }
+
+  // The same mark the sidebar carries, so the app is recognisable before any
+  // of it has loaded. `display: block` + auto margins rather than relying on
+  // the heading's `text-align`, which does not centre a replaced element.
+  &__mark {
+    display: block;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 12px;
+    object-fit: contain;
   }
 }
 

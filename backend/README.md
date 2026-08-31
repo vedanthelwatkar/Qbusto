@@ -176,15 +176,16 @@ Required with no default: `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
 Production-only rules enforced at startup:
 
 - `JWT_SECRET` must be at least 32 characters.
-- `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` must both be set (required to
-  take any payment and to verify any webhook — there is no separate webhook
-  secret with Cashfree, the API secret key does both jobs).
-- `CASHFREE_ENVIRONMENT` must be `prod` or `production`; any other value is
-  rejected outright, since a production deployment pointed at the Cashfree
-  sandbox would look completely healthy while taking no real money.
-- A production `CASHFREE_ENVIRONMENT` of `prod`/`production` used outside
-  `NODE_ENV=production` produces a warning (it charges real cards).
 - `CORS_ALLOWED_ORIGINS=*` produces a warning; set an explicit origin list.
+
+There are deliberately **no Cashfree startup rules**, because there are no
+Cashfree credentials in the environment. Credentials and environment live per
+cinema in `payment_gateway_config`, encrypted with `CREDENTIALS_ENCRYPTION_KEY`,
+and rows change while the process is running — so nothing at boot can see what
+any cinema is actually configured for. The cost is real and worth stating: a
+cinema left on `test` in production collects no money while checkout, webhooks
+and order status all look healthy. Verify each cinema's environment in the
+Dashboard before go-live; nothing else will.
 
 Image uploads are configured by `FILE_STORAGE_PATH` and `MAX_UPLOAD_SIZE_MB`;
 both have defaults that work for local development. See
@@ -241,10 +242,10 @@ Before deploying:
 1. Apply migrations and seeders on the target database.
 2. Set an explicit `CORS_ALLOWED_ORIGINS` list.
 3. Set a `JWT_SECRET` of at least 32 characters.
-4. Configure production Cashfree credentials (`CASHFREE_APP_ID`,
-   `CASHFREE_SECRET_KEY`, `CASHFREE_ENVIRONMENT=prod`) and register a webhook
-   URL, either via `CASHFREE_NOTIFY_URL` or directly in the Cashfree Dashboard,
-   if payments are enabled.
+4. Set `CREDENTIALS_ENCRYPTION_KEY`, then enter each cinema's production
+   Cashfree credentials in the Dashboard with `environment` set to `prod`.
+   Register a webhook URL, either via `CASHFREE_NOTIFY_URL` or directly in the
+   Cashfree Dashboard, if payments are enabled.
 5. Consider `SWAGGER_ENABLED=false` on a publicly reachable deployment.
 6. Terminate TLS in front of the application. Cashfree requires an HTTPS
    webhook URL, and nothing in front of it may re-serialise the request body.
@@ -491,7 +492,7 @@ in the dashboard does not carry a webhook configuration across):
    failed/dropped events if you want them recorded for audit (they never
    change order state either way).
 4. There is no separate signing secret to generate — Cashfree signs with the
-   same `CASHFREE_SECRET_KEY` already used to authenticate API calls.
+   same secret key that cinema already uses to authenticate API calls.
 
 Delivery handling:
 

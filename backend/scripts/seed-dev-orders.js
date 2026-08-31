@@ -15,7 +15,7 @@
  * Uses direct database access for efficiency during seeding (bypasses validation).
  */
 
-const { models, sequelize } = require('../src/config/database');
+const { models } = require('../src/config/database');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../src/constants');
 
 /**
@@ -302,7 +302,7 @@ async function seedOrders(cinemaIds) {
 
       // Create payment status logs if payment status changed
       if (orderSpec.paymentStatus !== PAYMENT_STATUSES.PENDING) {
-        const paymentLog = await models.PaymentStatusLog.create({
+        await models.PaymentStatusLog.create({
           orderId: order.id,
           previousStatusId: pendingStatus.id,
           newStatusId: finalPaymentStatus.id,

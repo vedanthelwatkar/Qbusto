@@ -11,13 +11,7 @@ import { toApiError } from '@/services/api';
 const uploadsApi = getUploads();
 
 /** Entities whose images can be uploaded. Mirrors the backend allowlist. */
-export type UploadEntity =
-  | 'banners'
-  | 'categories'
-  | 'chains'
-  | 'cinemas'
-  | 'films'
-  | 'products';
+export type UploadEntity = 'banners' | 'categories' | 'chains' | 'cinemas' | 'films' | 'products';
 
 export interface UploadedImage {
   /** Application path to store in the record's image column. */

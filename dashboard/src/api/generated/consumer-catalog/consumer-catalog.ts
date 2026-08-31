@@ -12,6 +12,7 @@ import type {
   GetApiConsumerCinemasCinemaIdCategoriesParams,
   GetApiConsumerCinemasCinemaIdProducts200,
   GetApiConsumerCinemasCinemaIdProductsId200,
+  GetApiConsumerCinemasCinemaIdProductsIdParams,
   GetApiConsumerCinemasCinemaIdProductsParams,
   GetApiConsumerCinemasCinemaIdScreensId200,
   GetApiConsumerCinemasCinemaIdSessions200,
@@ -78,9 +79,11 @@ const getApiConsumerCinemasCinemaIdProducts = (
 const getApiConsumerCinemasCinemaIdProductsId = (
     cinemaId: number,
     id: number,
+    params?: GetApiConsumerCinemasCinemaIdProductsIdParams,
  ) => {
       return customInstance<GetApiConsumerCinemasCinemaIdProductsId200>(
-      {url: `/api/consumer/cinemas/${cinemaId}/products/${id}`, method: 'GET'
+      {url: `/api/consumer/cinemas/${cinemaId}/products/${id}`, method: 'GET',
+        params
     },
       );
     }
@@ -100,7 +103,7 @@ const getApiConsumerCinemasCinemaIdBanners = (
   /**
  * Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.
  *
- * The Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenId`, `filmTitle` and `showTime` together, so the customer does not enter the three separately and they cannot disagree.
+ * The Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenName`, `filmTitle` and `showTime` together, so the customer does not enter these separately and they cannot disagree. `screenName` plus the row the customer enters (or picks from `seatRows`, when non-empty) resolve to the order's actual screen id server-side.
  *
  * Sessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.
  * @summary Get bookable sessions for a cinema

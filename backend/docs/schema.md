@@ -979,7 +979,7 @@ ON payment_gateway_config(cinema_id)
 WHERE is_active = 1;
 ```
 
-This table represents the client's PAYGATEWAY_URL, PAYGATEWAY_ID, and PAYGATEWAY_SECRETKEY requirements at cinema scope. **This is actively used**, not aspirational: each cinema may run its own Cashfree merchant account, resolved via `backend/src/services/cashfree.client.js`'s `resolveCredentials(cinemaId)` ahead of the deployment-wide `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` env vars, which are the fallback only. `gateway_url` remains genuinely unused - `environment` (added later, not folded into `gateway_url`) is the column that carries which Cashfree environment (`test`/`sandbox`/`prod`/`production`) a cinema's credentials belong to.
+This table represents the client's PAYGATEWAY_URL, PAYGATEWAY_ID, and PAYGATEWAY_SECRETKEY requirements at cinema scope. **This is actively used**, not aspirational: each cinema may run its own Cashfree merchant account, resolved via `backend/src/services/cashfree.client.js`'s `resolveCredentials(cinemaId)`. This table is the **only** source of Cashfree credentials - the deployment-wide `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` env vars were removed, so a cinema with no active row cannot take payments at all. `gateway_url` remains genuinely unused - `environment` (added later, not folded into `gateway_url`) is the column that carries which Cashfree environment (`test`/`sandbox`/`prod`/`production`) a cinema's credentials belong to.
 
 The gateway secret is stored only as encrypted ciphertext in `gateway_secret_encrypted` (AES-256-GCM, `backend/src/utils/credentials.js`). The encryption key, `CREDENTIALS_ENCRYPTION_KEY`, must live outside the database, such as in server configuration or a secret manager.
 

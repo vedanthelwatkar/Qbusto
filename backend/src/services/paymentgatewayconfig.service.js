@@ -50,15 +50,6 @@ function serializeConfig(config) {
   return result;
 }
 
-function cinemaScope(actor) {
-  return {
-    association: 'cinema',
-    attributes: ['id', 'chainId'],
-    required: true,
-    where: actor.role === ROLES.OWNER ? undefined : { chainId: actor.chainId },
-  };
-}
-
 async function findCinemaInScope(actor, cinemaId) {
   const where = { id: cinemaId };
   if (actor.role !== ROLES.OWNER) where.chainId = actor.chainId;

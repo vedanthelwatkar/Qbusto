@@ -6,7 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Skeleton, Tag } from 'antd';
+import { Alert, Descriptions, Drawer, Tag } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Screen } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
@@ -70,7 +72,7 @@ export default function ScreenDetailsDrawer({
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
+      {loading ? <DetailsSkeleton rows={4} /> : null}
 
       {screen ? (
         <Descriptions column={1} size="small" bordered>

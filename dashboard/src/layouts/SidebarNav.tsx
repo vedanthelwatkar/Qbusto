@@ -55,7 +55,7 @@ export default function SidebarNav({ collapsed = false, onNavigate }: SidebarNav
   return (
     <>
       <div className="sidebar__brand">
-        <span className="sidebar__mark">Q</span>
+        <img className="sidebar__mark" src="/favicon-192x192.png" alt="" aria-hidden="true" />
         {collapsed ? null : <span className="sidebar__wordmark">QBusto</span>}
       </div>
 

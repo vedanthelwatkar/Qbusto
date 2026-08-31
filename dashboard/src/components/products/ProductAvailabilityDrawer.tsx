@@ -180,6 +180,32 @@ export default function ProductAvailabilityDrawer({
     });
   };
 
+  /**
+   * The schedule's own shape, pending.
+   *
+   * The seven days are NOT unknown while the windows load - DAY_ORDER is a
+   * constant - so they are rendered for real and only the windows shimmer.
+   * A generic paragraph skeleton stood here before and matched nothing about
+   * this list: wrong row count, wrong alignment, no day column.
+   */
+  const scheduleSkeleton = (
+    <List
+      size="small"
+      dataSource={DAY_ORDER}
+      rowKey={(day) => String(day)}
+      renderItem={(day) => (
+        <List.Item>
+          <Flex justify="space-between" align="flex-start" gap="middle" style={{ width: '100%' }}>
+            <Text strong style={{ minWidth: 96 }}>
+              {DAY_OF_WEEK_LABELS[day]}
+            </Text>
+            <Skeleton.Input active size="small" style={{ width: 140, minWidth: 140 }} />
+          </Flex>
+        </List.Item>
+      )}
+    />
+  );
+
   const schedule = (
     <List
       size="small"
@@ -249,7 +275,7 @@ export default function ProductAvailabilityDrawer({
       />
     );
   } else if (resolving) {
-    body = <Skeleton active paragraph={{ rows: 6 }} />;
+    body = scheduleSkeleton;
   } else if (resolveError) {
     body = (
       <Alert
@@ -318,7 +344,7 @@ export default function ProductAvailabilityDrawer({
             windows looks like, so drawing it from a failed request states the
             opposite of the truth - the windows may well exist and simply not
             have arrived. */}
-        {loadingHours ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+        {loadingHours ? scheduleSkeleton : null}
 
         {!loadingHours && !hoursError ? (
           <>

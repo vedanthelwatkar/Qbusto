@@ -92,7 +92,7 @@ kitchen ticket, every time.
   attempt is still outstanding (deliberately not amount-filtered), and
   `payment-verify`'s 409 carries it through so the frontend keeps the payment
   attempt alive instead of offering a second charge.
-- Webhook signature: `HMAC-SHA256(CASHFREE_SECRET_KEY, timestamp + rawBody)`,
+- Webhook signature: `HMAC-SHA256(the cinema's secret key, timestamp + rawBody)`,
   **base64**, compared with `crypto.timingSafeEqual`. Three differences from
   the old Razorpay algorithm that would silently break verification if reused
   naively: the timestamp is signed material (not just a header), the digest is
@@ -130,23 +130,23 @@ misconfiguration. Everything reads from this module, not `process.env` — no
 exceptions; the Razorpay-era `process.env.RAZORPAY_KEY_ID`/`_SECRET` direct
 read in `consumer.service.js` no longer exists.
 
-Boot guards worth knowing: production + missing `CASHFREE_APP_ID`/
-`CASHFREE_SECRET_KEY` → **throw**; production + `CASHFREE_ENVIRONMENT` not
-`prod`/`production` → **throw** (a production deploy pointed at the Cashfree
-sandbox would look completely healthy while taking no real money); non-prod +
-`CASHFREE_ENVIRONMENT=prod`/`production` → warn (charges real cards); only one
-of the credential pair set → warn.
+There are **no Cashfree credential env vars and no Cashfree boot guards.**
+`CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY` and `CASHFREE_ENVIRONMENT` were
+removed: credentials and environment live **only** in `payment_gateway_config`,
+per cinema. Nothing global can stand in for a cinema nobody finished
+configuring, which is the whole point — a fallback credential silently taking
+one cinema's money into another merchant's account looks healthy from every
+angle. The boot guards went with them: rows change while the process runs, so
+boot could only have asserted values it no longer holds.
 
-Key vars: `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY`, `CASHFREE_ENVIRONMENT`,
-`CASHFREE_NOTIFY_URL` (optional), `CASHFREE_RETURN_URL` (optional),
-`CASHFREE_FALLBACK_CUSTOMER_PHONE`, `CASHFREE_TIMEOUT_MS`,
-`CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes — required to
-encrypt/decrypt any `payment_gateway_config` row; see "Per-cinema Cashfree
-credentials" below). `CASHFREE_APP_ID`/`_SECRET_KEY`/`_ENVIRONMENT` are now
-the **fallback** used only when a cinema has no active
-`payment_gateway_config` row, not the sole credential source. There is **no
-separate webhook secret** — Cashfree signs with the resolved cinema's
-`CASHFREE_SECRET_KEY`-equivalent itself. Never commit values.
+Key vars: `CASHFREE_NOTIFY_URL` (optional), `CASHFREE_RETURN_URL` (optional),
+`CASHFREE_FALLBACK_CUSTOMER_PHONE`, `CASHFREE_TIMEOUT_MS` — transport and call
+shape only, none of which can authenticate anything — plus
+`CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes), which is what
+encrypts/decrypts every `payment_gateway_config` row and is therefore the one
+value without which no payment can happen at all. There is **no separate
+webhook secret** — Cashfree signs with the cinema's own secret key. Never
+commit values.
 
 ## Per-cinema Cashfree credentials
 
@@ -161,20 +161,21 @@ recoverable).
   encrypted/decrypted only by `backend/src/utils/credentials.js`. The key,
   `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes), lives **outside the
   database entirely**, so a DB leak alone cannot recover a working credential.
-- `environment` (`test`/`sandbox`/`prod`/`production`, mirroring
-  `CASHFREE_ENVIRONMENT`'s own vocabulary) is its own column, not folded into
-  the still-unused `gateway_url` column.
-- Resolution order, in `cashfree.client.resolveCredentials(cinemaId)`: that
-  cinema's active `payment_gateway_config` row **first**; the global
-  `CASHFREE_*` env vars **only as a fallback**, logged loudly every time that
-  fallback fires. The webhook has the harder version of this problem —
-  verifying a signature requires knowing which cinema's secret to check
-  against, before the body can be trusted at all — solved by reading
-  `data.order.order_id` out of the **unverified** body purely as a lookup key
-  (never as a fact), then resolving credentials from the QBusto order it
-  points to; an order that cannot be found falls back to the global secret so
-  a genuinely-unknown gateway order is still recorded as `unknown_gateway_order`
-  (200) rather than refused as unverifiable (400).
+- `environment` (`test`/`sandbox`/`prod`/`production` — both of Cashfree's own
+  vocabularies, since its API docs and its dashboard disagree) is its own
+  column, not folded into the still-unused `gateway_url` column.
+- Resolution in `cashfree.client.resolveCredentials(cinemaId)`: that cinema's
+  active `payment_gateway_config` row, and **nothing else**. No row (or a row
+  whose secret will not decrypt) throws, and payment-init answers 503. The
+  webhook has the harder version of this problem — verifying a signature
+  requires knowing which cinema's secret to check against, before the body can
+  be trusted at all — solved by reading `data.order.order_id` out of the
+  **unverified** body purely as a lookup key (never as a fact), then resolving
+  credentials from the QBusto order it points to. An order id matching no
+  QBusto order resolves no secret, so the delivery is refused as unverifiable
+  (**400**). That costs the `unknown_gateway_order` audit row, and buys never
+  verifying against a key from another merchant account; an id this system
+  never issued has nothing of ours to settle anyway.
 - A wrong/revoked credential surfaces to the customer as the same clean 503
   ("Payment provider temporarily unavailable") a not-configured cinema gets —
   `cashfree.client.isAuthError()` catches Cashfree's 401/403 specifically so a

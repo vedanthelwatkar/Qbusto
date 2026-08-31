@@ -42,10 +42,11 @@ QBusto vocabulary via `field:` mappings only.
 - **There is deliberately no second `films`/`sessions` table.** Earlier
   migrations that created QBusto-owned duplicates were **removed**.
 - `session` has **no `screens.id`** — only `Screen_bytNum`/`Screen_strName`.
-  Session responses return `screenName` as text, plus a `screenId` resolved
-  from it by name (`resolveScreenIdsByName`, lowest active id wins on a
-  duplicate name) so an order records the screen of the show the customer
-  actually picked rather than whichever screen their QR was printed for.
+  Session responses return `screenName` as text, plus `screenId` resolved by
+  name **only** when that name is unambiguous, and `seatRows` (the distinct
+  seat rows available under that name) otherwise — see the grain conflict
+  below, now resolved. The order the customer actually picked determines the
+  screen, never whichever screen their QR was printed for.
 
 **Session status (`Session_strStatus`) — client-defined:**
 
@@ -70,8 +71,9 @@ likely to want food. (This reverses the earlier rule, which started the
 window at `now` and ran to the next 06:00.) Capped at **2 per screen**
 (`SESSIONS_PER_SCREEN = 2`) so one busy auditorium can't crowd out the rest;
 with the lookback, one of a screen's two slots may be a show already running.
-Returns `screenName` as text **and** a resolved `screenId` (see grain conflict
-below). Film join is `required: true`.
+Returns `screenName` as text, a resolved `screenId` when unambiguous, and
+`seatRows` otherwise (see grain conflict below). Film join is
+`required: true`.
 
 `startsAt`/`endsAt` carry **no model getters** — and must not gain any. These
 `datetime` columns hold cinema-local (IST) wall clock with no offset, and the
@@ -88,14 +90,14 @@ there is no create/update/delete, this data is the client's.
 `Film_strNowShowingFlag` and `Film_strStatus` are passed through **raw** —
 their vocabulary is undefined by the client, so no meaning is invented.
 
-## `screens` grain conflict — UNRESOLVED
+## `screens` grain conflict — RESOLVED for the consumer order path
 
 QBusto's design: **one `screens` row = one auditorium**. `orders.screen_id`
 is a FK to it, and screen names are unique within a cinema (enforced in
 `screen.service.assertNameAvailable`, not by the database).
 
-The client's data: **one row per seat row** — ~82 rows across ~27 distinct
-(cinema, screen name) pairs, with:
+The client's data: **one row per seat row** — cinema 8 ("NOIDA") holds 61
+rows across 4 distinct screen names, with:
 - `screens.category` `nvarchar(50)` NULL — a **seat class** ("Platinum",
   "Recliner"), free text, not a screen class. The same auditorium carries more
   than one.
@@ -107,13 +109,29 @@ The client's data: **one row per seat row** — ~82 rows across ~27 distinct
 Worked example: cinema 8 "Screen 1" occupies 10 rows — Platinum for rows A–I,
 Recliner for row J.
 
-This is a **semantic conflict, not an additive change**. Under the client's
-grain there are ten "Screen 1" rows and it is undefined which one an order
-should reference; `ScreenSelect` shows ten identical options; the
-name-uniqueness rule breaks. **Blocked pending client clarification. Do not
-build on it.** The two columns are declared on `models/screen.js` (both
-nullable — rows predating them carry NULL; the 21 originally seeded screens
-are the NULL ones).
+**The resolution**, confirmed by the client: `(cinema_id, name, seat_row)` is
+unique across the whole table — verified live (e.g. cinema 8 + "Screen 2" +
+row A is exactly one row, id 32). The consumer order path resolves on it:
+
+- `getSessions` returns, per screen name, either a single `screenId` (the
+  auditorium-grain shape — name alone is unique, `seatRows` empty) or a list
+  of `seatRows` (the seat-row-grain shape — `screenId` null until a row is
+  chosen).
+- `CheckoutDrawer`'s row field becomes a `<select>` of exactly those rows
+  when `seatRows` is non-empty, otherwise the existing free-text input.
+- `consumer.service.resolveScreenId(cinemaId, screenName, seatRow)` does the
+  actual lookup **at order-creation time** — the first moment both parts
+  exist — never trusting a client-supplied `screenId` directly. A screenName
+  with no match, or a seat-row-grain screen with no matching row, is a 400
+  naming the `seatRow` field; nothing is guessed.
+
+Formerly-IMAX rows for cinema 8 were a data-entry mistake and have been
+deleted from `session` by the client directly — not a code concern.
+
+Any **other** consumer of `screens` (e.g. a future POS path, or the Dashboard
+`ScreensPage`/`ScreenSelect`, which still assume one row per auditorium) is
+**not** covered by this resolution and must not assume it without doing the
+same by-name-and-row analysis first.
 
 ## `screen_layout` (`backend/models/screenlayout.js`)
 

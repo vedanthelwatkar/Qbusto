@@ -6,7 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Skeleton, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Tag, Typography } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Chain } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
@@ -61,7 +63,7 @@ export default function ChainDetailsDrawer({ chainId, onClose }: ChainDetailsDra
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
+      {loading ? <DetailsSkeleton rows={5} /> : null}
 
       {chain ? (
         <Descriptions column={1} size="small" bordered>

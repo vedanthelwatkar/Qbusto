@@ -4,6 +4,7 @@ const app = require('./src/app');
 const logger = require('./src/config/logger');
 const env = require('./src/config/env');
 const { sequelize, connect, disconnect } = require('./src/config/database');
+const redis = require('./src/config/redis');
 
 const PORT = env.port;
 
@@ -64,7 +65,8 @@ async function start() {
     });
   });
 
-  // Graceful shutdown: stop accepting connections, then release the pool.
+  // Graceful shutdown: stop accepting connections, then release the pool and
+  // the cache connection.
   const shutdown = (signal) => {
     logger.info(`${signal} received, shutting down gracefully`);
 
@@ -74,6 +76,14 @@ async function start() {
         await disconnect();
       } catch (err) {
         logger.error('Error closing database connection', { error: err.message });
+      }
+      // Separate try: a Redis socket left open would hold the event loop and
+      // stop the process exiting, and it must be closed even if releasing the
+      // database pool above threw.
+      try {
+        await redis.disconnect();
+      } catch (err) {
+        logger.error('Error closing Redis connection', { error: err.message });
       }
       process.exit(0);
     });

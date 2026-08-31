@@ -23,7 +23,7 @@ const request = require('supertest');
 jest.mock('../src/config/database', () => {
   const models = {
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
-    Screen: { findOne: jest.fn() },
+    Screen: { findOne: jest.fn(), findAll: jest.fn() },
     Product: { findAll: jest.fn(), findOne: jest.fn() },
     CinemaProduct: { findAll: jest.fn() },
     ProductPricing: { findAll: jest.fn() },
@@ -646,25 +646,23 @@ describe('availability hours arriving as Date objects (driver shape)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// screen_id is auditorium-level or it is nothing
+// screen_id is resolved server-side from screenName + seatRow, or refused
 // ---------------------------------------------------------------------------
 
 /**
  * `orders.screen_id` means "which auditorium", and the seat is carried
- * separately by `orders.seat_number`.
+ * separately by `orders.seat_number`. The client never supplies `screen_id`
+ * directly any more - only `screenName` (the session's own, always present
+ * once a show is picked) and `seatRow` (required only when the cinema's
+ * screen data is one row per seat row - see resolveScreenId).
  *
- * Some cinemas' `screens` data is one row per SEAT ROW rather than per
- * auditorium, so a name covers many rows and no row represents the auditorium.
- * `getSessions` returns `screenId: null` for those (see consumer.sessions
- * tests), and the Consumer must send that null through rather than
- * substituting the QR-printed screenId - which is itself a seat-row record on
- * exactly those cinemas. Storing it produced live orders reading
- * `screen_id -> "Screen 1, row A"` against `seat_number = "B5"`.
- *
- * These pin the server half of that contract: an omitted or null screenId is
- * accepted and persisted as NULL, and no lookup is attempted for it.
+ * A QR's own screenId is never used as a fallback: it is fixed at print time
+ * and, for exactly the cinemas whose screen data is one row per seat row, is
+ * itself a seat-row record rather than the auditorium - substituting it
+ * produced live orders reading `screen_id -> "Screen 1, row A"` against
+ * `seat_number = "B5"`.
  */
-describe('order creation with no resolved auditorium', () => {
+describe('order creation with server-resolved screen id', () => {
   function arrangeCreatableOrder() {
     // A local transaction token: TX belongs to the describe block above.
     sequelize.transaction.mockImplementation((callback) => callback('TX-CREATE'));
@@ -691,7 +689,7 @@ describe('order creation with no resolved auditorium', () => {
     models.PaymentStatusLog.create.mockResolvedValue({});
   }
 
-  it('persists screen_id as NULL when the session resolved no auditorium', async () => {
+  it('persists screen_id as NULL when no screenName was sent (no show picked)', async () => {
     arrangeCreatableOrder();
 
     const response = await request(app)
@@ -699,9 +697,6 @@ describe('order creation with no resolved auditorium', () => {
       .set('Idempotency-Key', 'key-null-screen')
       .send({
         cinemaId: CINEMA_ID,
-        // What the Consumer now sends for an unresolved session. It must NOT
-        // be replaced by the QR's own screenId.
-        screenId: null,
         seatNumber: 'B5',
         source: 'qr',
         customerMobile: '9876543210',
@@ -715,41 +710,23 @@ describe('order creation with no resolved auditorium', () => {
     // The seat is unaffected - it travels on its own column.
     expect(values.seatNumber).toBe('B5');
 
-    // A null screen is not looked up; only a supplied one is validated.
-    expect(models.Screen.findOne).not.toHaveBeenCalled();
+    // No screenName means nothing to look up.
+    expect(models.Screen.findAll).not.toHaveBeenCalled();
   });
 
-  it('treats an omitted screenId the same as an explicit null', async () => {
+  it('resolves screen_id by name alone for an auditorium-grain screen', async () => {
     arrangeCreatableOrder();
-
-    const response = await request(app)
-      .post('/api/consumer/orders')
-      .set('Idempotency-Key', 'key-absent-screen')
-      .send({
-        cinemaId: CINEMA_ID,
-        seatNumber: 'B5',
-        source: 'qr',
-        customerMobile: '9876543210',
-        items: [{ productId: 85, quantity: 1 }],
-      });
-
-    expect(response.status).toBe(201);
-    expect(models.Order.create.mock.calls[0][0].screenId).toBeNull();
-    expect(models.Screen.findOne).not.toHaveBeenCalled();
-  });
-
-  it('still validates and stores a screenId that WAS resolved', async () => {
-    // The unambiguous case must keep working: cinemas whose screen names
-    // identify exactly one active row still get a real auditorium id.
-    arrangeCreatableOrder();
-    models.Screen.findOne.mockResolvedValue({ id: 7, isActive: true });
+    models.Screen.findAll.mockResolvedValue([
+      { id: 7, name: 'SCREEN 1', seatRow: null },
+      { id: 8, name: 'SCREEN 2', seatRow: null },
+    ]);
 
     const response = await request(app)
       .post('/api/consumer/orders')
       .set('Idempotency-Key', 'key-resolved-screen')
       .send({
         cinemaId: CINEMA_ID,
-        screenId: 7,
+        screenName: 'SCREEN 1',
         seatNumber: 'B5',
         source: 'qr',
         customerMobile: '9876543210',
@@ -757,7 +734,75 @@ describe('order creation with no resolved auditorium', () => {
       });
 
     expect(response.status).toBe(201);
-    expect(models.Screen.findOne).toHaveBeenCalled();
     expect(models.Order.create.mock.calls[0][0].screenId).toBe(7);
+  });
+
+  it('resolves screen_id from name + seatRow for a seat-row-grain screen', async () => {
+    arrangeCreatableOrder();
+    models.Screen.findAll.mockResolvedValue([
+      { id: 22, name: 'SCREEN 1', seatRow: 'A' },
+      { id: 23, name: 'SCREEN 1', seatRow: 'B' },
+    ]);
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-resolved-row')
+      .send({
+        cinemaId: CINEMA_ID,
+        screenName: 'SCREEN 1',
+        seatRow: 'B',
+        seatNumber: 'B5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(models.Order.create.mock.calls[0][0].screenId).toBe(23);
+  });
+
+  it('rejects the order when a seat-row-grain screen has no matching row', async () => {
+    arrangeCreatableOrder();
+    models.Screen.findAll.mockResolvedValue([
+      { id: 22, name: 'SCREEN 1', seatRow: 'A' },
+      { id: 23, name: 'SCREEN 1', seatRow: 'B' },
+    ]);
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-unmatched-row')
+      .send({
+        cinemaId: CINEMA_ID,
+        screenName: 'SCREEN 1',
+        seatRow: 'Z',
+        seatNumber: 'Z5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details[0].field).toBe('seatRow');
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects the order when screenName is unknown at the cinema', async () => {
+    arrangeCreatableOrder();
+    models.Screen.findAll.mockResolvedValue([{ id: 7, name: 'SCREEN 1', seatRow: null }]);
+
+    const response = await request(app)
+      .post('/api/consumer/orders')
+      .set('Idempotency-Key', 'key-unknown-screen')
+      .send({
+        cinemaId: CINEMA_ID,
+        screenName: 'IMAX',
+        seatNumber: 'B5',
+        source: 'qr',
+        customerMobile: '9876543210',
+        items: [{ productId: 85, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(400);
+    expect(models.Order.create).not.toHaveBeenCalled();
   });
 });

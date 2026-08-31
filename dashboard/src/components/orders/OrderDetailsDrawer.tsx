@@ -17,13 +17,14 @@ import {
   Descriptions,
   Drawer,
   Empty,
-  Skeleton,
   Space,
   Table,
   Tag,
   Timeline,
   Typography,
 } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 import type { ColumnsType } from 'antd/es/table';
 
 import type {
@@ -197,7 +198,7 @@ export default function OrderDetailsDrawer({
         />
       ) : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+      {loading ? <DetailsSkeleton rows={8} column={2} /> : null}
 
       {order ? (
         <>

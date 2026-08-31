@@ -10,7 +10,8 @@
  *   2. Database connectivity
  *   3. No pending migrations (migrations/ vs the SequelizeMeta table)
  *   4. Required seed data (order_statuses, payment_statuses)
- *   5. SQL Server version
+ *   5. Active cinemas that cannot take payment
+ *   6. SQL Server version
  *
  * Checks 2, 3, 4 and 5 are the same functions the running server exposes at
  * GET /ready - see src/services/health.service.js. This script only decides how
@@ -35,34 +36,28 @@ const REQUIRED_ENV = {
   JWT: ['JWT_SECRET'],
 };
 
-const CASHFREE_ENV = ['CASHFREE_APP_ID', 'CASHFREE_SECRET_KEY'];
-
+/*
+ * There is no CASHFREE credential group to check.
+ *
+ * Cashfree credentials are per cinema, in payment_gateway_config, encrypted
+ * with CREDENTIALS_ENCRYPTION_KEY. Whether payments actually work is a
+ * per-cinema question this script cannot answer from the environment - what
+ * it CAN do is note when CREDENTIALS_ENCRYPTION_KEY is absent, since without
+ * it no stored credential decrypts and payments are off everywhere at once.
+ * Reported as a note rather than a failure, matching how the removed Cashfree
+ * group behaved: a developer clone with no payments configured is a normal
+ * state, not a broken one.
+ */
 const results = [];
 
 function record(passed, label, details = []) {
   results.push({ passed, label, details });
 }
 
-/**
- * Cashfree is treated as enabled when CASHFREE_ENABLED says so explicitly, or -
- * when that flag is absent - when any CASHFREE_* credential has been
- * configured. That way a deployment that half-configures payments is caught
- * rather than silently skipped.
- */
-function cashfreeEnabled() {
-  if (process.env.CASHFREE_ENABLED !== undefined) {
-    return process.env.CASHFREE_ENABLED === 'true';
-  }
-  return CASHFREE_ENV.some((name) => (process.env[name] || '').trim() !== '');
-}
-
 // ---- Environment variables (no imports, so nothing can crash first) --------
 
 function checkEnvironment() {
   const groups = { ...REQUIRED_ENV };
-  if (cashfreeEnabled()) {
-    groups.CASHFREE = CASHFREE_ENV;
-  }
 
   const details = [];
   let passed = true;
@@ -75,8 +70,8 @@ function checkEnvironment() {
     }
   }
 
-  if (passed && !cashfreeEnabled()) {
-    details.push('Cashfree not enabled - CASHFREE_* not required');
+  if (passed && !(process.env.CREDENTIALS_ENCRYPTION_KEY || '').trim()) {
+    details.push('No CREDENTIALS_ENCRYPTION_KEY - no cinema can take payments');
   }
 
   record(passed, 'Environment variables valid', details);
@@ -155,7 +150,79 @@ async function main() {
     );
   }
 
-  // 5. SQL Server version - informational, never blocks a deployment.
+  /*
+   * 4b. Active cinemas with no active payment_gateway_config.
+   *
+   * Credentials are per cinema and there is deliberately no global fallback,
+   * so a cinema nobody finished configuring is reachable, browsable, and
+   * fails only at payment-init - with a 503, in front of a customer who has
+   * already built a cart. Nothing else in the system says so: the cinema
+   * looks entirely healthy from the API, the Dashboard and this script alike.
+   *
+   * A NOTE, not a failure. A developer clone with one configured cinema is a
+   * normal state, and this script's exit code gates deployments; what matters
+   * is that the list is impossible to miss before traffic arrives. Cinema
+   * creation now requires credentials (see .claude/rules/payments.md), so any
+   * cinema listed here predates that rule.
+   */
+  if (database.ok) {
+    try {
+      const [rows] = await sequelize.query(`
+        SELECT c.id, c.name
+        FROM cinemas c
+        WHERE c.is_active = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM payment_gateway_config g
+            WHERE g.cinema_id = c.id AND g.is_active = 1
+          )
+        ORDER BY c.id
+      `);
+
+      record(
+        true,
+        rows.length === 0
+          ? 'Every active cinema can take payment'
+          : `Payment not configured for ${rows.length} active cinema(s)`,
+        rows.map((row) => `cinema ${row.id} "${row.name}" - payment-init will answer 503`)
+      );
+    } catch (error) {
+      record(true, 'Payment configuration: unavailable', [error.message]);
+    }
+
+    /*
+     * Which Cashfree environment the configured cinemas are on.
+     *
+     * Printed because the Consumer's matching value, VITE_CASHFREE_MODE, is
+     * baked in at BUILD time and cannot be read from here - and a checkout
+     * session issued in one environment simply never opens in the other, with
+     * no error the customer can act on. Going live therefore means flipping
+     * these rows AND rebuilding the Consumer, and this is the line that makes
+     * the first half visible to whoever is doing the second.
+     */
+    try {
+      const [envs] = await sequelize.query(`
+        SELECT environment, COUNT(*) AS cinemas
+        FROM payment_gateway_config
+        WHERE is_active = 1
+        GROUP BY environment
+        ORDER BY environment
+      `);
+
+      if (envs.length > 0) {
+        record(
+          true,
+          'Cashfree environment in use',
+          envs
+            .map((row) => `${row.environment}: ${row.cinemas} cinema(s)`)
+            .concat("the Consumer build's VITE_CASHFREE_MODE must match")
+        );
+      }
+    } catch (error) {
+      record(true, 'Cashfree environment: unavailable', [error.message]);
+    }
+  }
+
+  // 6. SQL Server version - informational, never blocks a deployment.
   if (database.ok) {
     const server = await healthService.getServerVersion();
     record(

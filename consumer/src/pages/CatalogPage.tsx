@@ -12,6 +12,12 @@ import ProductCard from '@/components/ProductCard';
 import CheckoutDrawer from '@/components/CheckoutDrawer';
 import StatePanel from '@/components/StatePanel';
 import Thumbnail from '@/components/Thumbnail';
+import {
+  CatalogBannerSkeleton,
+  CatalogRailSkeleton,
+  CatalogSectionsSkeleton,
+  CatalogWelcomeSkeleton,
+} from '@/components/CatalogSkeleton';
 import { resolveImageUrl } from '@/utils/imageUrl';
 import { formatApiError, isNotFoundError } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
@@ -22,8 +28,6 @@ import '../styles/pages/catalog.scss';
 interface ProductWithPrice extends Product {
   basePrice?: number;
 }
-
-const SKELETON_COUNT = 6;
 
 /**
  * The menu is ONE continuous list, grouped into category sections in the rail's
@@ -43,6 +47,27 @@ const BANNER_ROTATE_MS = 3000;
 
 export default function CatalogPage() {
   const cinemaId = useContextStore((state) => state.cinemaId) as number;
+  /**
+   * The channel this visit is on, and therefore the prices to show.
+   *
+   * The SAME value the order will carry (see orders.service.PlaceOrderInput),
+   * so what the card shows is what the customer is charged. Each
+   * product_pricing row holds a separate discount per channel, and a seat QR
+   * can genuinely be a different rate from the lobby QR - reading the menu at
+   * one price and being billed another is the bug this closes.
+   */
+  const source = useContextStore((state) => state.source);
+  /**
+   * The seat, sent alongside `source` as EVIDENCE for it.
+   *
+   * The backend will not price a `seat_qr` request at the seat rate unless a
+   * seat is named (pricing.service.deriveSource), because the order path
+   * applies exactly the same rule. Sending it keeps the two in step: without
+   * it a genuine seat scan would read the lobby price here and be charged the
+   * seat price at checkout, which is the mismatch this whole path exists to
+   * prevent.
+   */
+  const seat = useContextStore((state) => state.seatLabel());
   const itemCount = useCartStore((state) => state.itemCount());
   const estimatedSubtotal = useCartStore((state) => state.estimatedSubtotal());
   const cartOpen = useUIStore((state) => state.cartOpen);
@@ -157,7 +182,7 @@ export default function CatalogPage() {
     setListError(null);
 
     try {
-      const all = await fetchAllProducts(cinemaId);
+      const all = await fetchAllProducts(cinemaId, { source, seat });
 
       // A newer request has since started; this result is stale.
       if (token !== requestRef.current) return;
@@ -170,9 +195,9 @@ export default function CatalogPage() {
     } finally {
       if (token === requestRef.current) setListLoading(false);
     }
-  }, [cinemaId]);
+  }, [cinemaId, source, seat]);
 
-  // Only the cinema can change what is loaded.
+  // The cinema and the channel are what change the priced menu.
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
@@ -236,7 +261,6 @@ export default function CatalogPage() {
       .filter((section) => section.id !== undefined && section.items.length > 0);
   }, [products, categories]);
 
-  const total = products.length;
 
   /**
    * Highlight whichever section is in view.
@@ -334,7 +358,10 @@ export default function CatalogPage() {
 
   return (
     <div className="catalog">
-      {headerBanners.length > 0 && (
+      {showSkeletons ? (
+        <CatalogBannerSkeleton />
+      ) : (
+        headerBanners.length > 0 && (
         <div className="catalog__banner">
           {/* Every slide stays mounted and stacked, and only opacity changes.
               Rendering one at a time meant each change unmounted the visible
@@ -369,9 +396,14 @@ export default function CatalogPage() {
             </div>
           )}
         </div>
+        )
       )}
 
-      {cinemaName && <div className="catalog__welcome">Welcome to {cinemaName}</div>}
+      {showSkeletons ? (
+        <CatalogWelcomeSkeleton />
+      ) : (
+        cinemaName && <div className="catalog__welcome">Welcome to {cinemaName}</div>
+      )}
 
       <div className="catalog__layout">
         <nav className="catalog__sidebar" aria-label="Product categories">
@@ -380,7 +412,10 @@ export default function CatalogPage() {
             entry would have selected what is on screen anyway. Each button
             moves to its section instead of filtering.
           */}
-          {sections.map((section) => (
+          {showSkeletons ? (
+            <CatalogRailSkeleton />
+          ) : (
+            sections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -402,7 +437,8 @@ export default function CatalogPage() {
               </span>
               <span className="catalog__category-name">{section.name}</span>
             </button>
-          ))}
+            ))
+          )}
         </nav>
 
         <main
@@ -417,30 +453,16 @@ export default function CatalogPage() {
         >
           {showSkeletons ? (
             <div aria-busy="true" aria-label="Loading menu">
-              {/* Placeholder for the pane heading. Without it the grid starts
-                  one row higher and everything jumps down when loading ends. */}
-              <div className="catalog__pane-head">
-                <div className="skeleton catalog__skeleton-title" />
-              </div>
-
-              <div className="catalog__grid">
-                {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
-                  <div className="catalog__skeleton-card" key={i}>
-                    <div className="skeleton catalog__skeleton-media" />
-                    <div className="skeleton catalog__skeleton-line" />
-                    <div className="skeleton catalog__skeleton-line catalog__skeleton-line--short" />
-                  </div>
-                ))}
-              </div>
+              <CatalogSectionsSkeleton />
             </div>
           ) : products.length > 0 ? (
             <>
-              <div className="catalog__pane-head">
-                <h1 className="catalog__pane-title">Menu</h1>
-                <p className="catalog__pane-count" aria-live="polite">
-                  {total === 1 ? '1 item' : `${total} items`}
-                </p>
-              </div>
+              {/* The pane carried a "Menu" title and a running item count.
+                  Both are gone from the screen - the category rail already
+                  names what is being shown, and the count restated what the
+                  grid itself makes obvious. The heading stays in the
+                  accessible tree so the page keeps a document title. */}
+              <h1 className="sr-only">Menu</h1>
 
               {/* One continuous list. Each category is a section in the rail's
                   order, so scrolling past the end of one simply continues into

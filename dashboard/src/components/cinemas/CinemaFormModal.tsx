@@ -37,12 +37,13 @@ import {
   Input,
   Modal,
   Select,
-  Skeleton,
   Spin,
   Switch,
   Tag,
   Typography,
 } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 import dayjs, { type Dayjs } from 'dayjs';
 
 import type {
@@ -389,7 +390,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           {isEdit ? (
             <div style={{ marginBottom: 24 }}>
               {gatewayLoading ? (
-                <Skeleton active paragraph={{ rows: 1 }} />
+                <DetailsSkeleton rows={1} />
               ) : (
                 <Descriptions column={1} size="small" bordered>
                   <Descriptions.Item label="Status">

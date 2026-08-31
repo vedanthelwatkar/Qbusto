@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useContextStore } from '@/stores/context.store';
@@ -10,6 +10,15 @@ import { parseUrlParams } from '@/utils/parseUrlParams';
 import { resolveImageUrl } from '@/utils/imageUrl';
 import { AlertIcon, FilmIcon, SeatIcon } from '@/components/icons';
 import '../styles/pages/screensaver.scss';
+
+/**
+ * How often an idle screensaver re-reads its artwork.
+ *
+ * Five minutes: long enough to be nothing on the server (and mostly absorbed
+ * by the backend's catalogue cache), short enough that swapping a cinema's
+ * artwork mid-shift shows up without anyone walking to the kiosk.
+ */
+const ARTWORK_REFRESH_MS = 5 * 60 * 1000;
 
 export default function ScreensaverPage() {
   const navigate = useNavigate();
@@ -23,31 +32,101 @@ export default function ScreensaverPage() {
 
   /**
    * The cinema's own screensaver artwork, configured per cinema in the
-   * Dashboard. Null while it loads, and null for a cinema that has none - the
-   * cinemas that predate the field, which fall back to the text hero below.
+   * Dashboard.
+   *
+   * `resolved` is tracked SEPARATELY from the url, because a single nullable
+   * string cannot tell "we have not asked yet" apart from "this cinema has no
+   * artwork" - and the two must render differently. Conflating them meant a
+   * cinema WITH a poster showed the text hero for the length of the request
+   * and then swapped to its artwork, so the first thing a customer saw was the
+   * fallback for a case that did not apply to them.
    */
   const [screensaverUrl, setScreensaverUrl] = useState<string | null>(null);
+  const [resolved, setResolved] = useState(false);
+  /** The poster's own bytes, which arrive after the url that names them. */
+  const [artLoaded, setArtLoaded] = useState(false);
 
-  useEffect(() => {
-    if (!cinemaId) return;
+  /**
+   * Re-read the cinema, and with it the screensaver artwork.
+   *
+   * Returns a cancel function rather than being inlined, because this now runs
+   * from three places and each needs to be able to abandon an in-flight
+   * request without touching state after unmount.
+   */
+  const loadScreensaver = useCallback(() => {
+    if (!cinemaId) return () => {};
 
     let active = true;
 
     fetchCinema(cinemaId)
       .then((cinema) => {
-        if (active) setScreensaverUrl(cinema.screensaverUrl ?? null);
+        if (!active) return;
+        const next = cinema.screensaverUrl ?? null;
+        // Only a CHANGE clears the loaded flag. The five-minute refresh
+        // re-reads the same url on an unattended kiosk, and resetting
+        // unconditionally would blink the poster back to a shimmer every time
+        // it ran.
+        setScreensaverUrl((current) => {
+          if (current !== next) setArtLoaded(false);
+          return next;
+        });
+        setResolved(true);
       })
       // Deliberately silent: this screen's job is to let someone start an
       // order. A failed artwork fetch falls back to the text hero rather than
       // putting an error in front of a customer who has done nothing wrong.
       .catch(() => {
-        if (active) setScreensaverUrl(null);
+        // Still "resolved": the question was asked and produced no artwork, so
+        // the text hero is now the correct answer rather than a guess.
+        if (!active) return;
+        setScreensaverUrl(null);
+        setResolved(true);
       });
 
     return () => {
       active = false;
     };
   }, [cinemaId]);
+
+  useEffect(() => loadScreensaver(), [loadScreensaver]);
+
+  /**
+   * Keep the artwork current on a screen that never navigates.
+   *
+   * A kiosk sits on this page for days. IdleReset is disabled on '/' (see
+   * App.tsx), so returning here after an idle timeout does NOT remount this
+   * component - which meant the fetch above ran once, at first paint, and
+   * never again. Artwork replaced in the Dashboard did not appear until
+   * somebody reloaded the browser, which on an unattended kiosk is nobody.
+   *
+   * Two triggers, because they catch different things: the interval covers an
+   * unattended screen, and the visibility check covers a display that was
+   * asleep or on another tab and would otherwise wait out the remainder of an
+   * interval it could not run. Both are cheap - this is one small GET, and
+   * the backend serves it from its own cache between changes.
+   */
+  useEffect(() => {
+    if (!cinemaId) return;
+
+    let cancelInFlight = () => {};
+
+    const refresh = () => {
+      cancelInFlight();
+      cancelInFlight = loadScreensaver();
+    };
+
+    const interval = window.setInterval(refresh, ARTWORK_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      cancelInFlight();
+    };
+  }, [cinemaId, loadScreensaver]);
 
   /**
    * Forget the previous customer on the way IN - but only when this page load
@@ -96,7 +175,15 @@ export default function ScreensaverPage() {
     return (
       <div className="screensaver">
         <div className="screensaver__content">
-          <span className="screensaver__eyebrow">QBusto</span>
+          <span className="screensaver__eyebrow">
+            <img
+              className="screensaver__mark"
+              src="/favicon-192x192.png"
+              alt=""
+              aria-hidden="true"
+            />
+            QBusto
+          </span>
           <h1 className="screensaver__title">Snacks, straight to your seat</h1>
 
           <div className="screensaver__notice" role="status">
@@ -133,20 +220,44 @@ export default function ScreensaverPage() {
         <span className="screensaver__cue screensaver__cue--top">Order Now</span>
 
         <span className="screensaver__art">
-          {screensaverUrl ? (
-            <img
-              className="screensaver__art-image"
-              src={resolveImageUrl(screensaverUrl)}
-              alt=""
-              // Decorative: the button's own label already says what to do, and
-              // the artwork carries its own wording in the image.
-              aria-hidden="true"
-            />
+          {!resolved ? (
+            /* Neither the poster nor the fallback yet: showing either would be
+               a claim about a cinema we have not read. */
+            <span className="skeleton screensaver__art-skeleton" aria-hidden="true" />
+          ) : screensaverUrl ? (
+            <>
+              {!artLoaded && (
+                <span className="skeleton screensaver__art-skeleton" aria-hidden="true" />
+              )}
+              <img
+                className={`screensaver__art-image${artLoaded ? '' : ' is-loading'}`}
+                src={resolveImageUrl(screensaverUrl)}
+                alt=""
+                // Decorative: the button's own label already says what to do, and
+                // the artwork carries its own wording in the image.
+                aria-hidden="true"
+                onLoad={() => setArtLoaded(true)}
+                // A poster that will not load is the same situation as a cinema
+                // with none configured, so fall through to the text hero.
+                onError={() => {
+                  setScreensaverUrl(null);
+                  setArtLoaded(false);
+                }}
+              />
+            </>
           ) : (
             /* No artwork configured for this cinema - the original text hero,
                kept so an existing cinema is never left with a blank screen. */
             <span className="screensaver__fallback">
-              <span className="screensaver__eyebrow">QBusto</span>
+              <span className="screensaver__eyebrow">
+                <img
+                  className="screensaver__mark"
+                  src="/favicon-192x192.png"
+                  alt=""
+                  aria-hidden="true"
+                />
+                QBusto
+              </span>
               <span className="screensaver__title">Snacks, straight to your seat</span>
               <span className="screensaver__subtitle">
                 Order from the counter menu without missing a moment of the film.

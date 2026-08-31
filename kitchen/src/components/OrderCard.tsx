@@ -1,20 +1,20 @@
 import { memo } from 'react';
 
 import type { BoardOrder } from '../types/kitchen';
-import {
-  fulfilmentElapsed,
-  formatClock,
-  formatDuration,
-  describeDuration,
-  urgencyOf,
-} from '../utils/time';
-import { STATUS_ICON, STATUS_LABEL, destinationOf, nextAction, sourceLabel } from '../utils/workflow';
+import { fulfilmentElapsed, formatClock, formatElapsedWords, describeDuration, urgencyOf } from '../utils/time';
+import { STATUS_ICON, STATUS_LABEL, destinationOf, sourceLabel } from '../utils/workflow';
 
 interface OrderCardProps {
   order: BoardOrder;
   now: number;
-  /** True while this order's transition is in flight. Blocks a second press. */
-  pending: boolean;
+  /**
+   * This order's running position in the row it is drawn in - the small
+   * numbered tile next to the token. Purely a display convenience (how many
+   * tickets are on the board right now, read left to right), not a database
+   * field; omitted in the Delivered strip, where the tickets are a lookup, not
+   * a queue to work through in order.
+   */
+  position?: number;
   /**
    * Render the condensed form used in the Delivered strip.
    *
@@ -26,8 +26,16 @@ interface OrderCardProps {
    */
   compact?: boolean;
   onOpen: (id: number) => void;
-  onAdvance: (order: BoardOrder) => void;
 }
+
+/**
+ * How many item lines a ticket shows before it says "+N more".
+ *
+ * The rows share the board's height between them, so a card cannot grow to
+ * fit a large order - four lines is what fits at the row height a three-row
+ * board leaves, and anything past that is one tap away in the focus view.
+ */
+const CARD_ITEM_LIMIT = 4;
 
 /**
  * One ticket on the board.
@@ -41,21 +49,22 @@ interface OrderCardProps {
  * <button>: a button may only contain phrasing content, and this card contains
  * a <ul>. Nesting them produces invalid HTML that screen readers flatten into
  * one unreadable label. Instead a transparent button is stretched across the
- * card, and the workflow button sits above it - so both targets are real
- * elements, both are keyboard reachable, and the markup stays valid.
+ * card. There is no second, workflow-advancing control on the card itself -
+ * that action lives in the focus view now, so a dense grid of tickets cannot
+ * be advanced by a stray tap.
  *
  * Memoised because the board re-renders every second to advance the clocks.
  * That does not help on a tick (`now` changes for everyone), but it does on
  * every other render - a transition elsewhere on the board, or a poll that
  * leaves this order untouched, then costs nothing here.
  */
-function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance }: OrderCardProps) {
+function OrderCardImpl({ order, now, position, compact = false, onOpen }: OrderCardProps) {
   // A delivered order's clock is stopped, and settled work is never late.
   const { ms: elapsed, settled } = fulfilmentElapsed(order, now);
   const urgency = settled ? 'normal' : urgencyOf(elapsed);
-  const action = nextAction(order.status);
 
   const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
+  const hiddenItemCount = Math.max(0, order.items.length - CARD_ITEM_LIMIT);
 
   return (
     <article
@@ -71,8 +80,15 @@ function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance
 
       <div className="card__body">
         <header className="card__head">
-          <span className="card__token" id={`order-${order.id}-token`}>
-            #{order.id}
+          <span className="card__identity">
+            {typeof position === 'number' && (
+              <span className="card__position" aria-hidden="true">
+                {position}
+              </span>
+            )}
+            <span className="card__token" id={`order-${order.id}-token`}>
+              #{order.id}
+            </span>
           </span>
 
           <div className="card__times">
@@ -104,7 +120,7 @@ function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance
         ) : (
           <>
             <ul className="card__items">
-              {order.items.map((item) => (
+              {order.items.slice(0, CARD_ITEM_LIMIT).map((item) => (
                 <li key={item.id} className="card__item">
                   <span className="card__item-name">{item.productName}</span>
                   <span className="card__item-qty" aria-label={`quantity ${item.quantity}`}>
@@ -113,6 +129,15 @@ function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance
                 </li>
               ))}
             </ul>
+
+            {/*
+              Said out loud rather than left to a clipped edge: a ticket that
+              silently stops at four lines reads as a complete order, and a
+              cook would make the wrong food. The focus view has the rest.
+            */}
+            {hiddenItemCount > 0 && (
+              <p className="card__more">+{hiddenItemCount} more</p>
+            )}
 
             {/*
               Special instructions are the one thing on a ticket that changes
@@ -144,7 +169,7 @@ function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance
                 {urgency === 'late' ? '!!' : '!'}
               </span>
             )}
-            <span aria-hidden="true">{formatDuration(elapsed)}</span>
+            <span aria-hidden="true">{formatElapsedWords(elapsed, settled)}</span>
             <span className="sr-only">
               {settled ? 'took' : 'waiting'} {describeDuration(elapsed)}
               {urgency === 'late' ? ', late' : urgency === 'warning' ? ', running behind' : ''}
@@ -152,17 +177,6 @@ function OrderCardImpl({ order, now, pending, compact = false, onOpen, onAdvance
           </span>
         </footer>
       </div>
-
-      {action && (
-        <button
-          type="button"
-          className="card__action"
-          onClick={() => onAdvance(order)}
-          disabled={pending}
-        >
-          {pending ? 'Working…' : action.label}
-        </button>
-      )}
     </article>
   );
 }

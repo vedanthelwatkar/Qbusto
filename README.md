@@ -220,9 +220,13 @@ verified by TypeScript and ESLint (`npm run typecheck`, `npm run lint`,
 - Set an explicit `CORS_ALLOWED_ORIGINS` list on the backend. A wildcard is a
   development convenience only and is warned about at startup.
 - Set a `JWT_SECRET` of at least 32 characters; this is enforced in production.
-- Configure `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` and set
-  `CASHFREE_ENVIRONMENT=prod` (or `production`); all three are enforced at
-  startup. Register a webhook URL — either `CASHFREE_NOTIFY_URL` or an
+- Give every cinema its own active `payment_gateway_config` row, with
+  `environment` set to `prod`/`production`. There are no global Cashfree
+  credentials and nothing checks this at startup, so it is a manual step: a
+  cinema left on `test` collects no real money while looking entirely healthy,
+  and a cinema with no row cannot take payments at all. Set
+  `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars) before entering any of them.
+  Register a webhook URL — either `CASHFREE_NOTIFY_URL` or an
   equivalent endpoint added directly in the Cashfree Dashboard — before
   go-live, or a payment where the customer never returns to the app has no
   automatic way to settle.

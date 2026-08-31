@@ -24,6 +24,7 @@ const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES } = require('../constants');
 const credentials = require('../utils/credentials');
 const { deleteLocalUpload } = require('./upload.service');
+const cache = require('./cache.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -252,12 +253,15 @@ async function deactivateCinema(actor, cinemaId) {
   return serializeCinema(cinema);
 }
 
+// Catalogue writes drop the read-through cache - see services/cache.service.js.
+// Wrapped at the export boundary rather than inside each function, so every
+// invalidation point in this file is visible in one place.
 module.exports = {
   listCinemas,
   getCinema,
-  createCinema,
-  updateCinema,
-  deactivateCinema,
+  createCinema: cache.invalidatingAfter(createCinema),
+  updateCinema: cache.invalidatingAfter(updateCinema),
+  deactivateCinema: cache.invalidatingAfter(deactivateCinema),
   serializeCinema,
   PUBLIC_ATTRIBUTES,
 };

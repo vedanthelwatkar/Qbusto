@@ -6,18 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  App,
-  Button,
-  Descriptions,
-  Drawer,
-  Image,
-  Skeleton,
-  Space,
-  Tag,
-  Typography,
-} from 'antd';
+import { Alert, App, Button, Descriptions, Drawer, Image, Space, Tag, Typography } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Cinema, PaymentGatewayConfig } from '@/api/generated/cinemaOrderingAPI.schemas';
 import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
@@ -150,7 +141,7 @@ export default function CinemaDetailsDrawer({
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+      {loading ? <DetailsSkeleton rows={6} /> : null}
 
       {cinema ? (
         <Descriptions column={1} size="small" bordered>
@@ -227,7 +218,7 @@ export default function CinemaDetailsDrawer({
           ) : null}
 
           {gatewayLoading ? (
-            <Skeleton active paragraph={{ rows: 2 }} />
+            <DetailsSkeleton rows={2} />
           ) : (
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label="Status">

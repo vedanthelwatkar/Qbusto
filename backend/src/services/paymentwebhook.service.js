@@ -64,7 +64,6 @@ const crypto = require('crypto');
 
 const { models, sequelize } = require('../config/database');
 const logger = require('../config/logger');
-const env = require('../config/env');
 const { toPaise } = require('./pricing.service');
 const cashfree = require('./cashfree.client');
 const { rupeesToPaise } = cashfree;
@@ -184,26 +183,23 @@ function readUnverifiedGatewayOrderId(rawBody) {
  * The Cashfree secret key to verify a delivery against, resolved from the
  * (unverified) gateway order id it claims to be about.
  *
- * TWO FALLBACK LAYERS, NOT ONE
+ * ONE SOURCE, AND ONLY ONE
  *
- * If the order IS found, `cashfree.resolveCredentials` already falls back
- * from that cinema's own `payment_gateway_config` to the global
- * `CASHFREE_*` env vars on its own (see its own header note) - nothing
- * extra needed here for that case.
+ * The secret always comes from the owning cinema's `payment_gateway_config`
+ * row, via `cashfree.resolveCredentials`. There is no global credential left
+ * to try, so a delivery whose `order_id` matches no QBusto order yields no
+ * secret at all and is refused as unverifiable.
  *
- * If the order is NOT found - an unreadable/invented/genuinely-unknown
- * `order_id` - there is no cinema to resolve credentials FOR at all, so
- * `resolveCredentials` is never reached. Without a fallback here, EVERY
- * unknown-order delivery would be unverifiable and refused outright as a
- * signature failure, which would swallow the legitimate "record this as
- * `unknown_gateway_order` and move on" case `processWebhookEvent` exists to
- * handle. The global secret is tried directly as a last resort instead - the
- * same value a wholly single-tenant deployment (no per-cinema configs at
- * all) would have used for everything before per-cinema credentials existed.
+ * That is a deliberate trade. It costs the audit record for an unknown
+ * `order_id`, which `processWebhookEvent` would otherwise file as
+ * `unknown_gateway_order`. What it buys is that nothing is ever verified
+ * against a key belonging to a different merchant account - and an unknown
+ * order id is, by definition, not one this system issued, so there is nothing
+ * of ours to settle either way. Failing closed is the correct direction for
+ * an unauthenticated, internet-facing endpoint.
  *
- * @returns {Promise<string|null>} null only when no secret is resolvable by
- *   either path - every other case still yields something to check the
- *   signature against, even if it later turns out to be the wrong one.
+ * @returns {Promise<string|null>} null when no cinema owns the delivery, or
+ *   when the owning cinema's credentials cannot be resolved.
  */
 async function resolveSigningSecret(gatewayOrderId) {
   if (gatewayOrderId) {
@@ -226,7 +222,7 @@ async function resolveSigningSecret(gatewayOrderId) {
     }
   }
 
-  return env.cashfree.configured ? env.cashfree.secretKey : null;
+  return null;
 }
 
 /**

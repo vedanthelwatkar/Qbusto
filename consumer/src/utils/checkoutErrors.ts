@@ -27,7 +27,6 @@ export type CheckoutField =
   | 'customerEmail'
   | 'rowNumber'
   | 'seatNumber'
-  | 'screenId'
   | 'filmTitle'
   | 'showTime';
 
@@ -52,12 +51,17 @@ function envelope(error: AxiosError): ErrorEnvelope['error'] | undefined {
   return (error.response?.data as ErrorEnvelope | undefined)?.error;
 }
 
-/** Joi-style `details` name their own field, so trust them when they match. */
+/**
+ * Joi-style `details` name their own field, so trust them when they match.
+ *
+ * `seatRow` is the backend's name for the field (it resolves the screen from
+ * screenName + seatRow); the form's row input is `rowNumber`, so it is
+ * remapped below rather than added here as its own case.
+ */
 const VALIDATION_FIELDS = new Set<string>([
   'customerMobile',
   'customerEmail',
   'seatNumber',
-  'screenId',
   'filmTitle',
   'showTime',
 ]);
@@ -72,7 +76,16 @@ export function mapCheckoutError(caught: unknown): CheckoutError {
   const message = body?.message ?? '';
   const details = body?.details;
 
-  // 1. A validation response that names its own field.
+  // 1. `seatRow` - the row didn't match any seat carried by this show's
+  //    screen. Shown under the row input, which the form calls `rowNumber`.
+  if (Array.isArray(details)) {
+    const rowError = details.find((entry) => entry.field === 'seatRow' && entry.message);
+    if (rowError?.message) {
+      return { field: 'rowNumber', message: rowError.message };
+    }
+  }
+
+  // 2. A validation response that names its own field.
   if (Array.isArray(details)) {
     const named = details.find(
       (entry) => entry.field && VALIDATION_FIELDS.has(entry.field) && entry.message
@@ -82,25 +95,7 @@ export function mapCheckoutError(caught: unknown): CheckoutError {
     }
   }
 
-  // 2. A conflict that names the entity it is about. `Screen is not active`
-  //    arrives as 409 with `{ screenId }`.
-  if (details && !Array.isArray(details) && 'screenId' in details) {
-    return {
-      field: 'screenId',
-      message: message || 'That screen is not available. Check the screen number.',
-    };
-  }
-
-  // 3. `NotFoundError('Screen')` is a 404 whose only distinguishing mark is its
-  //    message, which the backend builds as `${resource} not found`.
-  if (status === 404 && /^screen not found$/i.test(message)) {
-    return {
-      field: 'screenId',
-      message: 'We could not find that screen at this cinema. Check the screen number.',
-    };
-  }
-
-  // 4. Everything else belongs to the banner. Prefer the server's wording for
+  // 3. Everything else belongs to the banner. Prefer the server's wording for
   //    the cases where it is written for a customer - a product that is no
   //    longer carried, or outside its serving hours - rather than replacing it
   //    with something vaguer.

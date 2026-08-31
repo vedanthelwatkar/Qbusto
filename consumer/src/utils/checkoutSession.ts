@@ -23,7 +23,8 @@ interface StoredSession {
 
 interface FingerprintSource {
   cinemaId: number;
-  screenId?: number | null;
+  screenName?: string | null;
+  seatRow?: string | null;
   seatNumber?: string | null;
   source: string;
   customerMobile?: string | null;
@@ -50,7 +51,8 @@ export function orderFingerprint(body: FingerprintSource): string {
 
   return [
     body.cinemaId,
-    body.screenId ?? '',
+    body.screenName ?? '',
+    body.seatRow ?? '',
     body.seatNumber ?? '',
     body.source,
     body.customerMobile ?? '',

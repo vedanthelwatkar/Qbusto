@@ -102,12 +102,14 @@ function sessionLabel(session: ConsumerSession): string {
 /**
  * The API failure fields that the picker is now responsible for.
  *
- * The backend still validates screen, film and show time individually, so a
- * rejection can name any of the three. There is no longer an input for them,
- * and an error attached to a field that is not on screen is an error the
- * customer never sees, so all three are shown against the picker.
+ * The backend still validates film and show time individually, so a
+ * rejection can name either. There is no longer an input for them, and an
+ * error attached to a field that is not on screen is an error the customer
+ * never sees, so both are shown against the picker. The screen itself is no
+ * longer one of these - an unresolved screen now surfaces as a `seatRow`
+ * error, which `mapCheckoutError` already routes to the row input.
  */
-const SESSION_FIELDS = new Set(['screenId', 'filmTitle', 'showTime']);
+const SESSION_FIELDS = new Set(['filmTitle', 'showTime']);
 
 /**
  * Cart and checkout in one sheet over the catalogue.
@@ -194,13 +196,18 @@ export default function CheckoutDrawer() {
     register,
     handleSubmit,
     setError,
+    setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
       sessionId: '',
-      rowNumber: prefilledSeat.row,
+      // Starts empty: the row is a dropdown of the CHOSEN show's rows, so
+      // there is nothing to select until a show is picked (see the effect
+      // below, which fills it in - from the URL context when possible).
+      rowNumber: '',
       seatNumber: prefilledSeat.seat,
       customerMobile: '',
       customerEmail: '',
@@ -336,6 +343,33 @@ export default function CheckoutDrawer() {
     (session) => String(session.id) === watch('sessionId')
   );
 
+  /**
+   * Keeps the row dropdown's value in sync with the rows the CURRENT show
+   * actually has, rather than a value left over from a different show (or
+   * from before any show was chosen).
+   *
+   * - No show picked, or the show has no known rows (seatRows empty - a
+   *   cinema whose screen data doesn't carry rows): the field is cleared.
+   * - The value already selected is still one of this show's rows (e.g. the
+   *   customer flips between two shows on the same screen): left alone.
+   * - Otherwise: prefilled from the row the QR/URL supplied, when that row is
+   *   actually one of this show's, else left empty for the customer to pick.
+   */
+  useEffect(() => {
+    const rows = selectedSession?.seatRows ?? [];
+    const current = getValues('rowNumber');
+
+    if (rows.length === 0) {
+      if (current) setValue('rowNumber', '');
+      return;
+    }
+
+    if (current && rows.includes(current)) return;
+
+    const fromContext = prefilledSeat.row.toUpperCase();
+    setValue('rowNumber', rows.includes(fromContext) ? fromContext : '');
+  }, [selectedSession, getValues, setValue, prefilledSeat.row]);
+
   // See the fingerprint comment above `itemsFingerprint`: a coupon applied
   // against a cart that has since changed is cleared rather than shown
   // against a total it was never actually checked for.
@@ -359,11 +393,28 @@ export default function CheckoutDrawer() {
     setCouponMessage(null);
 
     try {
+      /*
+       * The seat as the FORM currently holds it, not as the context store
+       * holds it.
+       *
+       * It is evidence for a `seat_qr` source, and the backend derives that
+       * source from the seat the ORDER carries - which is this form's row and
+       * seat, joined the same way submit joins them below. Reading the store
+       * instead would preview against a seat the customer may have just
+       * changed, and the previewed subtotal would then not be the one they
+       * are charged. Partial input yields no seat, exactly as submit's join
+       * of an incomplete pair would.
+       */
+      const previewRow = getValues('rowNumber')?.trim().toUpperCase();
+      const previewSeat = getValues('seatNumber')?.trim();
+      const previewSeatLabel = previewRow && previewSeat ? `${previewRow}${previewSeat}` : null;
+
       const result = await previewCoupon(
         cinemaId,
         code,
         items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
-        source
+        source,
+        previewSeatLabel
       );
 
       if (result.valid && result.discount != null) {
@@ -416,22 +467,14 @@ export default function CheckoutDrawer() {
       const order = await placeOrder(
         {
           cinemaId,
-          /**
-           * ONLY the auditorium the backend actually verified for the chosen
-           * show (consumer.service.resolveScreenIdsByName), or null.
-           *
-           * There is deliberately NO fallback to the QR's own screenId. A QR is
-           * printed with whatever screens row existed at the time, and for a
-           * cinema whose screen data is one row per SEAT ROW that value is a
-           * seat-row record, not an auditorium - storing it put rows like
-           * `screen_id -> "Screen 1, row A"` on an order whose seat_number was
-           * "B5". `screen_id` must mean the auditorium or mean nothing, so an
-           * unresolved session leaves the nullable column NULL.
-           *
-           * The QR still supplies the customer's position through row/seat,
-           * which is a separate field and unaffected by this.
-           */
-          screenId: session.screenId ?? null,
+          // The auditorium is resolved server-side from these two - never
+          // sent as an id (see consumer.service.resolveScreenId). There is
+          // deliberately NO fallback to the QR's own screenId: a QR is
+          // printed with whatever screens row existed at the time, and for a
+          // cinema whose screen data is one row per SEAT ROW that value is a
+          // seat-row record, not an auditorium.
+          screenName: session.screenName ?? null,
+          seatRow: submittedRow,
           // Film and show time come off the one selected session, so they
           // cannot disagree with each other.
           filmTitle: session.filmTitle,
@@ -678,17 +721,33 @@ export default function CheckoutDrawer() {
                       <label className="field__label" htmlFor="checkout-row">
                         Row <span className="field__required" aria-hidden="true">*</span>
                       </label>
-                      <input
+                      {/* Always a dropdown, driven by the CHOSEN show's own
+                          rows (ConsumerSession.seatRows) - the row can then
+                          only ever be one that actually resolves to an
+                          auditorium. Disabled and empty until a show with
+                          known rows is picked (see the effect above). */}
+                      <select
                         id="checkout-row"
-                        type="text"
-                        autoCapitalize="characters"
-                        maxLength={2}
-                        placeholder="A"
+                        className="field__select"
                         aria-required="true"
+                        disabled={!selectedSession || selectedSession.seatRows?.length === 0}
                         aria-invalid={errors.rowNumber ? 'true' : undefined}
                         aria-describedby={errors.rowNumber ? 'checkout-row-error' : undefined}
                         {...register('rowNumber')}
-                      />
+                      >
+                        <option value="">
+                          {!selectedSession
+                            ? 'Select a show first'
+                            : selectedSession.seatRows?.length
+                              ? 'Select row'
+                              : 'No rows available'}
+                        </option>
+                        {(selectedSession?.seatRows ?? []).map((row) => (
+                          <option key={row} value={row}>
+                            {row}
+                          </option>
+                        ))}
+                      </select>
                       {errors.rowNumber && (
                         <span className="field__error" id="checkout-row-error">
                           {errors.rowNumber.message}

@@ -63,6 +63,7 @@ export default function LoginPage() {
     <div className="login">
       <Card className="login__card" variant="borderless">
         <div className="login__heading">
+          <img className="login__mark" src="/favicon-192x192.png" alt="" aria-hidden="true" />
           <Title level={3}>QBusto</Title>
           <Text type="secondary">Sign in to the management dashboard</Text>
         </div>

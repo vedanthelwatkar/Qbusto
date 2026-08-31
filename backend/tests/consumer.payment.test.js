@@ -31,9 +31,14 @@ const request = require('supertest');
 
 // Credentials must be present before config/env loads, or the service refuses
 // to initialise a payment at all.
-process.env.CASHFREE_APP_ID = 'TEST_APP_ID';
-process.env.CASHFREE_SECRET_KEY = 'test_secret_key_value_at_least_32_characters';
-process.env.CASHFREE_ENVIRONMENT = 'test';
+/*
+ * No CASHFREE_* credentials: there are none in the environment any more, and
+ * every payment path in these tests reaches a mocked cashfree.client rather
+ * than resolving a real credential. SECRET_LOOKALIKE below exists purely so
+ * the "no secret ever appears in a response body" assertion has a concrete
+ * needle to search for.
+ */
+const SECRET_LOOKALIKE = 'test_secret_key_value_at_least_32_characters';
 
 /**
  * The provider boundary. Only the three network operations are stubbed; the
@@ -305,7 +310,7 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
 
     const response = await initRequest();
 
-    expect(JSON.stringify(response.body)).not.toContain(process.env.CASHFREE_SECRET_KEY);
+    expect(JSON.stringify(response.body)).not.toContain(SECRET_LOOKALIKE);
   });
 
   test('a coupon that discounted the order to zero settles immediately, without calling Cashfree at all', async () => {

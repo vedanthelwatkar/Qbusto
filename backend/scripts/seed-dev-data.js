@@ -792,14 +792,17 @@ async function createDevUser() {
 
     // Grant all permissions to owner
     const modules = Object.values(require('../src/constants').MODULES);
-    const actions = Object.values(require('../src/constants').ACTIONS);
 
+    // All three actions, matching the comment above. canDelete was previously
+    // omitted, so "all permissions" was not what the seeder actually granted -
+    // invisible today only because `owner` bypasses the permission table.
     for (const module of modules) {
       await models.UserPermission.create({
         userId: user.id,
         module,
         canRead: true,
         canEdit: true,
+        canDelete: true,
       });
     }
 

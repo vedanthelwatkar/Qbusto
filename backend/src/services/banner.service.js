@@ -23,6 +23,7 @@ const { Op } = require('sequelize');
 const { models } = require('../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { ROLES } = require('../constants');
+const cache = require('./cache.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -245,12 +246,15 @@ async function deactivateBanner(actor, bannerId) {
   return serializeBanner(banner);
 }
 
+// Catalogue writes drop the read-through cache - see services/cache.service.js.
+// Wrapped at the export boundary rather than inside each function, so every
+// invalidation point in this file is visible in one place.
 module.exports = {
   listBanners,
   getBanner,
-  createBanner,
-  updateBanner,
-  deactivateBanner,
+  createBanner: cache.invalidatingAfter(createBanner),
+  updateBanner: cache.invalidatingAfter(updateBanner),
+  deactivateBanner: cache.invalidatingAfter(deactivateBanner),
   serializeBanner,
   PUBLIC_ATTRIBUTES,
 };

@@ -141,6 +141,24 @@ router.get('/cinemas/:cinemaId/categories', consumerController.getCategories);
  *       - name: page
  *         in: query
  *         schema: { type: integer, default: 1 }
+ *       - name: source
+ *         in: query
+ *         description: >
+ *           Which channel's price to show: the SAME source the order will be
+ *           placed with, so the displayed price is the price charged. Each
+ *           product_pricing row carries a discount per channel
+ *           (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or
+ *           omitted prices as `qr`, the lobby rate.
+ *         schema: { type: string, enum: [qr, seat_qr, kiosk, counter], default: qr }
+ *       - name: seat
+ *         in: query
+ *         description: >
+ *           The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr`
+ *           source, not a stored value - only its presence is read. A
+ *           `seat_qr` request that names no seat is priced as `qr`, because a
+ *           seat order with no seat has nowhere to be delivered. Ignored for
+ *           every other source.
+ *         schema: { type: string, maxLength: 20 }
  *     responses:
  *       200:
  *         description: Products list
@@ -180,6 +198,24 @@ router.get('/cinemas/:cinemaId/products', consumerController.getProducts);
  *         in: path
  *         required: true
  *         schema: { type: integer }
+ *       - name: source
+ *         in: query
+ *         description: >
+ *           Which channel's price to show: the SAME source the order will be
+ *           placed with, so the displayed price is the price charged. Each
+ *           product_pricing row carries a discount per channel
+ *           (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or
+ *           omitted prices as `qr`, the lobby rate.
+ *         schema: { type: string, enum: [qr, seat_qr, kiosk, counter], default: qr }
+ *       - name: seat
+ *         in: query
+ *         description: >
+ *           The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr`
+ *           source, not a stored value - only its presence is read. A
+ *           `seat_qr` request that names no seat is priced as `qr`, because a
+ *           seat order with no seat has nowhere to be delivered. Ignored for
+ *           every other source.
+ *         schema: { type: string, maxLength: 20 }
  *     responses:
  *       200:
  *         description: Product found
@@ -242,9 +278,11 @@ router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
  *
  *
  *       The Consumer offers these as a single picker at checkout, and the
- *       selected session supplies the order's `screenId`, `filmTitle` and
- *       `showTime` together, so the customer does not enter the three
- *       separately and they cannot disagree.
+ *       selected session supplies the order's `screenName`, `filmTitle` and
+ *       `showTime` together, so the customer does not enter these
+ *       separately and they cannot disagree. `screenName` plus the row the
+ *       customer enters (or picks from `seatRows`, when non-empty) resolve to
+ *       the order's actual screen id server-side.
  *
  *
  *       Sessions whose film or auditorium is no longer active are excluded, so
@@ -296,9 +334,22 @@ router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
  *             properties:
  *               cinemaId:
  *                 type: integer
- *               screenId:
- *                 type: integer
+ *               screenName:
+ *                 type: string
  *                 nullable: true
+ *                 description: >
+ *                   The screenName of the session the customer picked (see
+ *                   GET .../sessions). The server resolves the real screen id
+ *                   from this plus seatRow - a client-supplied id is not
+ *                   accepted.
+ *               seatRow:
+ *                 type: string
+ *                 nullable: true
+ *                 description: >
+ *                   Required when the picked session's seatRows was non-empty
+ *                   - the row the customer chose from that list. Ignored for
+ *                   an auditorium-grain screen, where screenName alone
+ *                   resolves it.
  *               seatNumber:
  *                 type: string
  *                 nullable: true
@@ -440,6 +491,14 @@ router.post('/orders', validate(consumerValidators.createOrder), consumerControl
  *               source:
  *                 type: string
  *                 enum: [qr, seat_qr, kiosk, counter]
+ *               seatNumber:
+ *                 type: string
+ *                 maxLength: 20
+ *                 nullable: true
+ *                 description: >
+ *                   Evidence for a `seat_qr` source, the same field the order
+ *                   carries. Without it a `seat_qr` preview quotes the `qr`
+ *                   rate - which is what the order would then charge.
  *               items:
  *                 type: array
  *                 minItems: 1

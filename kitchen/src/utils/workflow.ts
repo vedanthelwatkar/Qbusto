@@ -25,10 +25,18 @@ export function nextAction(status: FulfilmentStatus) {
   return NEXT_ACTION[status];
 }
 
-/** Lane headings. `confirmed` reads as "new" to a cook, not as "confirmed". */
+/**
+ * Lane headings, in the words the wall display uses.
+ *
+ * Presentation only - `FulfilmentStatus` values themselves (`confirmed`,
+ * `preparing`, `ready`, `delivered`) are the API's and are untouched; this is
+ * the one place their on-screen word is chosen. `confirmed` reads as
+ * "Pending" to a cook waiting to start it, and `preparing` reads as "Prepare"
+ * to match the board's other labels.
+ */
 export const STATUS_LABEL: Record<FulfilmentStatus, string> = {
-  confirmed: 'New',
-  preparing: 'Preparing',
+  confirmed: 'Pending',
+  preparing: 'Prepare',
   ready: 'Ready',
   delivered: 'Delivered',
 };

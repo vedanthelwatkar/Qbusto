@@ -346,11 +346,13 @@ describe('per-screen cap picks the screenings nearest to now', () => {
  * client are ONE PER SEAT ROW, so a single auditorium name covers many rows -
  * on the live database cinema 8's "Screen 1" is ten of them.
  *
- * No row in that second set represents the auditorium, and nothing in the
- * application reads category/seat_row, so there is no correct id to choose.
- * Resolution is therefore unique-only: an ambiguous name yields null and the
- * caller falls back to screenName, rather than an arbitrary seat-row id being
- * written onto the order.
+ * These fixtures carry no `seatRow`, so they exercise the auditorium-grain
+ * path only: `getSessions` still resolves `screenId` directly by name when it
+ * is unique, and returns null (with `seatRows` empty) when it is ambiguous or
+ * absent - the row-bearing shape's own resolution
+ * (`resolveScreenId`/`summariseScreensByName` picking a `screens.id` once a
+ * seat row is known) is covered in consumer.catalog.test.js instead, where the
+ * seat row is available.
  */
 describe('screen id resolution from the schedule name', () => {
   it('resolves a name that identifies exactly one active screen', async () => {
@@ -415,5 +417,30 @@ describe('screen id resolution from the schedule name', () => {
 
     expect(byId[1]).toBeNull();
     expect(byId[2]).toBe(30);
+  });
+
+  it('lists the distinct seat rows available under a duplicated name, sorted', async () => {
+    serveSessions([buildSession({ sessionId: 1, screenName: 'SCREEN 1' })], [
+      { id: 22, name: 'SCREEN 1', seatRow: 'C' },
+      { id: 23, name: 'SCREEN 1', seatRow: 'A' },
+      { id: 24, name: 'SCREEN 1', seatRow: 'B' },
+      { id: 25, name: 'SCREEN 2', seatRow: 'A' },
+    ]);
+
+    const response = await listSessions();
+
+    expect(response.body.data[0].screenId).toBeNull();
+    expect(response.body.data[0].seatRows).toEqual(['A', 'B', 'C']);
+  });
+
+  it('returns an empty seatRows list for the auditorium-grain shape', async () => {
+    serveSessions([buildSession({ sessionId: 1, screenName: 'SCREEN 1' })], [
+      { id: 22, name: 'SCREEN 1' },
+      { id: 23, name: 'SCREEN 2' },
+    ]);
+
+    const response = await listSessions();
+
+    expect(response.body.data[0].seatRows).toEqual([]);
   });
 });

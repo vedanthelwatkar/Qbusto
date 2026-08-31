@@ -1,5 +1,5 @@
 import type { BoardOrder } from '../types/kitchen';
-import { elapsedMs, urgencyOf } from '../utils/time';
+import { elapsedMs, formatClock, formatDate, urgencyOf } from '../utils/time';
 
 interface SummaryBarProps {
   active: BoardOrder[];
@@ -33,30 +33,51 @@ export function SummaryBar({ active, completed, now, activeTotal }: SummaryBarPr
   );
 
   const truncated = activeTotal > active.length;
+  // "Total orders" is everything currently on screen either way - the active
+  // queues plus the recent Delivered window - not a server-side count, so it
+  // agrees with what a cook can actually see and tap into.
+  const totalOnScreen = active.length + completed.length;
 
   return (
     <footer className="summary" aria-label="Board summary">
-      <Stat label="New" value={counts.newOrders} />
-      <Stat label="Preparing" value={counts.preparing} />
-      <Stat label="Ready" value={counts.ready} />
-      <Stat label="Delayed" value={counts.delayed} tone={counts.delayed > 0 ? 'alert' : undefined} />
-      <Stat label="Delivered" value={completed.length} />
+      <Stat label="Pending" value={counts.newOrders} icon="●" />
+      <Stat label="Prepare" value={counts.preparing} icon="◑" />
+      <Stat label="Ready" value={counts.ready} icon="✓" />
+      <Stat
+        label="Delayed"
+        value={counts.delayed}
+        icon="!"
+        tone={counts.delayed > 0 ? 'alert' : undefined}
+      />
+      <Stat label="Delivered" value={completed.length} icon="✔" />
 
       <div className="summary__total">
-        <span className="summary__total-label">Active orders</span>
+        <span className="summary__total-label">Total orders</span>
         <span className="summary__total-value">
-          {active.length}
-          {truncated && <span className="summary__total-of"> of {activeTotal}</span>}
+          {totalOnScreen}
+          {truncated && <span className="summary__total-of"> ({active.length} of {activeTotal} active)</span>}
         </span>
+      </div>
+
+      <div className="summary__brand">
+        <img className="summary__mark" src="/favicon-192x192.png" alt="" aria-hidden="true" />
+        <span className="summary__name">QBusto</span>
+      </div>
+
+      <div className="summary__clock">
+        <span className="summary__time">{formatClock(new Date(now).toISOString())}</span>
+        <span className="summary__date">{formatDate(new Date(now))}</span>
       </div>
     </footer>
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'alert' }) {
+function Stat({ label, value, icon, tone }: { label: string; value: number; icon: string; tone?: 'alert' }) {
   return (
     <div className={`stat${tone ? ` stat--${tone}` : ''}`}>
-      <span className="stat__label">{label}</span>
+      <span className="stat__label">
+        <span aria-hidden="true">{icon}</span> {label}
+      </span>
       <span className="stat__value">{String(value).padStart(2, '0')}</span>
     </div>
   );

@@ -10,7 +10,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Empty, Skeleton, Table, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Empty, Table, Tag, Typography } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 import type { ColumnsType } from 'antd/es/table';
 
 import { toApiError } from '@/services/api';
@@ -92,7 +94,7 @@ export default function UserDetailsDrawer({ userId, onClose }: UserDetailsDrawer
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+      {loading ? <DetailsSkeleton rows={6} /> : null}
 
       {user ? (
         <>

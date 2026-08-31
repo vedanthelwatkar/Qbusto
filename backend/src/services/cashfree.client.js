@@ -77,20 +77,21 @@ function db() {
  * payments - two cinemas can run against two entirely different Cashfree
  * merchant accounts.
  *
- * FALLBACK: the global `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY`/
- * `CASHFREE_ENVIRONMENT` env vars, logged loudly every time they are used.
- * This exists only so a deployment that has not yet migrated every cinema
- * into `payment_gateway_config` does not lose payments outright; it is not
- * meant to be the steady state; see docs/pre-production-checklist.md.
+ * There is NO fallback. `payment_gateway_config` is the only source of
+ * Cashfree credentials anywhere in the system - the global CASHFREE_APP_ID /
+ * CASHFREE_SECRET_KEY / CASHFREE_ENVIRONMENT variables that used to stand in
+ * here no longer exist. A cinema without an active row cannot take payments,
+ * and says so at payment-init.
  *
- * `environment` ('test'/'sandbox'/'prod'/'production', mirroring
- * CASHFREE_ENVIRONMENT's own vocabulary) is its own column, added by
+ * `environment` ('test'/'sandbox'/'prod'/'production' - both of Cashfree's own
+ * vocabularies, since its API docs and its dashboard disagree) is its own
+ * column, added by
  * `20260825000500-add-environment-to-payment-gateway-config.js` - deliberately
  * NOT folded into the existing `gateway_url` column, which stays genuinely
  * unused rather than secretly holding an environment name instead of a URL.
  *
- * @throws {Error} If neither the cinema's own config nor the env fallback is
- *   available - the caller maps this to a 503.
+ * @throws {Error} If the cinema has no usable credentials - the caller maps
+ *   this to a 503.
  */
 async function resolveCredentials(cinemaId) {
   const { models } = db();
@@ -123,7 +124,11 @@ async function resolveCredentials(cinemaId) {
         { cinemaId, reason: error.message }
       );
 
-      throw new Error('Cashfree is not configured for this cinema');
+      // `cause` keeps the crypto failure attached for anyone debugging from a
+      // log or a test, while the MESSAGE stays the generic one the customer
+      // is allowed to see. errorHandler serialises only message/name/stack -
+      // never `cause` - so this cannot widen what reaches the response.
+      throw new Error('Cashfree is not configured for this cinema', { cause: error });
     }
 
     const isProduction = config.environment === 'prod' || config.environment === 'production';
@@ -131,18 +136,19 @@ async function resolveCredentials(cinemaId) {
     return { appId: config.gatewayId, secretKey, isProduction };
   }
 
-  if (env.cashfree.configured) {
-    logger.warn(
-      'No active payment_gateway_config for this cinema - falling back to global CASHFREE_* env credentials',
-      { cinemaId }
-    );
-
-    return {
-      appId: env.cashfree.appId,
-      secretKey: env.cashfree.secretKey,
-      isProduction: env.cashfree.isProduction,
-    };
-  }
+  /*
+   * No row, no payment. There is deliberately no deployment-wide credential to
+   * fall back to: standing in for a cinema nobody finished configuring would
+   * take that cinema's money into whichever merchant account the fallback
+   * belonged to, and every signal - checkout, webhook, order status - would
+   * look healthy while it happened.
+   *
+   * The caller maps this to a 503 at payment-init, which is a visible,
+   * diagnosable failure at exactly the moment the misconfiguration matters.
+   */
+  logger.warn('No active payment_gateway_config for this cinema - payments are unavailable', {
+    cinemaId,
+  });
 
   throw new Error('Cashfree is not configured for this cinema');
 }

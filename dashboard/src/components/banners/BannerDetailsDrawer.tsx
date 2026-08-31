@@ -9,7 +9,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Image, Skeleton, Tag } from 'antd';
+import { Alert, Descriptions, Drawer, Image, Tag } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { toApiError } from '@/services/api';
@@ -74,7 +76,7 @@ export default function BannerDetailsDrawer({
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
+      {loading ? <DetailsSkeleton rows={5} mediaHeight={160} /> : null}
 
       {banner ? (
         <>

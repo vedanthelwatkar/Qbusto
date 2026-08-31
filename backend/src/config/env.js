@@ -104,6 +104,32 @@ const envSchema = Joi.object({
     .default(15 * 60 * 1000),
   RATE_LIMIT_MAX: Joi.number().integer().positive().default(300),
 
+  // ---- Cache (Redis) ----
+  /**
+   * Unset means NO CACHING - the application runs exactly as it did before
+   * caching existed. That is deliberate: it keeps the cache an optional
+   * deployment concern rather than a hard dependency, and it is what lets the
+   * test suite run without a Redis server.
+   */
+  REDIS_URL: Joi.string()
+    .uri({ scheme: ['redis', 'rediss'] })
+    .optional(),
+
+  /**
+   * How long a cached catalogue response stays servable.
+   *
+   * Short on purpose. A product's availability window is evaluated against the
+   * clock (pricing.service.unavailableReason), so a response cached at 13:59
+   * for a product that stops selling at 14:00 stays wrong until it expires.
+   * The TTL is therefore the worst-case staleness on an availability boundary,
+   * and 60s keeps that under a minute while still absorbing the bulk of the
+   * repeat traffic a kiosk generates.
+   */
+  CACHE_TTL_SECONDS: Joi.number().integer().positive().max(3600).default(60),
+
+  /** A slow cache is worse than no cache - it holds the request open. */
+  REDIS_TIMEOUT_MS: Joi.number().integer().positive().max(5000).default(1000),
+
   // ---- Docs ----
   SWAGGER_ENABLED: Joi.boolean().default(true),
 
@@ -131,38 +157,19 @@ const envSchema = Joi.object({
   /**
    * ---- Cashfree payments (not required to boot) ----
    *
-   * Optional so development, test and CI can boot with no payment provider at
-   * all; the payment endpoints then refuse rather than half-working.
+   * There are deliberately NO credential variables here.
    *
-   * NOTE, and it is the important difference from the previous provider: there
-   * is no separate webhook secret. Cashfree signs webhooks with the SAME
-   * secret key used to authenticate API calls, so CASHFREE_SECRET_KEY is both
-   * the API credential and the webhook verification key. One value fewer to
-   * configure, and one fewer way to end up with a deployment that can take
-   * payments but cannot verify the notifications about them.
+   * Cashfree credentials - app id, secret key and environment - live ONLY in
+   * `payment_gateway_config`, per cinema, with the secret encrypted at rest by
+   * CREDENTIALS_ENCRYPTION_KEY. A cinema with no active row simply cannot take
+   * payments: `cashfree.resolveCredentials` throws and payment-init answers
+   * 503. There is no deployment-wide fallback to inherit, which is the point -
+   * a global credential silently standing in for a cinema nobody finished
+   * configuring is how money ends up in the wrong merchant account.
    *
-   * The names mirror the Cashfree Dashboard's own labels ("App ID", "Secret
-   * Key") so that copying a credential across does not require translating
-   * what it is called.
+   * The settings below are transport and call-shape only. None of them can
+   * authenticate anything on their own.
    */
-  CASHFREE_APP_ID: Joi.string().allow('').optional(),
-  CASHFREE_SECRET_KEY: Joi.string().allow('').optional(),
-
-  /**
-   * Which Cashfree environment to talk to. This is an explicit setting rather
-   * than something inferred from NODE_ENV, because the two are genuinely
-   * independent: a staging deployment runs NODE_ENV=production against the
-   * Cashfree sandbox, and that is a legitimate combination a developer must be
-   * able to express. The startup guards below cover the dangerous pairings.
-   *
-   * Both vocabularies are accepted because both are in circulation: Cashfree's
-   * API documentation says "sandbox"/"production" while its dashboard and SDK
-   * environment enum say TEST/PROD. Refusing one of them would be a startup
-   * failure over a synonym.
-   */
-  CASHFREE_ENVIRONMENT: Joi.string()
-    .valid('test', 'sandbox', 'prod', 'production')
-    .default('test'),
 
   /**
    * Where Cashfree should POST payment notifications. Optional: the webhook
@@ -235,90 +242,23 @@ if (error) {
   throw new Error(`Invalid environment configuration:\n${details}`);
 }
 
-/**
- * The Joi rules above cannot catch an EMPTY credential: `.allow('')` puts ''
- * in the valids list and Joi checks valids before any conditional `.required()`
- * would apply, so `CASHFREE_SECRET_KEY=` passes validation. Verified against
- * joi directly for the previous provider, and the same trap applies here.
+/*
+ * There are no Cashfree boot guards, because there is no longer anything at
+ * boot to guard.
  *
- * The consequence is the worst kind of silent failure. Because Cashfree signs
- * webhooks with the client secret, an empty secret in production means the
- * app boots, refuses every webhook delivery as unverifiable, and a payment
- * whose browser callback is lost can never be recovered — with nothing in the
- * running system looking wrong.
+ * This module previously refused to start when NODE_ENV=production carried no
+ * global credentials or pointed at the Cashfree sandbox - the "checkout works,
+ * orders are marked paid, food goes out, no real money was taken" case, which
+ * nothing downstream can detect.
+ *
+ * Credentials and environment are now per cinema, in payment_gateway_config,
+ * and rows change while the process is running. A boot-time check could only
+ * ever have inspected values this process no longer holds, so keeping one
+ * would have meant asserting something it cannot actually see. The equivalent
+ * failure is instead a per-cinema one: a cinema configured for `test` takes no
+ * real money, and that is visible in its Dashboard payment settings and in the
+ * `environment` column, not in this file.
  */
-const cashfreeConfigured = Boolean(value.CASHFREE_APP_ID && value.CASHFREE_SECRET_KEY);
-
-/** `prod` and `production` both mean live money. Everything else is sandbox. */
-const cashfreeIsProduction =
-  value.CASHFREE_ENVIRONMENT === 'prod' || value.CASHFREE_ENVIRONMENT === 'production';
-
-if (value.NODE_ENV === 'production' && !cashfreeConfigured) {
-  throw new Error(
-    'Invalid environment configuration:\n' +
-      '  - CASHFREE_APP_ID and CASHFREE_SECRET_KEY must both be set when NODE_ENV is production. ' +
-      'Without them no payment can be taken, and webhook deliveries could not be verified even if one were.'
-  );
-}
-
-/**
- * A production deployment pointed at the Cashfree SANDBOX is the worst kind of
- * misconfiguration: checkout works, the webhook verifies, orders are marked
- * paid, food goes out — and no real money was ever taken. Nothing downstream
- * can detect it, because every signal looks healthy. Refusing to boot is the
- * only place it can be caught.
- */
-if (value.NODE_ENV === 'production' && !cashfreeIsProduction) {
-  throw new Error(
-    'Invalid environment configuration:\n' +
-      `  - CASHFREE_ENVIRONMENT is "${value.CASHFREE_ENVIRONMENT}" but NODE_ENV is production. ` +
-      'Payments would be simulated and no money collected. Set it to "prod", or do not run as production.'
-  );
-}
-
-/**
- * The mirror image of the check above, and a real footgun: a developer who
- * copies a production .env to run something locally would be taking REAL money
- * from REAL cards on their laptop. A warning rather than a throw, because
- * debugging against production is occasionally legitimate — but it must never
- * happen without someone noticing.
- */
-if (value.NODE_ENV !== 'production' && cashfreeIsProduction) {
-  console.warn(
-    `[config] CASHFREE_ENVIRONMENT is "${value.CASHFREE_ENVIRONMENT}" but NODE_ENV is "${value.NODE_ENV}". ` +
-      'Payments made against this instance will charge real cards.'
-  );
-}
-
-/**
- * Half-configured. One credential without the other cannot authenticate a
- * single call, and failing at the first payment rather than at boot makes it
- * look like a provider outage instead of a deployment mistake.
- */
-if (Boolean(value.CASHFREE_APP_ID) !== Boolean(value.CASHFREE_SECRET_KEY)) {
-  console.warn(
-    '[config] Only one of CASHFREE_APP_ID / CASHFREE_SECRET_KEY is set. ' +
-      'Payments are disabled until both are configured.'
-  );
-}
-
-/**
- * Short secrets are warned about rather than rejected. The empty case above is
- * the one that silently breaks settlement; refusing to boot on a legitimate
- * but unusually short provider-issued credential would be a false alarm that
- * costs an outage.
- */
-if (
-  value.NODE_ENV === 'production' &&
-  value.CASHFREE_SECRET_KEY &&
-  value.CASHFREE_SECRET_KEY.length < MIN_PRODUCTION_SECRET_LENGTH
-) {
-  console.warn(
-    `[config] CASHFREE_SECRET_KEY is ${value.CASHFREE_SECRET_KEY.length} characters, ` +
-      `which is shorter than the ${MIN_PRODUCTION_SECRET_LENGTH} expected of a production credential. ` +
-      'Confirm it was copied in full.'
-  );
-}
 
 // console.warn rather than the logger: the logger depends on this module.
 if (value.NODE_ENV === 'development' && value.JWT_SECRET.length < MIN_PRODUCTION_SECRET_LENGTH) {
@@ -442,33 +382,29 @@ const env = {
     enabled: value.SWAGGER_ENABLED,
   },
 
-  cashfree: {
-    appId: value.CASHFREE_APP_ID || '',
+  redis: {
+    url: value.REDIS_URL || '',
 
     /**
-     * Server-side only, and it never reaches the Consumer. The browser is given
-     * a short-lived `paymentSessionId` by payment-init and nothing else.
+     * Caching runs only when a URL is configured AND we are not under test.
      *
-     * This value does double duty: it authenticates our API calls AND is the
-     * key Cashfree signs webhooks with, so it is what proves a delivery
-     * actually came from Cashfree.
+     * The test guard is not belt-and-braces - it is what keeps the suite
+     * hermetic. A developer with REDIS_URL in their .env would otherwise have
+     * their tests silently reading a shared cache, which turns an ordering
+     * bug into an unreproducible one.
      */
-    secretKey: value.CASHFREE_SECRET_KEY || '',
+    enabled: Boolean(value.REDIS_URL) && value.NODE_ENV !== 'test',
 
-    /** Both credentials present. Payment endpoints refuse when false. */
-    configured: cashfreeConfigured,
+    ttlSeconds: value.CACHE_TTL_SECONDS,
+    timeoutMs: value.REDIS_TIMEOUT_MS,
+  },
 
-    /**
-     * Webhook verification needs only the client secret, so it is available on
-     * exactly the same condition as everything else. There is no separate
-     * enable flag because there is no separate secret to be missing.
+  cashfree: {
+    /*
+     * No appId, secretKey, configured or environment. Those come from the
+     * cinema's own payment_gateway_config row and nowhere else - see the
+     * schema note above. Everything here is transport and call shape.
      */
-    webhooksEnabled: cashfreeConfigured,
-
-    /** Which Cashfree environment to talk to - independent of NODE_ENV. */
-    isProduction: cashfreeIsProduction,
-    environment: value.CASHFREE_ENVIRONMENT,
-
     notifyUrl: value.CASHFREE_NOTIFY_URL || '',
     returnUrl: value.CASHFREE_RETURN_URL || '',
     fallbackCustomerPhone: value.CASHFREE_FALLBACK_CUSTOMER_PHONE,

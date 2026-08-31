@@ -5,6 +5,7 @@
  */
 
 import { getConsumerCatalog } from '@/api/generated/consumer-catalog/consumer-catalog';
+import type { OrderSource } from '@/stores/context.store';
 import type {
   Category,
   Product,
@@ -115,11 +116,28 @@ export async function fetchProducts(
     search,
     limit = 50,
     page = 1,
+    source,
+    seat,
   }: {
     categoryId?: number;
     search?: string;
     limit?: number;
     page?: number;
+    /**
+     * The channel to price against - the same `source` the order will carry.
+     * Omitting it prices as `qr`, which is what the catalogue did
+     * unconditionally before prices varied by source.
+     */
+    source?: OrderSource;
+    /**
+     * The seat this visit is for, sent as EVIDENCE for a `seat_qr` source
+     * rather than as data: the backend derives the source it prices against
+     * from the two together, and a `seat_qr` claim with no seat behind it is
+     * priced at the lobby rate (backend pricing.service.deriveSource). Sending
+     * it here is what makes the card's price and the bill's price agree for a
+     * genuine seat scan.
+     */
+    seat?: string | null;
   } = {}
 ): Promise<ProductsResponse> {
   const response = await catalogClient.getApiConsumerCinemasCinemaIdProducts(cinemaId, {
@@ -127,6 +145,8 @@ export async function fetchProducts(
     search,
     limit,
     page,
+    source,
+    seat: seat || undefined,
   });
   return {
     data: response.data.data || [],
@@ -157,16 +177,32 @@ const MAX_PRODUCT_PAGES = 20;
  */
 export async function fetchAllProducts(
   cinemaId: number,
-  { search }: { search?: string } = {}
+  {
+    search,
+    source,
+    seat,
+  }: { search?: string; source?: OrderSource; seat?: string | null } = {}
 ): Promise<Product[]> {
-  const first = await fetchProducts(cinemaId, { search, limit: MAX_PAGE_SIZE, page: 1 });
+  const first = await fetchProducts(cinemaId, {
+    search,
+    source,
+    seat,
+    limit: MAX_PAGE_SIZE,
+    page: 1,
+  });
   const total = first.meta?.pagination?.total ?? first.data.length;
 
   const all = [...first.data];
   let page = 2;
 
   while (all.length < total && page <= MAX_PRODUCT_PAGES) {
-    const next = await fetchProducts(cinemaId, { search, limit: MAX_PAGE_SIZE, page });
+    const next = await fetchProducts(cinemaId, {
+      search,
+      source,
+      seat,
+      limit: MAX_PAGE_SIZE,
+      page,
+    });
     if (next.data.length === 0) break;
     all.push(...next.data);
     page += 1;
@@ -178,8 +214,16 @@ export async function fetchAllProducts(
 /**
  * Fetch a single product detail.
  */
-export async function fetchProductDetail(cinemaId: number, productId: number): Promise<Product> {
-  const response = await catalogClient.getApiConsumerCinemasCinemaIdProductsId(cinemaId, productId);
+export async function fetchProductDetail(
+  cinemaId: number,
+  productId: number,
+  source?: OrderSource,
+  seat?: string | null
+): Promise<Product> {
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdProductsId(cinemaId, productId, {
+    source,
+    seat: seat || undefined,
+  });
   return response.data.data || {};
 }
 

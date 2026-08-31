@@ -64,12 +64,23 @@ async function getProducts(req, res, next) {
     const page = Math.max(parseInt(req.query.page) || PAGINATION.DEFAULT_PAGE, 1);
     const categoryId = req.query.categoryId ? parseInt(req.query.categoryId) : null;
     const search = req.query.search ? String(req.query.search).substring(0, 100) : null;
+    // Which channel's price to show. Both are passed through raw; the service
+    // derives the source it will actually price against from the two together
+    // (pricing.service.deriveSource) before either reaches a discount column
+    // or a cache key. Anything unrecognised - and any `seat_qr` claim with no
+    // seat behind it - prices as `qr`, the lobby rate.
+    const source = req.query.source ? String(req.query.source) : null;
+    // Evidence for a `seat_qr` claim, not a stored value: only its presence is
+    // read, and it is capped so an oversized string cannot travel any further.
+    const seat = req.query.seat ? String(req.query.seat).substring(0, 20) : null;
 
     const { products, total } = await consumerService.getProducts(parseInt(cinemaId), {
       categoryId,
       search,
       limit,
       page,
+      source,
+      seat,
     });
 
     return paginated(res, {
@@ -87,7 +98,14 @@ async function getProducts(req, res, next) {
 async function getProductDetail(req, res, next) {
   try {
     const { cinemaId, id } = req.params;
-    const product = await consumerService.getProductDetail(parseInt(cinemaId), parseInt(id));
+    const source = req.query.source ? String(req.query.source) : null;
+    const seat = req.query.seat ? String(req.query.seat).substring(0, 20) : null;
+    const product = await consumerService.getProductDetail(
+      parseInt(cinemaId),
+      parseInt(id),
+      source,
+      seat
+    );
     return success(res, { data: product, message: 'Product found' });
   } catch (error) {
     next(error);
@@ -140,12 +158,13 @@ async function createOrder(req, res, next) {
 async function validateCoupon(req, res, next) {
   try {
     const { cinemaId } = req.params;
-    const { code, items, source } = req.validated.body;
+    const { code, items, source, seatNumber } = req.validated.body;
 
     const result = await consumerService.validateCouponPreview(parseInt(cinemaId), {
       code,
       items,
       source,
+      seatNumber,
     });
 
     return success(res, {

@@ -11,7 +11,8 @@ import { useAuthStore } from './stores/auth.store';
 import { useBoardStore } from './stores/board.store';
 import type { BoardOrder, FulfilmentStatus } from './types/kitchen';
 import { COMPLETED_WINDOW_MS } from './config';
-import { nextAction } from './utils/workflow';
+import { formatDate } from './utils/time';
+import { nextAction, STATUS_LABEL } from './utils/workflow';
 import './styles/app.scss';
 
 /** The lanes the board shows, in workflow order. */
@@ -101,6 +102,32 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
   }, [active, recentCompleted]);
 
   /**
+   * Where each row's ticket numbering starts, running once across all three
+   * live rows in workflow order rather than restarting at 1 per row - see the
+   * position comment on OrderCard.
+   */
+  const laneStartIndex = useMemo(() => {
+    const starts: Partial<Record<FulfilmentStatus, number>> = {};
+    let running = 0;
+    for (const status of LANES) {
+      starts[status] = running;
+      running += byStatus[status].length;
+    }
+    return starts as Record<FulfilmentStatus, number>;
+  }, [byStatus]);
+
+  /** Same numbering the rows use, keyed by order id, so the focus view can show it too. */
+  const positionByOrderId = useMemo(() => {
+    const positions = new Map<number, number>();
+    for (const status of LANES) {
+      byStatus[status].forEach((order, index) => {
+        positions.set(order.id, laneStartIndex[status] + index + 1);
+      });
+    }
+    return positions;
+  }, [byStatus, laneStartIndex]);
+
+  /**
    * The order shown in the focus view.
    *
    * Looked up from the live board on every render rather than copied into
@@ -150,7 +177,20 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
       // Belt and braces: the button is only rendered when an action exists, so
       // this cannot fire an invalid transition even if that changes.
       if (!action) return;
-      void transition(order.id, action.status);
+
+      void transition(order.id, action.status).then((result) => {
+        /*
+         * Delivering an order is the end of the kitchen's work on it, so the
+         * focus view closes and hands the screen back to the board. Earlier
+         * steps deliberately keep it open - a cook marking an order preparing
+         * usually wants to keep reading the same ticket.
+         *
+         * Only on a genuine success: a 409 means another screen moved it
+         * first and the board is being re-read, and the corrected state is
+         * exactly what the person at this screen needs to see.
+         */
+        if (result === 'ok' && action.status === 'delivered') setOpenOrderId(null);
+      });
     },
     [transition]
   );
@@ -189,6 +229,16 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
         </p>
       )}
 
+      <div className="board__title">
+        <h1 className="board__heading">
+          {statusFilter === 'all' ? 'All Orders' : `${STATUS_LABEL[statusFilter]} Orders`}
+        </h1>
+        <span className="board__date">
+          <span aria-hidden="true">📅</span>
+          {formatDate(new Date(now))}
+        </span>
+      </div>
+
       <main className="app__board">
         {initialLoading ? (
           <p className="app__state">Loading the kitchen board…</p>
@@ -207,9 +257,8 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
                   status={status}
                   orders={byStatus[status]}
                   now={now}
-                  pending={pending}
+                  startIndex={laneStartIndex[status]}
                   onOpen={setOpenOrderId}
-                  onAdvance={handleAdvance}
                 />
               ))}
             </div>
@@ -219,9 +268,8 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
                 status="delivered"
                 orders={recentCompleted}
                 now={now}
-                pending={pending}
+                startIndex={0}
                 onOpen={setOpenOrderId}
-                onAdvance={handleAdvance}
               />
             )}
           </>
@@ -239,6 +287,7 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
         <OrderDetail
           order={openOrder}
           now={now}
+          position={positionByOrderId.get(openOrder.id)}
           pending={pending.has(openOrder.id)}
           onClose={() => setOpenOrderId(null)}
           onAdvance={handleAdvance}

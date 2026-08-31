@@ -432,10 +432,12 @@ export interface ConsumerSession {
      */
   screenName?: string | null;
   /**
-     * QBusto's own screen id for that auditorium, resolved from screenName. Send this as the order's screenId. Null when no active screen matches.
+     * QBusto's own screen id, resolved from screenName ONLY when that name identifies exactly one active screen at the cinema. Null when no screen matches OR when the cinema's screen data is one row per seat row rather than per auditorium - see seatRows below for that case. Not sent by the client: the order endpoint resolves the real id itself from screenName and seatRow.
      * @nullable
      */
   screenId?: number | null;
+  /** The seat rows available under this screen name, sorted, when the cinema's screen data is one row per seat row (screenId above is null in that case). Empty when it is not - the row field is then free text. Send the row the customer picks as the order's seatRow. */
+  seatRows?: string[];
   /** @nullable */
   filmCode?: string | null;
   /**
@@ -2014,7 +2016,26 @@ search?: string;
  */
 limit?: number;
 page?: number;
+/**
+ * Which channel's price to show: the SAME source the order will be placed with, so the displayed price is the price charged. Each product_pricing row carries a discount per channel (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or omitted prices as `qr`, the lobby rate.
+ */
+source?: GetApiConsumerCinemasCinemaIdProductsSource;
+/**
+ * The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr` source, not a stored value - only its presence is read. A `seat_qr` request that names no seat is priced as `qr`, because a seat order with no seat has nowhere to be delivered. Ignored for every other source.
+ * @maxLength 20
+ */
+seat?: string;
 };
+
+export type GetApiConsumerCinemasCinemaIdProductsSource = typeof GetApiConsumerCinemasCinemaIdProductsSource[keyof typeof GetApiConsumerCinemasCinemaIdProductsSource];
+
+
+export const GetApiConsumerCinemasCinemaIdProductsSource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
 
 export type GetApiConsumerCinemasCinemaIdProducts200Meta = {
   pagination?: Pagination;
@@ -2024,6 +2045,28 @@ export type GetApiConsumerCinemasCinemaIdProducts200 = SuccessResponse & {
   data?: Product[];
   meta?: GetApiConsumerCinemasCinemaIdProducts200Meta;
 };
+
+export type GetApiConsumerCinemasCinemaIdProductsIdParams = {
+/**
+ * Which channel's price to show: the SAME source the order will be placed with, so the displayed price is the price charged. Each product_pricing row carries a discount per channel (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or omitted prices as `qr`, the lobby rate.
+ */
+source?: GetApiConsumerCinemasCinemaIdProductsIdSource;
+/**
+ * The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr` source, not a stored value - only its presence is read. A `seat_qr` request that names no seat is priced as `qr`, because a seat order with no seat has nowhere to be delivered. Ignored for every other source.
+ * @maxLength 20
+ */
+seat?: string;
+};
+
+export type GetApiConsumerCinemasCinemaIdProductsIdSource = typeof GetApiConsumerCinemasCinemaIdProductsIdSource[keyof typeof GetApiConsumerCinemasCinemaIdProductsIdSource];
+
+
+export const GetApiConsumerCinemasCinemaIdProductsIdSource = {
+  qr: 'qr',
+  seat_qr: 'seat_qr',
+  kiosk: 'kiosk',
+  counter: 'counter',
+} as const;
 
 export type GetApiConsumerCinemasCinemaIdProductsId200 = SuccessResponse & {
   data?: Product;
@@ -2070,8 +2113,16 @@ export type PostApiConsumerOrdersBodyItemsItem = {
 
 export type PostApiConsumerOrdersBody = {
   cinemaId: number;
-  /** @nullable */
-  screenId?: number | null;
+  /**
+     * The screenName of the session the customer picked (see GET .../sessions). The server resolves the real screen id from this plus seatRow - a client-supplied id is not accepted.
+     * @nullable
+     */
+  screenName?: string | null;
+  /**
+     * Required when the picked session's seatRows was non-empty - the row the customer chose from that list. Ignored for an auditorium-grain screen, where screenName alone resolves it.
+     * @nullable
+     */
+  seatRow?: string | null;
   /** @nullable */
   seatNumber?: string | null;
   source: PostApiConsumerOrdersBodySource;
@@ -2158,6 +2209,12 @@ export type PostApiConsumerCinemasCinemaIdCouponsValidateBodyItemsItem = {
 export type PostApiConsumerCinemasCinemaIdCouponsValidateBody = {
   code: string;
   source: PostApiConsumerCinemasCinemaIdCouponsValidateBodySource;
+  /**
+     * Evidence for a `seat_qr` source, the same field the order carries. Without it a `seat_qr` preview quotes the `qr` rate - which is what the order would then charge.
+     * @maxLength 20
+     * @nullable
+     */
+  seatNumber?: string | null;
   /** @minItems 1 */
   items: PostApiConsumerCinemasCinemaIdCouponsValidateBodyItemsItem[];
 };

@@ -11,6 +11,9 @@ interface ThumbnailProps {
   iconSize?: number;
 }
 
+/** Which of the three states this image is in, and for WHICH url. */
+type LoadState = { src: string; status: 'loaded' | 'failed' };
+
 /**
  * An image that falls back to the placeholder glyph instead of a broken icon.
  *
@@ -21,6 +24,18 @@ interface ThumbnailProps {
  *
  * The absent-`src` and failed-`src` cases deliberately render the same thing:
  * to a customer they are the same situation.
+ *
+ * A THIRD case is distinct from both: a good `src` that has not arrived yet.
+ * Until it decodes the element is an empty box, which across a menu of product
+ * art reads as a page that half-loaded. It carries the shared shimmer until
+ * `load` fires instead, so the card looks pending rather than broken. This
+ * covers a lazy image too — one below the fold shimmers until it is scrolled
+ * to, which is precisely what is happening to it.
+ *
+ * The state is stored WITH the url it describes rather than as a bare boolean,
+ * because these components are reused as the list re-renders: a plain flag
+ * would leave the previous product's "already loaded" (or "failed") verdict
+ * attached to the next product's image.
  */
 export default function Thumbnail({
   src,
@@ -29,11 +44,13 @@ export default function Thumbnail({
   placeholderClassName,
   iconSize = 24,
 }: ThumbnailProps) {
-  const [failed, setFailed] = useState(false);
+  const [state, setState] = useState<LoadState | null>(null);
 
   // An `/uploads/...` value is a path on the backend, not on this origin.
   // Resolving here covers every product and category image in one place.
   const resolved = resolveImageUrl(src);
+
+  const failed = state !== null && state.src === resolved && state.status === 'failed';
 
   if (!resolved || failed) {
     return (
@@ -43,15 +60,18 @@ export default function Thumbnail({
     );
   }
 
+  const pending = state === null || state.src !== resolved || state.status !== 'loaded';
+
   return (
     <img
       src={resolved}
       alt={alt}
-      className={imgClassName}
+      className={`${imgClassName ?? ''}${pending ? ' skeleton' : ''}`.trim() || undefined}
       loading="lazy"
       // Decode off the main thread so a large image cannot jank a scroll.
       decoding="async"
-      onError={() => setFailed(true)}
+      onLoad={() => setState({ src: resolved, status: 'loaded' })}
+      onError={() => setState({ src: resolved, status: 'failed' })}
     />
   );
 }

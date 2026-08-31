@@ -556,9 +556,14 @@ credential.
 ### 8.3 Checkout (frontend)
 
 - `@cashfreepayments/cashfree-js`'s `loadCashfree({ mode })` — **not** a CDN
-  `<script>` tag. `mode` is `VITE_CASHFREE_MODE` (`sandbox`|`production`),
-  which **must match** the backend's `CASHFREE_ENVIRONMENT` or the session id
-  is rejected by the SDK.
+  `<script>` tag. `mode` comes from `VITE_CASHFREE_MODE`, which accepts the
+  same four words the `environment` column does (`test`/`sandbox`/`prod`/
+  `production`) and maps them onto the SDK's two. It **must match the
+  environment of the cinema whose session it is** or the SDK rejects the
+  session id. Note the shape of this: the Consumer bakes ONE mode in at build
+  time while environment is per-cinema, so a deployment whose cinemas differ
+  can only satisfy some of them. Known limitation, and it pre-dates the removal
+  of the global credentials.
 - `payment-init` is called automatically on mount, once.
 - On "Pay": `cashfree.checkout({ paymentSessionId, redirectTarget: '_modal' })`
   — stays in-page as a modal in the normal case; the SDK only navigates away
@@ -882,10 +887,10 @@ itself).
   confirming explicitly: "we will follow encryption and not store plain
   text."
 - **Resolution** (`cashfree.client.resolveCredentials(cinemaId)`): that
-  cinema's active `payment_gateway_config` row first; the global
-  `CASHFREE_APP_ID`/`_SECRET_KEY`/`_ENVIRONMENT` env vars only as a fallback,
-  logged at `warn` every time it fires (`cinemaId` included, never the
-  credential). `getClientForCinema()` builds a fresh `Cashfree` SDK instance
+  cinema's active `payment_gateway_config` row, and nothing else. No row, or a
+  row whose secret will not decrypt, throws `Cashfree is not configured for
+  this cinema`, logged at `warn` (`cinemaId` included, never the credential),
+  and payment-init answers 503. There is no env fallback behind it. `getClientForCinema()` builds a fresh `Cashfree` SDK instance
   per call rather than caching one - deliberately, since a cached client
   built from a since-rotated secret would keep authenticating with the old
   one until the process restarted, and constructing the SDK object is cheap.
@@ -1363,42 +1368,40 @@ production**, warned below that in development), `JWT_EXPIRES_IN` (1d),
 `JWT_ISSUER` (qbusto); `CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS`;
 `LOG_LEVEL`, `LOG_DIR`; `RATE_LIMIT_WINDOW_MS` (15 min), `RATE_LIMIT_MAX` (300);
 `SWAGGER_ENABLED`; `FILE_STORAGE_PATH`, `MAX_UPLOAD_SIZE_MB` (5, max 50);
-`CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY`, `CASHFREE_ENVIRONMENT` (`test|
-sandbox|prod|production`, default `test`), `CASHFREE_NOTIFY_URL` (optional),
-`CASHFREE_RETURN_URL` (optional), `CASHFREE_FALLBACK_CUSTOMER_PHONE` (default
-`9999999999`), `CASHFREE_TIMEOUT_MS` (default 4000, max 30000).
+`CASHFREE_NOTIFY_URL` (optional), `CASHFREE_RETURN_URL` (optional),
+`CASHFREE_FALLBACK_CUSTOMER_PHONE` (default `9999999999`),
+`CASHFREE_TIMEOUT_MS` (default 4000, max 30000).
 `CREDENTIALS_ENCRYPTION_KEY` (64 hex chars / 32 bytes, required - encrypts
 `payment_gateway_config.gateway_secret_encrypted`, see §8.14).
 
-**These three `CASHFREE_*` vars are now the FALLBACK, not the sole
-credential source** — §8.14's per-cinema `payment_gateway_config` is tried
-first. Boot still requires them regardless, since a fallback that cannot
-itself be configured is not a fallback. (`CASHFREE_APPROVED_OFFER_CODES`,
-which briefly existed during this session's offer-in-Cashfree design, was
-removed entirely in the revert - see §8.15.)
+**There are NO Cashfree credential env vars.** `CASHFREE_APP_ID`,
+`CASHFREE_SECRET_KEY` and `CASHFREE_ENVIRONMENT` were removed: §8.14's
+per-cinema `payment_gateway_config` is the only source of credentials and
+environment anywhere in the system. A cinema with no active row cannot take
+payments and says so at payment-init (503). The deployment-wide pair was
+deliberately deleted rather than kept as a fallback — a global credential
+standing in for a cinema nobody finished configuring routes that cinema's
+money into another merchant account while every signal looks healthy. What
+remains above is transport and call shape only; none of it can authenticate
+anything. (`CASHFREE_APPROVED_OFFER_CODES`, which briefly existed during the
+offer-in-Cashfree design, was removed entirely in the revert - see §8.15.)
 
-**There is no separate webhook secret with Cashfree** — `CASHFREE_SECRET_KEY`
-both authenticates API calls and is the key Cashfree signs webhooks with. This
-is the biggest operational difference from Razorpay's model, where
+**There is no separate webhook secret with Cashfree** — the cinema's own
+secret key both authenticates API calls and is the key Cashfree signs webhooks
+with. This is the biggest operational difference from Razorpay's model, where
 `RAZORPAY_WEBHOOK_SECRET` was a distinct value generated per-webhook.
 
-**Boot guards (each exists because the failure is otherwise silent):**
-
-1. **production + missing `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` → throw.**
-   Without both, no payment can be taken and no webhook could be verified even
-   if one were configured.
-2. **production + `CASHFREE_ENVIRONMENT` not `prod`/`production` → throw.**
-   Checkout works, webhooks verify, orders are marked paid, food goes out — and
-   no real money is taken. Nothing downstream can detect it.
-3. **non-production + `CASHFREE_ENVIRONMENT` = `prod`/`production` → warn.** A
-   developer copying a production `.env` would charge real cards from their
-   laptop. A warning, not a throw, because live-credential debugging is
-   occasionally legitimate.
-4. **only one of the credential pair set → warn.** Payments are disabled until
-   both are present; failing loudly at boot beats a payment endpoint that fails
-   on first use and looks like an outage.
-5. **production + short `CASHFREE_SECRET_KEY` → warn.** Catches a truncated
-   copy-paste without rejecting a legitimately short but valid credential.
+**There are no Cashfree boot guards, and that is deliberate.** Five of them
+existed (production + missing credentials → throw; production + non-prod
+environment → throw; non-production + prod environment → warn; half-configured
+pair → warn; short secret → warn). All five inspected values this process no
+longer holds. Credentials and environment now live in rows that change while
+the process runs, so a boot-time check could only assert something it cannot
+see. The equivalent failure is per-cinema instead: a cinema configured for
+`test` takes no real money, visible in its Dashboard payment settings and in
+the `environment` column. **This is a genuine loss of a safety net** — the
+"production deploy pointed at sandbox, food goes out, no money taken" case is
+no longer caught anywhere automatically.
 
 Confirmed live during the adversarial payment-flow test: `CASHFREE_NOTIFY_URL`
 and `CASHFREE_RETURN_URL` were **both empty** in this environment's `.env`.
@@ -1474,15 +1477,13 @@ Helper scripts in `backend/scripts/`: `create-dev-user.js`, `seed-dev-data.js`,
 - Explicit `CORS_ALLOWED_ORIGINS` list; a wildcard is a development convenience
   and is warned about at startup.
 - `JWT_SECRET` ≥ 32 characters (enforced).
-- `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY` configured and `CASHFREE_ENVIRONMENT`
-  set to `prod`/`production` (both enforced — boot fails otherwise). **This is
-  now the fallback pair, not necessarily what any given cinema settles
-  against** — see §8.14. For each production cinema, decide explicitly
-  whether it runs its own `payment_gateway_config` row (with its own
-  `environment: production`, which is **not** boot-checked the way the global
-  var is) or intentionally shares this fallback; a cinema silently falling
-  back is logged at `warn` every time, not an error. **Not enforced, but
-  required in practice:** either `CASHFREE_NOTIFY_URL` is set, or an
+- **Every production cinema has its own active `payment_gateway_config` row,
+  with `environment` set to `prod`/`production`.** There are no global
+  credentials to inherit and nothing checks this at boot, so it is a manual
+  pre-flight item: a cinema left on `test` takes no real money while checkout,
+  webhooks and order status all look healthy, and a cinema with no row at all
+  fails visibly at payment-init with a 503. **Not enforced, but required in
+  practice:** either `CASHFREE_NOTIFY_URL` is set, or an
   equivalent webhook URL is registered directly in the Cashfree Dashboard
   (Developers → Webhooks) — without one of the two, a payment where the
   customer's browser never returns has no automatic settlement path.
@@ -1493,8 +1494,9 @@ Helper scripts in `backend/scripts/`: `create-dev-user.js`, `seed-dev-data.js`,
   up somewhere durable, **outside the database** — every cinema's stored
   Cashfree secret is encrypted with this exact key, and losing or rotating it
   makes every one of them undecryptable.
-- `VITE_CASHFREE_MODE` (consumer, build-time) must match `CASHFREE_ENVIRONMENT`
-  (backend) — `production`/`prod` together, or the SDK rejects the session id.
+- `VITE_CASHFREE_MODE` (consumer, build-time) must match the `environment` of
+  every cinema this build serves, or the SDK rejects the session id. One build
+  carries one mode, so cinemas on mixed environments need separate builds.
 - Migrations and seeders applied before starting.
 - `FILE_STORAGE_PATH` set to a directory **outside the application directory**,
   created, writable by the service account, and **added to the backup

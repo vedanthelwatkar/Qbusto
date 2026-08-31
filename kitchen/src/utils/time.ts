@@ -70,6 +70,42 @@ export function urgencyOf(elapsed: number): Urgency {
 }
 
 /**
+ * The elapsed figure in words, for the board's cards: "5 min ago" for a
+ * still-waiting order (it was PLACED that long ago), "Took 12 min" once it has
+ * settled (`fulfilmentElapsed`'s `settled` flag) - a finished order did not
+ * happen "ago", it took a duration. The focus view keeps the precise `MM:SS`
+ * clock from `formatDuration` instead; this is only for the card, which is
+ * read from across the room and does not need second-level precision.
+ */
+export function formatElapsedWords(ms: number, settled: boolean): string {
+  const magnitude = coarseDuration(ms);
+
+  if (settled) return magnitude ? `Took ${magnitude}` : 'Took under a minute';
+  return magnitude ? `${magnitude} ago` : 'Just now';
+}
+
+/**
+ * The largest unit that still says something useful, and only that unit.
+ *
+ * Minutes alone were wrong at the top end: an order left on the board over a
+ * weekend rendered as "9220 min ago", which is a number nobody converts in
+ * their head. It steps up to hours and then days so the figure stays short
+ * enough to read from across the room. Returns '' for under a minute, which
+ * the caller words as "Just now" rather than "0 min".
+ */
+function coarseDuration(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return '';
+  if (minutes < 60) return `${minutes} min`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? '1 hr' : `${hours} hrs`;
+
+  const days = Math.floor(hours / 24);
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+/**
  * A running duration, as a kitchen reads it: `MM:SS` under an hour, `H:MM:SS`
  * over. Zero-padded so the digits do not jump around as they tick.
  */

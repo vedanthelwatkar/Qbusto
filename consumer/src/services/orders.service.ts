@@ -48,9 +48,20 @@ export async function previewCoupon(
   cinemaId: number,
   code: string,
   items: Array<{ productId: number; quantity: number }>,
-  source: PostApiConsumerOrdersBody['source']
+  source: PostApiConsumerOrdersBody['source'],
+  /**
+   * Evidence for a `seat_qr` source, the same field the order carries. The
+   * preview derives its source exactly as order creation does, so omitting a
+   * seat here quotes the lobby rate - which is what the order would charge.
+   */
+  seatNumber?: string | null
 ): Promise<PostApiConsumerCinemasCinemaIdCouponsValidate200Data> {
-  const response = await validateCoupon(cinemaId, { code, items, source });
+  const response = await validateCoupon(cinemaId, {
+    code,
+    items,
+    source,
+    seatNumber: seatNumber || undefined,
+  });
   // The envelope's `data` is optional in the contract; a 2xx with no body is
   // treated the same as "not valid" rather than throwing on a shape the type
   // already says is possible.
@@ -98,17 +109,22 @@ export async function verifyOrderPayment(
 /**
  * Everything checkout needs to place one order.
  *
- * The show contributes three of these: an order carries `screenId`,
+ * The show contributes most of these: an order carries `screenName`,
  * `filmTitle` and `showTime` separately, and the picker's job is to supply all
- * three from one choice rather than asking the customer for each.
+ * three from one choice rather than asking the customer for each. The
+ * auditorium itself is never sent as an id - only `screenName` plus the
+ * `seatRow` the customer entered, which the backend resolves to the real
+ * `screens.id` itself (see consumer.service.resolveScreenId on the backend).
  */
 export interface PlaceOrderInput {
   cinemaId: number;
+  /** The session's own screen name. Null when no show was selected. */
+  screenName: string | null;
   /**
-   * The auditorium, from the entry context. Nullable: a lobby QR does not name
-   * one, and the schedule does not supply one either.
+   * The row the customer entered or picked, uppercased. Required only when
+   * the selected session's `seatRows` was non-empty; ignored otherwise.
    */
-  screenId: number | null;
+  seatRow: string | null;
   filmTitle: string;
   /** ISO instant, as the API expects. */
   showTime: string;
@@ -142,7 +158,8 @@ export async function placeOrder(
 ): Promise<PostApiConsumerOrders201Data | undefined> {
   const orderData: PostApiConsumerOrdersBody = {
     cinemaId: input.cinemaId,
-    screenId: input.screenId,
+    screenName: input.screenName,
+    seatRow: input.seatRow,
     seatNumber: input.seatNumber,
     source: input.source,
     customerMobile: input.customerMobile,

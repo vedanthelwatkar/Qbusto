@@ -51,7 +51,12 @@ const items = Joi.array().items(orderItem).min(1).max(50).required().messages({
 const createOrder = {
   body: Joi.object({
     cinemaId: id.required(),
-    screenId: id.allow(null).default(null),
+    // The auditorium is never taken from the client as an id - only resolved
+    // server-side from the show's screen name plus the row below (see
+    // consumer.service.resolveScreenId). screenName is always present once a
+    // show has been picked.
+    screenName: optionalText(50).default(null),
+    seatRow: optionalText(2).default(null),
     seatNumber: optionalText(20).default(null),
     source: Joi.string()
       .valid(...ORDER_SOURCE_NAMES)
@@ -86,6 +91,12 @@ const validateCoupon = {
     source: Joi.string()
       .valid(...ORDER_SOURCE_NAMES)
       .required(),
+    // Evidence for a `seat_qr` claim, matching createOrder's own field so the
+    // preview derives the same source the order will (see
+    // pricing.service.deriveSource). Optional: every other source needs none,
+    // and a seat_qr preview without one simply previews the lobby rate - which
+    // is exactly what the order would then charge.
+    seatNumber: optionalText(20).default(null),
     items,
   }),
 };

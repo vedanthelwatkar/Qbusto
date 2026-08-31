@@ -37,13 +37,28 @@
     text-align: center;
   }
 
+  /* Icon + wordmark as one lockup, matching how the Dashboard and Kitchen
+     present the brand. Both parents centre their children, so the row stays
+     centred without any alignment of its own. */
   &__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-bold);
     letter-spacing: var(--tracking-wide);
     text-transform: uppercase;
     color: var(--color-primary-text);
     margin-bottom: var(--space-lg);
+  }
+
+  /* The app icon itself, which carries its own colour and transparent ground
+     and so needs no plate behind it. */
+  &__mark {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    object-fit: contain;
   }
 
   &__title {
@@ -186,6 +201,9 @@
   }
 
   &__art {
+    /* Containing block for the poster while it is out of flow behind the
+       skeleton (see &__art-image.is-loading). */
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -195,6 +213,18 @@
     transition: transform var(--transition-fast);
   }
 
+  /* Stands in for the poster while the cinema record, and then the poster's
+     own bytes, are still arriving. The real frame takes its height from the
+     image, so there is no exact size to mirror; this is a deliberate middle
+     of the 70dvh cap, chosen so the cue lines above and below sit roughly
+     where they will end up. */
+  &__art-skeleton {
+    display: block;
+    width: 100%;
+    height: 52dvh;
+    border-radius: var(--radius-lg);
+  }
+
   &__art-image {
     display: block;
     width: 100%;
@@ -202,6 +232,14 @@
     /* `contain` via auto height: the poster is authored art and must never be
        cropped or stretched, so the frame follows the image's own ratio. */
     max-height: 70dvh;
+
+    /* Kept in the document so the browser fetches it, but out of the layout
+       so the skeleton above is the only thing occupying the frame. */
+    &.is-loading {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
   }
 
   /* Text hero shown inside the stage when a cinema has no artwork. */

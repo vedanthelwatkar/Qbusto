@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import type { BoardOrder } from '../types/kitchen';
+import type { BoardOrder, FulfilmentStatus } from '../types/kitchen';
 import {
   fulfilmentElapsed,
   formatClock,
@@ -13,10 +13,18 @@ import { STATUS_ICON, STATUS_LABEL, destinationOf, nextAction, sourceLabel } fro
 interface OrderDetailProps {
   order: BoardOrder;
   now: number;
+  /** This order's numbered tile, matching the one on its board card. */
+  position?: number;
   pending: boolean;
   onClose: () => void;
   onAdvance: (order: BoardOrder) => void;
 }
+
+/** Workflow order, for placing each stage button relative to where the order actually is. */
+const FLOW_ORDER: FulfilmentStatus[] = ['confirmed', 'preparing', 'ready', 'delivered'];
+
+/** The three stages the kitchen can drive an order through, in order. */
+const STAGES: FulfilmentStatus[] = ['preparing', 'ready', 'delivered'];
 
 /**
  * The focused ticket.
@@ -31,13 +39,14 @@ interface OrderDetailProps {
  * Rendered as a modal dialog: focus moves in on open, Escape closes, and the
  * background is inert to a screen reader while it is up.
  */
-export function OrderDetail({ order, now, pending, onClose, onAdvance }: OrderDetailProps) {
+export function OrderDetail({ order, now, position, pending, onClose, onAdvance }: OrderDetailProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Stopped once delivered - see fulfilmentElapsed.
   const { ms: elapsed, settled } = fulfilmentElapsed(order, now);
   const urgency = settled ? 'normal' : urgencyOf(elapsed);
   const action = nextAction(order.status);
+  const currentFlowIndex = FLOW_ORDER.indexOf(order.status);
 
   // Escape closes, and focus starts somewhere sensible rather than on the body.
   useEffect(() => {
@@ -63,6 +72,11 @@ export function OrderDetail({ order, now, pending, onClose, onAdvance }: OrderDe
       >
         <header className="detail__head">
           <div className="detail__identity">
+            {typeof position === 'number' && (
+              <span className="detail__position" aria-hidden="true">
+                {position}
+              </span>
+            )}
             <span className="detail__token" id="detail-token">
               #{order.id}
             </span>
@@ -164,18 +178,35 @@ export function OrderDetail({ order, now, pending, onClose, onAdvance }: OrderDe
             </div>
           </div>
 
-          {action ? (
-            <button
-              type="button"
-              className="detail__action"
-              onClick={() => onAdvance(order)}
-              disabled={pending}
-            >
-              {pending ? 'Working…' : action.label}
-            </button>
-          ) : (
-            <p className="detail__done">This order is complete.</p>
-          )}
+          {/*
+            The three stages the kitchen can drive an order through, always
+            shown together so a cook can see the whole workflow at a glance.
+            Only the one immediately after the order's current status is ever
+            clickable - the same single-step rule nextAction() has always
+            enforced, just drawn as a row instead of one changing button, so
+            a stage can never be skipped from here either.
+          */}
+          <div className="detail__stages" role="group" aria-label="Advance this order">
+            {STAGES.map((stage) => {
+              const stageFlowIndex = FLOW_ORDER.indexOf(stage);
+              const done = stageFlowIndex <= currentFlowIndex;
+              const isNext = action?.status === stage;
+
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  className={`detail__stage detail__stage--${stage}${done ? ' detail__stage--done' : ''}${isNext ? ' detail__stage--next' : ''}`}
+                  onClick={() => onAdvance(order)}
+                  disabled={!isNext || pending}
+                  aria-current={isNext ? 'step' : undefined}
+                >
+                  <span aria-hidden="true">{STATUS_ICON[stage]}</span>
+                  {isNext && pending ? 'Working…' : STATUS_LABEL[stage]}
+                </button>
+              );
+            })}
+          </div>
         </footer>
       </div>
     </div>

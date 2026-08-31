@@ -34,12 +34,32 @@ import '../styles/pages/payment.scss';
  * Which Cashfree environment the checkout session belongs to.
  *
  * Baked in at build time like every other VITE_* value, and it MUST match the
- * environment the backend created the session in - a sandbox session handed to
- * a production checkout simply fails to open. Defaults to sandbox so a
- * misconfigured build cannot accidentally take real money.
+ * environment the backend created the session in - a session issued by one is
+ * meaningless to the other, and the checkout simply never opens.
+ *
+ * The accepted values are the backend's, not the SDK's. A cinema's
+ * `payment_gateway_config.environment` column takes
+ * `test`/`sandbox`/`prod`/`production`, so this takes the same four and maps
+ * them onto the two the SDK's `mode` actually has. Two vocabularies for one
+ * setting is how a deploy ends up with `prod` here, silently falling through
+ * to sandbox against live credentials.
+ *
+ * KNOWN LIMITATION: this is one build-time value, while environment is per
+ * cinema. A deployment whose cinemas are on different Cashfree environments
+ * can only satisfy some of them from a single build.
+ *
+ * Anything else - unset, misspelt - is sandbox. An omitted value must never be
+ * the one that takes real money.
  */
-const CASHFREE_MODE: 'sandbox' | 'production' =
-  import.meta.env.VITE_CASHFREE_MODE === 'production' ? 'production' : 'sandbox';
+const PRODUCTION_ALIASES = ['prod', 'production'];
+
+const CASHFREE_MODE: 'sandbox' | 'production' = PRODUCTION_ALIASES.includes(
+  String(import.meta.env.VITE_CASHFREE_MODE ?? '')
+    .trim()
+    .toLowerCase()
+)
+  ? 'production'
+  : 'sandbox';
 
 /**
  * How long verification may run before the copy escalates from "processing" to

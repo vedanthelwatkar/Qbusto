@@ -30,7 +30,14 @@ export function formatApiError(error: unknown): string {
       case 400:
         return message || 'The server rejected that request.';
       case 401:
-        return 'Session expired. Sign in again.';
+        // A failed sign-in attempt is a 401 too, and the backend's message
+        // for it - "Invalid username or password" - is the one a cook at the
+        // login screen actually needs. Nothing else in the app surfaces this
+        // branch's text: every other 401 (an expired token mid-session) is
+        // caught by isUnauthenticated() first and signs the screen out
+        // without displaying a message at all, so the fallback below only
+        // matters if the backend ever omits one.
+        return message || 'Session expired. Sign in again.';
       case 403:
         // Prefer the server's wording. The backend refuses a kitchen account
         // with no cinema assigned and says exactly how to fix it; replacing

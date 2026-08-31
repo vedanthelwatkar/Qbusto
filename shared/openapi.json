@@ -991,7 +991,19 @@
             "type": "integer",
             "nullable": true,
             "example": 22,
-            "description": "QBusto's own screen id for that auditorium, resolved from screenName. Send this as the order's screenId. Null when no active screen matches."
+            "description": "QBusto's own screen id, resolved from screenName ONLY when that name identifies exactly one active screen at the cinema. Null when no screen matches OR when the cinema's screen data is one row per seat row rather than per auditorium - see seatRows below for that case. Not sent by the client: the order endpoint resolves the real id itself from screenName and seatRow."
+          },
+          "seatRows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "A",
+              "B",
+              "C"
+            ],
+            "description": "The seat rows available under this screen name, sorted, when the cinema's screen data is one row per seat row (screenId above is null in that case). Empty when it is not - the row field is then free text. Send the row the customer picks as the order's seatRow."
           },
           "filmCode": {
             "type": "string",
@@ -5919,6 +5931,30 @@
               "type": "integer",
               "default": 1
             }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Which channel's price to show: the SAME source the order will be placed with, so the displayed price is the price charged. Each product_pricing row carries a discount per channel (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or omitted prices as `qr`, the lobby rate.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "qr",
+                "seat_qr",
+                "kiosk",
+                "counter"
+              ],
+              "default": "qr"
+            }
+          },
+          {
+            "name": "seat",
+            "in": "query",
+            "description": "The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr` source, not a stored value - only its presence is read. A `seat_qr` request that names no seat is priced as `qr`, because a seat order with no seat has nowhere to be delivered. Ignored for every other source.\n",
+            "schema": {
+              "type": "string",
+              "maxLength": 20
+            }
           }
         ],
         "responses": {
@@ -5982,6 +6018,30 @@
             "required": true,
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Which channel's price to show: the SAME source the order will be placed with, so the displayed price is the price charged. Each product_pricing row carries a discount per channel (discount_on_qr / _seat_qr / _kiosk / _counter). Unrecognised or omitted prices as `qr`, the lobby rate.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "qr",
+                "seat_qr",
+                "kiosk",
+                "counter"
+              ],
+              "default": "qr"
+            }
+          },
+          {
+            "name": "seat",
+            "in": "query",
+            "description": "The seat this visit is for, e.g. `A5`. Evidence for a `seat_qr` source, not a stored value - only its presence is read. A `seat_qr` request that names no seat is priced as `qr`, because a seat order with no seat has nowhere to be delivered. Ignored for every other source.\n",
+            "schema": {
+              "type": "string",
+              "maxLength": 20
             }
           }
         ],
@@ -6080,7 +6140,7 @@
           "Consumer - Catalog"
         ],
         "summary": "Get bookable sessions for a cinema",
-        "description": "Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.\n\nThe Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenId`, `filmTitle` and `showTime` together, so the customer does not enter the three separately and they cannot disagree.\n\nSessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.\n",
+        "description": "Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.\n\nThe Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenName`, `filmTitle` and `showTime` together, so the customer does not enter these separately and they cannot disagree. `screenName` plus the row the customer enters (or picks from `seatRows`, when non-empty) resolve to the order's actual screen id server-side.\n\nSessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.\n",
         "parameters": [
           {
             "name": "cinemaId",
@@ -6155,9 +6215,15 @@
                   "cinemaId": {
                     "type": "integer"
                   },
-                  "screenId": {
-                    "type": "integer",
-                    "nullable": true
+                  "screenName": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "The screenName of the session the customer picked (see GET .../sessions). The server resolves the real screen id from this plus seatRow - a client-supplied id is not accepted.\n"
+                  },
+                  "seatRow": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Required when the picked session's seatRows was non-empty - the row the customer chose from that list. Ignored for an auditorium-grain screen, where screenName alone resolves it.\n"
                   },
                   "seatNumber": {
                     "type": "string",
@@ -6368,6 +6434,12 @@
                       "kiosk",
                       "counter"
                     ]
+                  },
+                  "seatNumber": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true,
+                    "description": "Evidence for a `seat_qr` source, the same field the order carries. Without it a `seat_qr` preview quotes the `qr` rate - which is what the order would then charge.\n"
                   },
                   "items": {
                     "type": "array",

@@ -34,6 +34,7 @@
 const { models } = require('../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { ROLES } = require('../constants');
+const cache = require('./cache.service');
 
 const PUBLIC_ATTRIBUTES = [
   'id',
@@ -266,12 +267,15 @@ async function deactivateCinemaProduct(actor, cinemaProductId) {
   return serializeCinemaProduct(cinemaProduct);
 }
 
+// Catalogue writes drop the read-through cache - see services/cache.service.js.
+// Wrapped at the export boundary rather than inside each function, so every
+// invalidation point in this file is visible in one place.
 module.exports = {
   listCinemaProducts,
   getCinemaProduct,
-  createCinemaProduct,
-  updateCinemaProduct,
-  deactivateCinemaProduct,
+  createCinemaProduct: cache.invalidatingAfter(createCinemaProduct),
+  updateCinemaProduct: cache.invalidatingAfter(updateCinemaProduct),
+  deactivateCinemaProduct: cache.invalidatingAfter(deactivateCinemaProduct),
   serializeCinemaProduct,
   PUBLIC_ATTRIBUTES,
 };

@@ -31,9 +31,7 @@ export function SignIn() {
     <main className="signin">
       <form className="signin__card" onSubmit={onSubmit}>
         <div className="signin__brand">
-          <span className="signin__mark" aria-hidden="true">
-            Q
-          </span>
+          <img className="signin__mark" src="/favicon-192x192.png" alt="" aria-hidden="true" />
           <h1 className="signin__title">
             QBusto <span>Kitchen Display</span>
           </h1>

@@ -74,6 +74,7 @@ const SESSIONS_PER_SCREEN = 2;
 const SESSION_STATUS_OPEN = 'O';
 
 const pricingService = require('./pricing.service');
+const cache = require('./cache.service');
 const cashfree = require('./cashfree.client');
 const couponService = require('./coupon.service');
 const { applyPaidTransition } = require('./paymenttransition.service');
@@ -124,6 +125,7 @@ const {
   unavailableReason,
   selectPricing,
   unitDiscountPaise,
+  deriveSource,
   EVERY_DAY,
 } = pricingService;
 
@@ -252,8 +254,18 @@ async function getProducts(
     search = null,
     limit = PAGINATION.DEFAULT_LIMIT,
     page = PAGINATION.DEFAULT_PAGE,
+    source = null,
+    seat = null,
   } = {}
 ) {
+  // The channel whose discount column this listing prices against. DERIVED
+  // rather than trusted: it arrives from the query string, and it must be one
+  // of exactly four values before it reaches either the column lookup or the
+  // cache key - and the seat rate has to be earned by naming a seat, exactly
+  // as it is when the order is priced for real. See pricing.service.
+  // deriveSource; the two paths call the same function so the price on the
+  // card cannot diverge from the price on the bill.
+  const orderSource = deriveSource(source, { hasSeat: Boolean(seat) });
   const cinema = await models.Cinema.findByPk(cinemaId, {
     where: { isActive: true },
     attributes: ['id'],
@@ -345,7 +357,7 @@ async function getProducts(
   const transformedProducts = pageProducts.map((product) => {
     const pricing = product.pricings && product.pricings[0];
     const unitPaise = toPaise(pricing.basePrice);
-    const discountPaise = unitDiscountPaise(pricing, ORDER_SOURCES.QR, unitPaise);
+    const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise);
     const discountedPaise = unitPaise - discountPaise;
 
     return {
@@ -366,7 +378,9 @@ async function getProducts(
 }
 
 /** GET /api/consumer/cinemas/{cinemaId}/products/{id} */
-async function getProductDetail(cinemaId, productId) {
+async function getProductDetail(cinemaId, productId, source = null, seat = null) {
+  const orderSource = deriveSource(source, { hasSeat: Boolean(seat) });
+
   const cinema = await models.Cinema.findByPk(cinemaId, {
     where: { isActive: true },
     attributes: ['id'],
@@ -426,7 +440,7 @@ async function getProductDetail(cinemaId, productId) {
 
   const pricing = product.pricings && product.pricings[0];
   const unitPaise = toPaise(pricing.basePrice);
-  const discountPaise = unitDiscountPaise(pricing, ORDER_SOURCES.QR, unitPaise);
+  const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise);
   const discountedPaise = unitPaise - discountPaise;
 
   return {
@@ -552,17 +566,22 @@ async function createOrder(payload, idempotencyKey) {
     if (!cinema) throw new NotFoundError('Cinema');
     if (!cinema.isActive) throw new ConflictError('Cinema is not active', { cinemaId: cinema.id });
 
-    // Validate screen if provided
-    if (payload.screenId) {
-      const screen = await models.Screen.findOne({
-        where: { id: payload.screenId, cinemaId: cinema.id },
-        attributes: ['id', 'isActive'],
-        transaction,
-      });
+    // The auditorium is never trusted from the client - only resolved here,
+    // from the screen name of the show the customer picked plus the seat row
+    // they entered, against `screens` (see resolveScreenId and
+    // client-tables.md "screens grain conflict"). A QR's own screenId is not
+    // used: it is fixed at print time and does not track which show the
+    // customer actually selected.
+    let screenId = null;
 
-      if (!screen) throw new NotFoundError('Screen');
-      if (!screen.isActive)
-        throw new ConflictError('Screen is not active', { screenId: payload.screenId });
+    if (payload.screenName) {
+      screenId = await resolveScreenId(cinema.id, payload.screenName, payload.seatRow);
+
+      if (!screenId) {
+        throw new ValidationError('Could not match your seat to this show', [
+          { field: 'seatRow', message: 'Please check the row and try again' },
+        ]);
+      }
     }
 
     // Validate source
@@ -572,9 +591,35 @@ async function createOrder(payload, idempotencyKey) {
       ]);
     }
 
+    /*
+     * The source this order is ENTITLED to, which is not necessarily the one
+     * it asked for.
+     *
+     * `source` selects a discount column, and it reaches us as an editable
+     * query-string value with nothing authenticating it. `seat_qr` is the one
+     * claim the request can substantiate on its own - a seat QR carries a
+     * seat - so claiming the seat rate while naming no seat is downgraded to
+     * the lobby rate here rather than being taken at face value. See
+     * pricing.service.deriveSource for the full reasoning, including why
+     * `kiosk` and `counter` cannot be checked the same way.
+     *
+     * This value, not the claim, is what prices the lines AND what is written
+     * to orders.source, so the row records the channel the customer was
+     * actually charged as - staff reading an order later see the truth rather
+     * than the assertion.
+     */
+    const orderSource = deriveSource(payload.source, {
+      hasSeat: Boolean(payload.seatNumber),
+    });
+
     // Build order lines with pricing validation
     const now = new Date();
-    const lines = await buildOrderLines(cinema, payload, now, transaction);
+    const lines = await buildOrderLines(
+      cinema,
+      { ...payload, source: orderSource },
+      now,
+      transaction
+    );
 
     // Calculate totals
     const subtotalPaise = lines.reduce((sum, line) => sum + line.grossPaise, 0);
@@ -638,11 +683,11 @@ async function createOrder(payload, idempotencyKey) {
     const order = await models.Order.create(
       {
         cinemaId: cinema.id,
-        screenId: payload.screenId || null,
+        screenId,
         seatNumber: payload.seatNumber || null,
         statusId,
         paymentStatusId,
-        source: payload.source,
+        source: orderSource,
         customerMobile: payload.customerMobile || null,
         customerEmail: payload.customerEmail || null,
         filmTitle: payload.filmTitle || null,
@@ -792,7 +837,7 @@ async function createOrder(payload, idempotencyKey) {
  *
  * @returns {Promise<{valid: boolean, message: string|null, discount: number|null, subtotal: number}>}
  */
-async function validateCouponPreview(cinemaId, { code, items, source }) {
+async function validateCouponPreview(cinemaId, { code, items, source, seatNumber = null }) {
   const cinema = await models.Cinema.findByPk(cinemaId, {
     attributes: ['id', 'isActive'],
   });
@@ -800,7 +845,11 @@ async function validateCouponPreview(cinemaId, { code, items, source }) {
   if (!cinema) throw new NotFoundError('Cinema');
 
   const now = new Date();
-  const lines = await buildOrderLines(cinema, { items, source }, now, undefined);
+  // Derived exactly as createOrder derives it, from the same evidence: the
+  // preview's whole job is to state the subtotal the order will have, and a
+  // preview that priced a seat rate the order will refuse would understate it.
+  const previewSource = deriveSource(source, { hasSeat: Boolean(seatNumber) });
+  const lines = await buildOrderLines(cinema, { items, source: previewSource }, now, undefined);
   const subtotalPaise = lines.reduce((sum, line) => sum + line.grossPaise, 0);
 
   const result = await couponService.validateCoupon({ cinemaId: cinema.id, code, subtotalPaise });
@@ -1409,9 +1458,6 @@ function normaliseScreenName(name) {
 }
 
 /**
- * Screen name -> screens.id, for one cinema - ONLY where the name is
- * unambiguous.
- *
  * WHAT THE `screens` TABLE ACTUALLY HOLDS (measured, not assumed)
  *
  * Two different shapes live in this one table:
@@ -1426,42 +1472,89 @@ function normaliseScreenName(name) {
  *
  * On the live database the split is total: cinemas 1-7 hold only the first
  * shape (2-4 rows each, every name unique), and cinema 8 holds only the second
- * (61 rows, 6 names, EVERY row under a duplicated name - "Screen 1" is 10 rows,
- * "Screen 2" is 14). Cinema 8 therefore has no auditorium record at all.
+ * (61 rows, ~6 names, EVERY row under a duplicated name - "Screen 1" is 10
+ * rows, "Screen 2" is 14).
  *
- * Nothing in the application reads `category` or `seat_row`; they are dormant
- * columns. So there is no existing, semantically correct way to pick "the"
- * auditorium out of a seat-row set - any choice is arbitrary, and picking the
- * lowest id would store a seat-row record as the show's screen.
+ * THE RESOLUTION
  *
- * THE RULE
- *
- * Resolve only when exactly one active screen carries the name. That is the
- * existing convention (`assertNameAvailable`) and it is correct wherever the
- * data satisfies it. Where the name is ambiguous the result is NULL and the
- * caller keeps `screenName`, the external identifier the schedule supplied -
- * an honest "not known" rather than an invented mapping.
- *
- * See CLAUDE.md pitfall #4 and .claude/rules/client-tables.md: the grain
- * conflict is unresolved and is not resolved here.
+ * A name alone identifies the auditorium only in the first shape. In the
+ * second, the seat row the customer is sitting in is the other half of the
+ * key: `(cinemaId, name, seatRow)` is unique across the whole table (verified
+ * live - e.g. cinema 8 + "Screen 2" + row A is exactly one row, id 32). So the
+ * picker offers only the rows that actually exist for the chosen show
+ * (`seatRows`, from `summariseScreensByName`), and the final id is resolved at
+ * order-creation time (`resolveScreenId`), once both the name and the row the
+ * customer entered are known - never guessed from the name alone.
  */
-async function resolveScreenIdsByName(cinemaId) {
-  const screens = await models.Screen.findAll({
+async function loadActiveScreens(cinemaId) {
+  return models.Screen.findAll({
     where: { cinemaId, isActive: true },
-    attributes: ['id', 'name'],
+    attributes: ['id', 'name', 'seatRow'],
     order: [['id', 'ASC']],
   });
+}
 
-  /** name -> the single id, or null once a second row claims the same name. */
+/**
+ * Screen name -> { screenId, seatRows }, for one cinema.
+ *
+ * `screenId` is populated only for the auditorium-grain shape (name unique,
+ * no seat rows) - the case the picker needs no further input for.
+ * `seatRows` lists the distinct rows available under that name, sorted, for
+ * the seat-row-grain shape; empty when the shape doesn't apply, in which case
+ * the row field stays free text (see CheckoutDrawer).
+ */
+async function summariseScreensByName(cinemaId) {
+  const screens = await loadActiveScreens(cinemaId);
   const byName = new Map();
 
   for (const screen of screens) {
     const key = normaliseScreenName(screen.name);
-    if (byName.has(key)) byName.set(key, null);
-    else byName.set(key, screen.id);
+    if (!byName.has(key)) byName.set(key, { ids: [], seatRows: new Set() });
+    const entry = byName.get(key);
+    entry.ids.push(screen.id);
+    if (screen.seatRow) entry.seatRows.add(String(screen.seatRow).trim().toUpperCase());
   }
 
-  return byName;
+  const summary = new Map();
+  for (const [key, entry] of byName) {
+    const seatRows = [...entry.seatRows].sort();
+    summary.set(key, {
+      screenId: seatRows.length === 0 && entry.ids.length === 1 ? entry.ids[0] : null,
+      seatRows,
+    });
+  }
+
+  return summary;
+}
+
+/**
+ * Resolves one order's `screens.id` from the show's screen name plus the
+ * seat row the customer entered - the first point both parts exist. The only
+ * place `orders.screen_id` is ever set; a client-supplied id is never
+ * trusted directly (see createOrder).
+ *
+ * Auditorium-grain cinemas (no row carries `seatRow`) resolve by name alone,
+ * same as before, and `seatRow` is ignored. Seat-row-grain cinemas require an
+ * exact, case-insensitive row match; a missing or unmatched row returns null
+ * rather than a guess.
+ */
+async function resolveScreenId(cinemaId, screenName, seatRow) {
+  if (!screenName) return null;
+
+  const screens = await loadActiveScreens(cinemaId);
+  const key = normaliseScreenName(screenName);
+  const matches = screens.filter((screen) => normaliseScreenName(screen.name) === key);
+  if (matches.length === 0) return null;
+
+  const withRow = matches.filter((screen) => screen.seatRow);
+  if (withRow.length > 0) {
+    if (!seatRow) return null;
+    const row = String(seatRow).trim().toUpperCase();
+    const hit = withRow.find((screen) => String(screen.seatRow).trim().toUpperCase() === row);
+    return hit ? hit.id : null;
+  }
+
+  return matches.length === 1 ? matches[0].id : null;
 }
 
 async function getSessions(cinemaId) {
@@ -1541,39 +1634,140 @@ async function getSessions(cinemaId) {
   // selection is by proximity but the presentation stays chronological.
   const offered = sessions.filter((session) => kept.has(session));
 
-  const screenIdByName = await resolveScreenIdsByName(cinemaId);
+  const screensByName = await summariseScreensByName(cinemaId);
 
-  return offered.map((session) => ({
-    id: session.sessionId,
-    screenName: session.screenName,
-    // The screen the CHOSEN show plays in, resolved here rather than taken
-    // from the QR link - a QR's screenId is fixed at print time and does not
-    // change when the customer picks a different show.
-    //
-    // NULL when the cinema's screen names are ambiguous (see
-    // resolveScreenIdsByName). `screenName` below is always present and is the
-    // identifier to rely on in that case.
-    screenId: screenIdByName.get(normaliseScreenName(session.screenName)) ?? null,
-    filmCode: session.filmCode,
-    filmTitle: session.film ? session.film.title : null,
-    certification: session.film ? session.film.certification : null,
-    durationMinutes: session.film ? session.film.durationMinutes : null,
-    startsAt: session.startsAt,
-    endsAt: session.endsAt,
-    seatsAvailable: session.seatsAvailable,
-  }));
+  return offered.map((session) => {
+    const summary = screensByName.get(normaliseScreenName(session.screenName)) ?? {
+      screenId: null,
+      seatRows: [],
+    };
+
+    return {
+      id: session.sessionId,
+      screenName: session.screenName,
+      // The screen the CHOSEN show plays in, resolved here rather than taken
+      // from the QR link - a QR's screenId is fixed at print time and does not
+      // change when the customer picks a different show.
+      //
+      // NULL when the cinema's screen data is one row per seat row (see
+      // summariseScreensByName) - `seatRows` is populated instead, and the
+      // actual id is resolved at order-creation time once the customer has
+      // picked one.
+      screenId: summary.screenId,
+      // The rows the customer can choose from for this screen, or empty when
+      // the cinema's screen data doesn't carry rows - the picker falls back
+      // to free text in that case.
+      seatRows: summary.seatRows,
+      filmCode: session.filmCode,
+      filmTitle: session.film ? session.film.title : null,
+      certification: session.film ? session.film.certification : null,
+      durationMinutes: session.film ? session.film.durationMinutes : null,
+      startsAt: session.startsAt,
+      endsAt: session.endsAt,
+      seatsAvailable: session.seatsAvailable,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Read-through cache
+//
+// The query functions above are left exactly as they were and are wrapped here
+// instead, so the caching layer is one reviewable block rather than a call
+// threaded through every function body. Each wrapper names the parameters that
+// vary the answer; anything omitted from that object would collapse two
+// different responses onto one key.
+//
+// Only the catalogue is wrapped. getSessions, the order path and the payment
+// path are deliberately absent - see the header of services/cache.service.js
+// for why each one is excluded.
+// ---------------------------------------------------------------------------
+
+function getCinemaCached(cinemaId) {
+  return cache.wrap('cinema', cinemaId, {}, () => getCinema(cinemaId));
+}
+
+function getScreenCached(cinemaId, screenId) {
+  return cache.wrap('screen', cinemaId, { screenId }, () => getScreen(cinemaId, screenId));
+}
+
+function getCategoriesCached(cinemaId, limit, page) {
+  return cache.wrap('categories', cinemaId, { limit, page }, () =>
+    getCategories(cinemaId, limit, page)
+  );
+}
+
+/*
+ * SOURCE IS PART OF THE KEY, AND MUST STAY THAT WAY.
+ *
+ * getProducts and getProductDetail price against the caller's order source -
+ * the same source createOrder charges against - so their response DOES vary
+ * by it. Dropping `source` from the key would serve one channel's prices to
+ * every other channel: a seat-QR customer would be shown the lobby price and
+ * charged the seat price, or vice versa, entirely at the mercy of whoever
+ * warmed the cache first.
+ *
+ * The key must carry the DERIVED source, not the claimed one, and that
+ * distinction is load-bearing: `seat_qr` with no seat is served the lobby
+ * rate (pricing.service.deriveSource). Keying on the claim would file that
+ * lobby-priced payload under `seat_qr`, and the next request that DID name a
+ * seat would be served it - the seatless caller would have poisoned the seat
+ * channel. Deriving here, with the same evidence getProducts derives from,
+ * keeps key and payload describing the same thing.
+ *
+ * Cardinality stays bounded at 4x per cinema: the seat is evidence, never a
+ * key component, so no caller can mint arbitrary entries from the query
+ * string by varying it.
+ */
+function getProductsCached(cinemaId, options = {}) {
+  // A search term is caller-supplied free text: unbounded cardinality and a
+  // hit rate near zero, so caching it would fill Redis with entries nothing
+  // reads twice. Straight to the database instead.
+  if (options.search) return getProducts(cinemaId, options);
+
+  const { categoryId = null, limit, page } = options;
+  const source = deriveSource(options.source, { hasSeat: Boolean(options.seat) });
+
+  return cache.wrap('products', cinemaId, { categoryId, limit, page, source }, () =>
+    getProducts(cinemaId, options)
+  );
+}
+
+function getProductDetailCached(cinemaId, productId, source = null, seat = null) {
+  const derived = deriveSource(source, { hasSeat: Boolean(seat) });
+
+  return cache.wrap('product', cinemaId, { productId, source: derived }, () =>
+    getProductDetail(cinemaId, productId, source, seat)
+  );
+}
+
+function getBannersCached(cinemaId, type = null) {
+  return cache.wrap('banners', cinemaId, { type }, () => getBanners(cinemaId, type));
 }
 
 module.exports = {
-  getCinema,
-  getScreen,
-  getCategories,
-  getProducts,
-  getProductDetail,
-  getBanners,
+  getCinema: getCinemaCached,
+  getScreen: getScreenCached,
+  getCategories: getCategoriesCached,
+  getProducts: getProductsCached,
+  getProductDetail: getProductDetailCached,
+  getBanners: getBannersCached,
+
+  // Uncached on purpose - see cache.service.js.
   getSessions,
   createOrder,
   validateCouponPreview,
   paymentInit,
   paymentVerify,
+
+  // The unwrapped queries, for tests and for callers that must bypass the
+  // cache (nothing does today).
+  uncached: {
+    getCinema,
+    getScreen,
+    getCategories,
+    getProducts,
+    getProductDetail,
+    getBanners,
+  },
 };

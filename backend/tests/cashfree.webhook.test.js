@@ -24,10 +24,16 @@ const request = require('supertest');
 
 const SECRET_KEY = 'test_secret_key_value_at_least_32_characters';
 
-// Must be set before config/env is loaded by the app factory.
-process.env.CASHFREE_APP_ID = 'TEST_APP_ID';
-process.env.CASHFREE_SECRET_KEY = SECRET_KEY;
-process.env.CASHFREE_ENVIRONMENT = 'test';
+/*
+ * Must be set before config/env is loaded by the app factory.
+ *
+ * There are no global CASHFREE_* credentials any more - the only Cashfree
+ * secret in the system is the one encrypted in a cinema's own
+ * payment_gateway_config row. So the key that DECRYPTS that column is what
+ * these tests need, and the row itself is seeded in beforeEach below.
+ */
+process.env.CREDENTIALS_ENCRYPTION_KEY =
+  '3261c0f9c99d1e0bb3c142e1f2e423b8dbe57078fac7dc381014e8de81b2b904';
 
 jest.mock('../src/config/database', () => {
   const models = {
@@ -39,11 +45,11 @@ jest.mock('../src/config/database', () => {
     OrderStatus: { findOne: jest.fn() },
     OrderStatusLog: { create: jest.fn() },
     PaymentWebhookEvent: { findOne: jest.fn(), create: jest.fn() },
-    // Credentials are now resolved per cinema (verifyIncomingWebhook looks
+    // Credentials are resolved per cinema, and verifyIncomingWebhook looks
     // this order's cinema's config up BEFORE the signature can even be
-    // checked). No active row here on purpose: resolveCredentials then falls
-    // back to the global CASHFREE_* env vars these tests already sign
-    // against, so every existing fixture keeps working unchanged.
+    // checked. There is no global fallback behind it any more, so this row is
+    // the ONLY thing that can verify a delivery - seeded in beforeEach with a
+    // genuinely encrypted copy of SECRET_KEY, which every fixture signs with.
     PaymentGatewayConfig: { findOne: jest.fn() },
   };
 
@@ -55,6 +61,7 @@ jest.mock('../src/config/database', () => {
 });
 
 const { models, sequelize } = require('../src/config/database');
+const credentials = require('../src/utils/credentials');
 const createApp = require('../src/app');
 
 const app = createApp();
@@ -178,9 +185,14 @@ beforeEach(() => {
     paymentStatusId: PENDING_STATUS_ID,
   });
   models.Order.update.mockResolvedValue([1]);
-  // No active per-cinema config - resolveCredentials falls back to the
-  // global CASHFREE_SECRET_KEY these tests sign every fixture with.
-  models.PaymentGatewayConfig.findOne.mockResolvedValue(null);
+  // The cinema's own credentials, the only ones that exist. Encrypted with
+  // the real utils/credentials, so the decrypt path a live delivery takes is
+  // exercised here rather than stubbed past.
+  models.PaymentGatewayConfig.findOne.mockResolvedValue({
+    gatewayId: 'TEST_APP_ID',
+    gatewaySecretEncrypted: credentials.encrypt(SECRET_KEY),
+    environment: 'test',
+  });
   models.PaymentStatusLog.create.mockResolvedValue({});
   // The seam's fulfilment side effect. Ids differ from the payment ones so a
   // test cannot pass by confusing the two tables.
@@ -376,15 +388,28 @@ describe('amount, currency and order mapping', () => {
     expect(models.Order.update).not.toHaveBeenCalled();
   });
 
-  test('an event for a gateway order we do not know is recorded but ignored', async () => {
+  /**
+   * An unknown gateway order is now REFUSED, not recorded-and-ignored.
+   *
+   * Deliberate, and a change from when a global CASHFREE_SECRET_KEY existed.
+   * The signing secret comes from the owning cinema's payment_gateway_config
+   * row, so an order_id belonging to no QBusto order resolves no secret at
+   * all, and an unverifiable delivery on an unauthenticated, internet-facing
+   * endpoint must be rejected rather than filed.
+   *
+   * What is lost is the `unknown_gateway_order` audit row. What is kept is
+   * that nothing is ever verified against a key from another merchant
+   * account - and an order id this system never issued has nothing of ours to
+   * settle in either direction.
+   */
+  test('an event for a gateway order we do not know is refused as unverifiable', async () => {
     models.Order.findOne.mockResolvedValue(null);
 
     const response = await postEvent(successEvent({ orderId: 'qbusto_order_999999' }));
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.outcome).toBe('ignored');
-    // Still recorded, so a retry of it is recognised as a duplicate.
-    expect(models.PaymentWebhookEvent.create).toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    // Refused before any decision was reached, so nothing was written at all.
+    expect(models.PaymentWebhookEvent.create).not.toHaveBeenCalled();
     expect(models.Order.update).not.toHaveBeenCalled();
   });
 

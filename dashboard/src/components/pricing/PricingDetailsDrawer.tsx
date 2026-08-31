@@ -9,7 +9,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Skeleton, Tag } from 'antd';
+import { Alert, Descriptions, Drawer, Tag } from 'antd';
+
+import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { ProductPricing } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { dayOfWeekLabel } from '@/components/pricing/days';
@@ -85,7 +87,7 @@ export default function PricingDetailsDrawer({
     >
       {error ? <Alert type="error" showIcon message={error} className="form-alert" /> : null}
 
-      {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+      {loading ? <DetailsSkeleton rows={6} /> : null}
 
       {pricing ? (
         <Descriptions column={1} size="small" bordered>

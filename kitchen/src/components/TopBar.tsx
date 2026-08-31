@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { FulfilmentStatus } from '../types/kitchen';
 import type { SortKey } from '../stores/board.store';
@@ -29,7 +29,7 @@ interface TopBarProps {
 const STALE_AFTER_MS = 35_000;
 
 const FILTERS: Array<{ value: FulfilmentStatus | 'all'; label: string }> = [
-  { value: 'all', label: 'All orders' },
+  { value: 'all', label: 'All Orders' },
   { value: 'confirmed', label: STATUS_LABEL.confirmed },
   { value: 'preparing', label: STATUS_LABEL.preparing },
   { value: 'ready', label: STATUS_LABEL.ready },
@@ -75,23 +75,50 @@ export function TopBar({
 
   const stale = lastSyncedAt !== null && now - lastSyncedAt > STALE_AFTER_MS;
 
+  /**
+   * The connection status, cinema name and sign-out control, tucked behind one
+   * menu button rather than spread across the bar. Closes on an outside
+   * click or Escape, same as the focus view's overlay convention.
+   */
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
     <header className="topbar">
       <div className="topbar__brand">
-        <span className="topbar__mark" aria-hidden="true">
-          Q
-        </span>
+        <img className="topbar__mark" src="/favicon-192x192.png" alt="" aria-hidden="true" />
         <span className="topbar__name">
           <strong>QBusto</strong>
-          <span className="topbar__sub">Kitchen Display</span>
+          <span className="topbar__sub">Kitchen Display System</span>
         </span>
       </div>
 
       <div className="topbar__controls">
-        <label className="field">
+        <label className="pill">
+          <span className="pill__icon" aria-hidden="true">
+            ▤
+          </span>
           <span className="sr-only">Filter by status</span>
           <select
-            className="field__select"
+            className="pill__select"
             value={statusFilter}
             onChange={(event) => onStatusFilter(event.target.value as FulfilmentStatus | 'all')}
           >
@@ -103,59 +130,84 @@ export function TopBar({
           </select>
         </label>
 
-        <label className="field">
+        <label className="pill">
+          <span className="pill__icon" aria-hidden="true">
+            ⇅
+          </span>
           <span className="sr-only">Sort orders</span>
           <select
-            className="field__select"
+            className="pill__select"
             value={sort}
             onChange={(event) => onSort(event.target.value as SortKey)}
           >
-            <option value="placedAt">Sort: Order time</option>
-            <option value="showTime">Sort: Show time</option>
+            <option value="placedAt">Sort by: Order Time</option>
+            <option value="showTime">Sort by: Show Time</option>
           </select>
         </label>
 
-        <label className="field field--search">
+        <label className="pill pill--search">
           <span className="sr-only">Search by order number, seat or film</span>
           <input
-            className="field__input"
+            className="pill__input"
             type="search"
             value={draft}
-            placeholder="Search order / seat / film"
+            placeholder="Search Order / Seat / Booking ID"
             onChange={(event) => setDraft(event.target.value)}
           />
+          <span className="pill__icon pill__icon--trailing" aria-hidden="true">
+            ⌕
+          </span>
         </label>
       </div>
 
-      <div className="topbar__meta">
-        {/*
-          Connection state is announced politely: a cook does not need a toast
-          for every poll, but a board that has silently stopped updating is
-          dangerous.
-        */}
-        <span
-          className={`topbar__sync${stale ? ' topbar__sync--stale' : ''}`}
-          role="status"
-          aria-live="polite"
+      <div className="topbar__menu" ref={menuRef}>
+        <button
+          type="button"
+          className="topbar__menu-toggle"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-haspopup="true"
+          aria-expanded={menuOpen}
+          aria-label="Screen menu"
         >
-          <span className={`topbar__dot${refreshing ? ' topbar__dot--busy' : ''}`} aria-hidden="true" />
-          {stale
-            ? 'Not updating — check connection'
-            : lastSyncedAt
-              ? `Updated ${formatClock(new Date(lastSyncedAt).toISOString())}`
-              : 'Connecting…'}
-        </span>
-
-        <span className="topbar__clock">
-          <span className="topbar__time">{formatClock(new Date(now).toISOString())}</span>
-          <span className="topbar__date">{formatDate(new Date(now))}</span>
-        </span>
-
-        {cinemaName && <span className="topbar__cinema">{cinemaName}</span>}
-
-        <button type="button" className="topbar__signout" onClick={onSignOut}>
-          Sign out
+          <span
+            className={`topbar__dot${refreshing ? ' topbar__dot--busy' : ''}${stale ? ' topbar__dot--stale' : ''}`}
+            aria-hidden="true"
+          />
+          <span aria-hidden="true">☰</span>
         </button>
+
+        {menuOpen && (
+          <div className="topbar__panel" role="menu">
+            {cinemaName && <p className="topbar__panel-title">{cinemaName}</p>}
+
+            {/* Label/value rows rather than a run of sentences, so the panel
+                can be read by scanning the left column. */}
+            <p className="topbar__panel-row" role="status" aria-live="polite">
+              <span className="topbar__panel-label">Connection</span>
+              <span className={`topbar__panel-value${stale ? ' topbar__panel-value--stale' : ''}`}>
+                {stale
+                  ? 'Check connection'
+                  : lastSyncedAt
+                    ? `Updated ${formatClock(new Date(lastSyncedAt).toISOString())}`
+                    : 'Connecting…'}
+              </span>
+            </p>
+
+            <p className="topbar__panel-row">
+              <span className="topbar__panel-label">Time</span>
+              <span className="topbar__panel-value">{formatClock(new Date(now).toISOString())}</span>
+            </p>
+
+            <p className="topbar__panel-row">
+              <span className="topbar__panel-label">Date</span>
+              <span className="topbar__panel-value">{formatDate(new Date(now))}</span>
+            </p>
+
+            <button type="button" className="topbar__signout" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

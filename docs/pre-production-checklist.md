@@ -13,6 +13,53 @@ full architecture reference this checklist assumes.
 
 ---
 
+## 0. Scope of this launch
+
+### Code readiness vs deployment readiness
+
+These are two different questions and this document keeps them apart.
+
+**Code readiness — met.** The application code is production-ready on the
+verification actually run against this working tree: the backend suite passes
+in full, backend lint reports zero errors, `verify-schema` matches the live
+database, `healthcheck` exits 0, all three frontends type-check, lint and
+build, and the OpenAPI spec and all three generated clients are in sync with
+the routes. Nothing below is a claim about code quality.
+
+**Deployment readiness — outstanding.** What remains is production
+*configuration* and *post-deployment verification*: real Cashfree credentials,
+a publicly reachable HTTPS backend, webhook registration, and the smoke tests
+in §7 and §9. Those cannot be completed before the deployment exists, and
+their absence is not a code defect.
+
+A missing piece of **optional** infrastructure does not make the application
+blocked. See "Deferred" below.
+
+### The production cinema
+
+**Cinema 8 (`1Cinemas Noida`) is the primary production cinema for this
+launch.** Where this checklist says "the production cinema", that is the one
+it means.
+
+Every other cinema in the database is test/development data. Their
+configuration gaps — including cinemas with no `payment_gateway_config` row —
+are **not production blockers**, because they cannot affect production
+traffic: credentials are per cinema with no global fallback, so an
+unconfigured test cinema affects only itself. `make healthcheck` lists them
+(see §9); treat that list as an inventory, not a failure.
+
+### Deferred — explicitly NOT launch blockers
+
+| Item | Decision | Where documented |
+| --- | --- | --- |
+| **Redis caching** | Implemented in code, **not enabled** for this deployment. `REDIS_URL` stays unset; every catalogue request goes to SQL Server, which remains the source of truth. | §12 |
+| **POS integration** (Vista/Showbiz) | **On hold.** No adapter exists and none is required for this release. | §12 |
+| **QBusto refund API** | **Not being built.** Refunds are performed in the Cashfree Dashboard by the operator. | §12, §11 |
+
+None of the three blocks go-live. Do not promote them to requirements.
+
+---
+
 ## 1. Database
 
 - [ ] **Take a final `.bak` backup** of the production-bound `qbusto` database
@@ -27,8 +74,9 @@ full architecture reference this checklist assumes.
       ```bash
       cd backend && npx sequelize-cli db:migrate:status
       ```
-      Every migration should show `up`. There are 32+ migrations in
-      `backend/migrations/`, timestamp-ordered; apply with `make migrate` (or
+      Every migration should show `up`. There are 40 migrations in
+      `backend/migrations/` as of this writing, timestamp-ordered; apply with
+      `make migrate` (or
       `npx sequelize-cli db:migrate` from `backend/` — **not** `npm run
       db:migrate`, which does not exist as a script).
 - [ ] **Run `make verify-schema`** (`cd backend && npm run verify-schema`) —
@@ -55,8 +103,10 @@ full architecture reference this checklist assumes.
       own Vista tables (not QBusto-owned); confirm row counts and a spot-check
       of a few known films/sessions match what the client's system expects.
       `screens` and `screen_layout` similarly hold client-provided
-      category/seat_row data — see the unresolved `screens` grain conflict
-      noted in `CLAUDE.md` before assuming one `screens` row = one auditorium.
+      category/seat_row data. **The screen/seat-row model is settled and
+      intentional** — see §13 before changing anything here; a `screens` row is
+      a screen record qualified by its `seat_row`, so one auditorium may
+      legitimately have several rows.
 - [ ] **Verify database permissions.** The application's `DB_USER` should have
       exactly the privileges the backend needs (read/write on application
       tables, `EXECUTE` where Sequelize needs it) — not `sa` or an
@@ -108,17 +158,23 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 **API documentation**
 - [ ] `SWAGGER_ENABLED` — consider `false` on a publicly reachable deployment
 
+**Catalogue cache — optional, and deliberately OFF for this launch**
+- [ ] `REDIS_URL` — **leave unset.** Redis is not being enabled for the initial
+      production deployment (§12). With no URL the cache is inert and every
+      consumer request is served from SQL Server, which is the intended and
+      supported configuration.
+- [ ] `CACHE_TTL_SECONDS` (default 60) and `REDIS_TIMEOUT_MS` (default 1000) —
+      only read when `REDIS_URL` is set; nothing to configure while it is not.
+
 **Cashfree — see §3 for the full production procedure**
-- [ ] `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY` — **both required in
-      production; boot throws without them.** These are now the **fallback**
-      credentials, used only for a cinema with no active
-      `payment_gateway_config` row — see the new "Per-cinema credentials"
-      part of §3. Boot still requires them even so: a fallback that cannot
-      itself be configured is not a fallback.
-- [ ] `CASHFREE_ENVIRONMENT=prod` (or `production`) — **boot throws if this is
-      not a production value while `NODE_ENV=production`**. Applies to the
-      fallback only; each cinema's own `payment_gateway_config` row carries
-      its own `environment`, set from the Dashboard, independently.
+- [ ] `CREDENTIALS_ENCRYPTION_KEY` — **the only payment secret in the
+      environment.** There are no `CASHFREE_APP_ID`/`CASHFREE_SECRET_KEY`/
+      `CASHFREE_ENVIRONMENT` vars any more: credentials and environment live
+      per cinema in `payment_gateway_config`, and this key is what
+      encrypts/decrypts them. Without it no cinema can take a payment.
+- [ ] **Nothing about Cashfree is checked at boot.** The old guards were
+      removed with the vars they inspected, so every per-cinema check in §3
+      is now manual and there is no safety net behind it.
 - [ ] `CASHFREE_NOTIFY_URL` — optional at the Joi level, but see §3: required
       in practice unless a webhook is registered directly in the Cashfree
       Dashboard
@@ -153,7 +209,8 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 
 - Dashboard is at `merchant.cashfree.com/merchants/pg/developers/webhooks?env=test`
   — a separate configuration space from production; nothing here carries over.
-- `CASHFREE_ENVIRONMENT=test` (or `sandbox`), `VITE_CASHFREE_MODE=sandbox`.
+- Each cinema's `payment_gateway_config.environment` is `test` (or `sandbox`),
+  and `VITE_CASHFREE_MODE=test`.
 - The Webhooks tab, with no endpoint added, shows a placeholder row labeled
   `NOTIFY_URL` — this is **not** a configured webhook, it's Cashfree
   describing the per-order `notify_url` fallback mechanism. Confirm whether
@@ -168,8 +225,15 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 
 Every cinema running under this deployment can run its own Cashfree merchant
 account (`payment_gateway_config`, set from `Cinemas → (cinema) → Payment
-gateway` in the Dashboard), resolved ahead of the global `CASHFREE_APP_ID`/
-`CASHFREE_SECRET_KEY` fallback above.
+gateway` in the Dashboard). This is the **only** source of credentials —
+there is no global fallback behind it, so a cinema with no active row simply
+cannot take payments and answers 503 at payment-init.
+
+**For this launch that means exactly one cinema: cinema 8.** The other
+cinemas listed by `make healthcheck` as having no active
+`payment_gateway_config` are test/development cinemas; because there is no
+global fallback, an unconfigured cinema affects only itself and cannot touch
+production traffic. Do not treat them as blockers (§0).
 
 `POST /api/cinemas` (2026-08-25) now requires `gatewayId`/`secretKey`/
 `environment` and creates the cinema plus its `payment_gateway_config` row in
@@ -180,88 +244,187 @@ before that change**, and for anything inserted directly into the database
 outside the API (a data migration, a manual fixture) — neither is covered by
 that guarantee. For each production cinema:
 
-- [ ] Either it has its own `payment_gateway_config` row with
-      `environment: production` and real production credentials, **or** the
-      deployment-wide fallback is intentionally what it should settle
-      against — decide this explicitly per cinema, not by omission. A cinema
-      silently falling back to the global pair is not a bug (the fallback
-      logs a warning every time it fires — grep `payment_gateway_config` in
-      logs to find any cinema doing this), but it should be a deliberate
-      choice, not a forgotten setup step.
-- [ ] If a cinema's own credentials are configured, confirm `environment` is
-      actually `prod`/`production`, not left on `test` — unlike the global
-      `CASHFREE_ENVIRONMENT` var, this is **not boot-checked**; a cinema
-      pointed at sandbox credentials in production fails every payment for
-      that cinema alone while the rest of the deployment looks fine.
+- [ ] It has its own `payment_gateway_config` row with real production
+      credentials. There is no fallback to inherit, so a missing row is not a
+      degraded state — that cinema takes no payments at all.
+- [ ] Confirm `environment` is actually `prod`/`production`, not left on
+      `test`. **Nothing checks this anywhere**: a cinema left on test collects
+      no real money while checkout, webhooks and order status all look
+      completely healthy. This is the single most expensive thing on this
+      checklist to get wrong.
 - [ ] Do the browser-close / no-return / webhook tests below (§7) against at
-      least one cinema running its **own** `payment_gateway_config`
-      credentials, not only against the global fallback — the credential
-      resolution path and the webhook's per-cinema signature verification are
-      both new and worth confirming live, not just in test.
+      least one production cinema — the credential resolution path and the
+      webhook's per-cinema signature verification are worth confirming live,
+      not just in test.
 
-### PRODUCTION MODE — required before go-live
+### PRODUCTION MODE — BEFORE deployment
 
-- [ ] **Production Cashfree credentials** — `CASHFREE_APP_ID`/
-      `CASHFREE_SECRET_KEY` from the Cashfree Dashboard under **Switch to
-      Prod → Developers → API Keys**. These are different credentials from
-      the test/sandbox pair.
-- [ ] **`CASHFREE_ENVIRONMENT=prod`** on the backend, in production.
+Configuration decisions that can be made and applied before the backend is
+publicly reachable. Everything requiring a live public URL is in the next
+subsection.
+
+- [ ] **Production Cashfree credentials for cinema 8** — App ID / Secret Key
+      from the Cashfree Dashboard under **Switch to Prod → Developers → API
+      Keys**, entered under `Cinemas → 1Cinemas Noida → Payment gateway` with
+      `environment` set to `prod`. These are different credentials from the
+      test/sandbox pair.
+- [ ] **Cinema 8's `payment_gateway_config.environment` is switched from
+      `test` to the production value.** Both `prod` and `production` are
+      accepted (Cashfree's own docs and dashboard disagree on the word). This
+      is a data change on the row, not an environment variable — and nothing
+      in the system checks it, so it must be confirmed by looking.
 - [ ] **`VITE_CASHFREE_MODE=production`** on the Consumer, baked in at build
-      time — **must match** `CASHFREE_ENVIRONMENT`, or the checkout SDK
-      rejects the payment session id with no fallback and no warning; the
-      build otherwise looks completely healthy.
-- [ ] **HTTPS requirement** — the webhook endpoint
-      (`POST /api/webhooks/cashfree`) must be reachable over HTTPS from
-      Cashfree's servers, and nothing in front of it (reverse proxy, CDN) may
-      re-serialise the request body — Cashfree signs the exact raw bytes,
-      decimal amounts included, and a JSON-aware proxy round-trip breaks
-      every signature.
-- [ ] **Webhook registration** — under the **production** Cashfree Dashboard
-      (Switch to Prod first), Developers → Webhooks → **Add Webhook
-      Endpoint**:
-      - URL: `https://<your-production-backend>/api/webhooks/cashfree`
-      - Subscribe to at least the payment-success event; also subscribe to
-        the failed/user-dropped events if you want them recorded for audit
-        (the code records but never acts on them either way).
-      - **AND/OR** set `CASHFREE_NOTIFY_URL` to the same URL on the backend.
-        One of the two is required — without either, a payment where the
-        customer's browser never returns to the app has no automatic
-        settlement path, and the order sits `pending` until a human manually
-        re-triggers `payment-init`/`payment-verify` on it.
+      time — **must match the `environment` of every cinema this build
+      serves**, or the checkout SDK rejects the payment session id with no
+      fallback and no warning; the build otherwise looks completely healthy.
+      One build carries one mode, so cinemas on mixed environments need
+      separate builds.
+- [ ] **Rebuild the Consumer after setting it** (`cd consumer && npm run
+      build`). `VITE_CASHFREE_MODE` is compile-time only — changing the `.env`
+      without rebuilding changes nothing at all, and the running app keeps
+      whatever mode it was built with.
+- [ ] **Deploy the backend and the rebuilt Consumer together.** A Consumer
+      built for `production` against cinema rows still on `test` (or the
+      reverse) produces a checkout that silently never opens; the two halves
+      must ship as one change.
 - [ ] **`CASHFREE_RETURN_URL`** — set to
       `https://<your-production-consumer-domain>/payment`. Genuinely optional
       (the Consumer reads its order id from `sessionStorage`, not the URL,
       and recovers regardless), but this is the fallback for browsers the
       Cashfree SDK can't keep in a modal (in-app browsers).
 - [ ] **Webhook signature verification** — nothing to configure; it uses
-      `CASHFREE_SECRET_KEY` automatically (there is no separate webhook
-      secret with Cashfree, unlike the previous Razorpay integration). Just
-      confirm the same production secret key is set consistently.
+      the owning cinema's own stored secret key automatically (there is no
+      separate webhook secret with Cashfree, unlike the previous Razorpay
+      integration). Note the consequence: a delivery whose `order_id` matches
+      no QBusto order resolves no secret and is refused as unverifiable (400)
+      rather than recorded as `unknown_gateway_order`.
 - [ ] **Required Cashfree Dashboard configuration beyond webhooks** — confirm
       whether pre-authorization is enabled on the account. It is not
       currently inspected anywhere in the code (`payment.authorization` is
       never read); if pre-auth is on, an authorized-but-not-captured payment
       would currently be indistinguishable from any other non-`SUCCESS`
       status. Leave pre-auth off unless you've confirmed the code handles it.
-- [ ] **Do at least one real test payment against production Cashfree before
-      general go-live**, covering:
+
+### PRODUCTION MODE — AFTER deployment
+
+**The production webhook cannot be verified before the backend is deployed to
+a publicly reachable HTTPS domain.** Cashfree delivers from its own servers to
+a public URL; there is nothing to register, and nothing to test, until that
+URL exists. Its absence before deployment is a sequencing fact, **not a code
+defect** — do not record the webhook as "verified" until the steps below have
+actually been carried out against the deployed backend.
+
+The endpoint is:
+
+```
+https://<production-api-domain>/api/webhooks/cashfree
+```
+
+`<production-api-domain>` is a placeholder. Substitute the real domain once it
+is known; do not guess it in advance.
+
+- [ ] **Confirm the production API domain resolves and is reachable over
+      HTTPS** from outside the venue network — not just from the server
+      itself. `curl https://<production-api-domain>/health` from an external
+      network is sufficient.
+- [ ] **Confirm nothing in front of the backend re-serialises the request
+      body.** Cashfree signs the exact raw bytes, decimal amounts included, so
+      a JSON-aware reverse proxy or CDN that parses and re-emits the body
+      breaks every signature. The route is mounted before `express.json()`
+      precisely to preserve those bytes; a proxy can still undo it.
+- [ ] **Register the webhook** in the **production** Cashfree Dashboard
+      (Switch to Prod first), Developers → Webhooks → **Add Webhook
+      Endpoint**:
+      - URL: `https://<production-api-domain>/api/webhooks/cashfree`
+      - Subscribe to at least the payment-success event; also subscribe to the
+        failed/user-dropped events if you want them recorded for audit (the
+        code records but never acts on them either way).
+      - **AND/OR** set `CASHFREE_NOTIFY_URL` to the same URL on the backend.
+        One of the two is required — without either, a payment where the
+        customer's browser never returns to the app has no automatic
+        settlement path, and the order sits `pending` until a human manually
+        re-triggers `payment-init`/`payment-verify` on it.
+- [ ] **Verify the webhook actually reaches the deployed backend** — the
+      **Logs** tab beside Webhooks in the Cashfree Dashboard must show a `200`
+      delivery. A `4xx`/`5xx` or a timeout here means the endpoint is not
+      correctly exposed; fix that before taking real payments.
+- [ ] **Controlled payment / webhook smoke test** against production Cashfree,
+      on cinema 8, before general go-live:
       - [ ] UPI payment succeeds
       - [ ] Card payment succeeds
       - [ ] Browser-close test: pay, then close the browser tab immediately
-            after — before the SDK/verify call returns — and confirm the
-            order still settles to `paid` (via webhook or a later manual
+            after — before the SDK/verify call returns — and confirm the order
+            still settles to `paid` (via webhook or a later manual
             `payment-verify`/`payment-init` retry).
       - [ ] Payment succeeds without ever returning to the Consumer (closed
             tab / crashed browser mid-payment) — confirm the webhook alone
             settles it, with **zero** frontend involvement.
-      - [ ] Confirm the webhook actually reaches the backend — check the
-            **Logs** tab next to Webhooks in the Cashfree Dashboard for a
-            `200` delivery.
-      - [ ] Confirm the order becomes `paid` in the database after the above.
-      - [ ] Confirm the KDS receives **exactly one** order for that payment
-            (not zero, not two) — this is the single most safety-critical
-            invariant in the payment system (`applyPaidTransition`'s
-            compare-and-set).
+- [ ] **Confirm the order/payment state reconciles correctly** after each of
+      the above:
+      - [ ] The order's payment status is `paid` in the database, and its
+            `total` equals the amount Cashfree collected — the webhook and the
+            pull reconciliation both require an exact match and will settle
+            nothing otherwise.
+      - [ ] A row exists in `payment_webhook_events` for the delivery.
+      - [ ] The KDS receives **exactly one** order for that payment (not zero,
+            not two) — this is the single most safety-critical invariant in
+            the payment system (`applyPaidTransition`'s compare-and-set).
+
+---
+
+## 3a. Cinema 8 verification (the production cinema)
+
+Cinema 8 (`1Cinemas Noida`) is what this launch actually serves, so it gets
+checked directly rather than inferred from a green test suite. Every item here
+is a look at production data, not a code check.
+
+**Catalogue and pricing**
+- [ ] The cinema's catalogue loads:
+      `GET /api/consumer/cinemas/8/products` returns the expected products.
+- [ ] **Every product carried by cinema 8 has an active `product_pricing`
+      row.** A product with an active `cinema_products` link but no pricing
+      row renders as "Unavailable" on the card and cannot be ordered — the
+      Consumer handles it correctly, but it is almost always a data omission
+      rather than an intention. Compare the two counts and account for any
+      difference.
+- [ ] Per-source discounts are as intended. Each pricing row carries a
+      separate discount per channel (`discount_on_qr`, `_seat_qr`, `_kiosk`,
+      `_counter`), and the catalogue prices against the same channel the order
+      will be charged against. Confirm the rates are deliberate, not left over
+      from testing.
+- [ ] Availability windows (`availability_hours`) are correct for the cinema's
+      real trading hours, and a product expected to be on sale right now
+      actually appears.
+
+**Banners**
+- [ ] Active banners have a `start_date`/`end_date` range that includes today.
+      Dates are stored as IST wall clock, and an `end_date` picked without a
+      time defaults to **midnight** — so "ends today" means the banner is
+      already invisible. Check the times, not just the dates.
+- [ ] Header (`H`) and inner (`I`) banner artwork loads from
+      `VITE_API_URL/uploads/...`.
+
+**Screens, sessions and the seat-row flow**
+- [ ] The cinema's `screens` rows and their `seat_row` values match the real
+      auditorium layout (see §13).
+- [ ] `GET /api/consumer/cinemas/8/sessions` returns real, current sessions
+      with `Session_strStatus = 'O'`.
+- [ ] **End-to-end seat resolution:** pick a session, pick a row offered for
+      it, and confirm order creation resolves a screen rather than rejecting
+      the row. This is the `(cinema_id, screenName, seatRow)` lookup in §13,
+      and it is the one place a screen/seat-row data mismatch surfaces as a
+      customer-visible failure.
+
+**Payment**
+- [ ] Cinema 8 has an **active** `payment_gateway_config` row (`is_active = 1`).
+- [ ] That row holds **production** credentials, and its `environment` is set
+      to the production value — see §3.
+- [ ] `make healthcheck` does **not** list cinema 8 among the cinemas that
+      cannot take payment.
+
+**Screensaver / kiosk entry**
+- [ ] The cinema's `screensaver_url` artwork loads, or is deliberately unset
+      (in which case the text hero is shown — a supported state, not a fault).
 
 ---
 
@@ -348,18 +511,20 @@ For **each** of `consumer/`, `dashboard/`, `kitchen/`:
 - [ ] HTTPS is terminated in front of every application (backend included —
       the Cashfree webhook specifically requires it).
 - [ ] **Production Cashfree credentials** are the live pair, not the
-      sandbox/test pair (`CASHFREE_ENVIRONMENT` boot guard enforces this, but
-      confirm the actual key values too — a `prod` environment setting with a
-      pasted-in test key would still fail against the live API, just not
-      silently).
+      sandbox/test pair, for **cinema 8** (§0 — the other cinemas are test
+      data and take no production traffic). Nothing enforces this — the boot
+      guard that used to was removed along with the global vars — so check the
+      cinema's `environment` AND its actual key values; a `prod` environment
+      setting with a pasted-in test key fails against the live API, and a test
+      environment setting takes no money at all.
 - [ ] **No `.env` files committed to the repository** — confirm
       `backend/.env`, `consumer/.env`, `dashboard/.env`, `kitchen/.env` are
       all gitignored and none were accidentally committed at any point
       (`git log --all --full-history -- '**/.env'` to check history, not
       just the working tree).
-- [ ] **No test credentials in production** — no `CASHFREE_ENVIRONMENT=test`
-      value, no development `JWT_SECRET`, no development database credentials
-      carried into the production `.env`.
+- [ ] **No test credentials in production** — cinema 8 not left on
+      `environment: test`, no development `JWT_SECRET`, no development
+      database credentials carried into the production `.env`.
 - [ ] **Database credentials** — a dedicated production `DB_USER` with
       least-privilege access (see §1), a strong `DB_PASSWORD`, `DB_ENCRYPT=true`,
       and `DB_TRUST_SERVER_CERTIFICATE=false` once the SQL Server instance has
@@ -466,13 +631,25 @@ by this repository):
       `/ready` should show `database.connected: true`, all migrations
       applied, no pending/orphaned migrations, and no missing seed data.
 - [ ] **`make verify-schema`** against the production database.
+- [ ] **`make healthcheck`** against the production database. Beyond the
+      environment/DB/migration/seed checks it also reports two things that
+      matter here:
+      - **"Payment not configured for N active cinema(s)"** — an inventory,
+        not a failure. **Cinema 8 must not appear in this list.** Any other
+        cinema listed is test data (§0) and is not a blocker.
+      - **"Cashfree environment in use"** — the environments the active
+        `payment_gateway_config` rows are actually on. This must read
+        `prod`/`production` for the production cinema, and it must match the
+        `VITE_CASHFREE_MODE` the deployed Consumer was **built** with. The
+        backend cannot check the Consumer's build value, which is exactly why
+        it is printed here for a human to compare.
 - [ ] **Frontend loading** — each of Consumer, Dashboard, Kitchen loads
       without console errors, and each successfully calls the backend (check
       Network tab for a real `200` from `VITE_API_URL`, not a CORS failure).
 - [ ] **Login** — staff login on the Dashboard succeeds and issues a working
       JWT.
 - [ ] **Consumer loading** — catalogue, banners, and session picker all load
-      for at least one real cinema.
+      for **cinema 8** (§3a covers this cinema's data in full).
 - [ ] **Dashboard loading** — catalogue/orders/users views load for a real
       staff account.
 - [ ] **Kitchen loading** — the KDS board loads (empty is fine if there are no
@@ -480,14 +657,17 @@ by this repository):
 - [ ] **Image loading** — at least one product/banner image with a local
       upload (not an external URL) loads correctly from
       `VITE_API_URL/uploads/...`.
-- [ ] **Session listing** — `GET /api/consumer/cinemas/{cinemaId}/sessions`
-      returns real, current sessions for at least one cinema.
+- [ ] **Session listing** — `GET /api/consumer/cinemas/8/sessions` returns
+      real, current sessions.
 - [ ] **Order creation** — a real order can be created end-to-end from the
       Consumer.
 - [ ] **Payment** — a real payment against production Cashfree succeeds (see
       §7).
-- [ ] **Webhook** — confirmed delivered and processed (Cashfree Dashboard
-      Logs tab shows `200`; the order transitioned to `paid`).
+- [ ] **Webhook** — registered and confirmed delivered and processed, per the
+      post-deployment procedure in §3 (Cashfree Dashboard Logs tab shows
+      `200`; the order transitioned to `paid`). Until those steps have
+      actually been carried out against the deployed backend, this stays
+      unchecked — it cannot be verified in advance.
 - [ ] **KDS** — the paid order appears exactly once on the Kitchen board.
 
 ---
@@ -526,23 +706,180 @@ by this repository):
 
 ---
 
-## 11. Go-live sign-off
+## 11. Operational procedures
+
+Procedures the operator runs by hand, because QBusto deliberately does not
+automate them. None of these is a gap to be closed before launch.
+
+### Refunds — Cashfree Dashboard only
+
+**QBusto has no refund API, and none is being built for this release.** This
+is a decision, not an omission.
+
+The procedure is:
+
+1. The operator issues the refund in the **Cashfree Dashboard**, against the
+   payment, using the cinema's own merchant account.
+2. A member of staff then sets the order's payment status to `refunded` in the
+   QBusto Dashboard, so QBusto's record matches what Cashfree did.
+
+Two consequences worth stating plainly, because neither is enforced by code:
+
+- **The QBusto status flip is a bookkeeping entry, not an instruction.** It
+  moves no money and calls no API. Setting it without having refunded in
+  Cashfree leaves a customer un-refunded with a record saying otherwise.
+- **The two steps can drift.** A refund issued in Cashfree and never recorded
+  in QBusto leaves the order reading `paid`. Nothing reconciles them
+  automatically, so treat the pair as one procedure.
+
+`paid → refunded` is the only transition into this state, and it is
+staff-only: no gateway signal can produce it.
+
+### Abandoned orders
+
+There is **no expiry job**. An order whose payment was never completed stays
+`pending` indefinitely. This is intentional — a pending UPI collect must never
+be timed out into a state that invites a second charge — and it means the
+`orders` table accumulates unpaid rows over time. Nothing needs doing about
+them; they are inert.
+
+### Failed and dropped payments
+
+`PAYMENT_FAILED_WEBHOOK` and `PAYMENT_USER_DROPPED_WEBHOOK` are recorded for
+audit but change no order state, so a failed attempt stays retryable by the
+customer. Only staff can set a payment `failed`.
+
+---
+
+## 12. Deferred items — not launch blockers
+
+Each of these is a deliberate decision for this release. They are listed here
+so that nobody re-derives them as outstanding work.
+
+### Redis caching — implemented, not enabled
+
+- The read-through catalogue cache **exists in the codebase** and is covered
+  by tests. It is **not being enabled** for the initial production deployment.
+- `REDIS_URL` will remain **unset**. The cache is inert without it: `enabled`
+  is `Boolean(REDIS_URL) && NODE_ENV !== 'test'`, so with no URL no Redis
+  command is issued at all and every catalogue request is served from SQL
+  Server.
+- **SQL Server remains the source of truth**, cache or no cache. The cache
+  never held anything the database did not.
+- **No Redis provider needs to be created for launch.** Do not add a Redis
+  instance, URL, or credential to the production environment as a launch step.
+- The implementation is **fail-soft** by design: every Redis error is treated
+  as a cache miss and falls through to the database, and catalogue writes bump
+  a generation counter rather than deleting keys. That is what makes running
+  without Redis a supported configuration rather than a degraded one.
+- **Enable it later if production traffic shows a need** — it is a single
+  environment variable plus a restart, with no code change and no migration.
+  Until then, leave it off.
+- **Do not remove the implementation from the codebase** because it is
+  disabled.
+
+### POS integration (Vista / Showbiz) — on hold
+
+- POS integration is **on hold** and is **not a production-launch requirement
+  for this release**.
+- The adapter boundary exists but the registry is empty: every provider
+  currently resolves to a failure, and no route or service uses any POS table.
+  Reports and POS Integrations in the Dashboard are placeholders.
+- The existing design document, `backend/docs/pos-integration.md`, is **kept**
+  as the reference for whenever this resumes, and now carries an ON HOLD
+  banner. Note it is **gitignored** (`.gitignore`, "Internal engineering
+  documentation") — it lives on the development team's disk and is not part of
+  the client handover, so this checklist deliberately does not link to it.
+- Do not implement, modify or expand POS functionality as part of this
+  production work.
+- Note that the client's `film` and `session` tables — which the Consumer
+  reads today — are **not** part of POS integration; they are populated by the
+  client's own system and are unaffected by this hold.
+
+### QBusto refund API — not being built
+
+- Refunds are performed by the cinema/operator in the **Cashfree Dashboard**;
+  see §11 for the procedure.
+- The absence of a refund API is **not a production blocker**.
+
+---
+
+## 13. Screen / seat-row architecture (settled)
+
+Recorded here because it has been re-litigated before and because §3a's seat
+resolution check depends on it.
+
+**The model is confirmed and intentional.** `screens` holds
+auditorium/screen records, and `seat_row` identifies the seat row associated
+with that record. For the client's Vista data, one auditorium may therefore
+appear as several `screens` rows:
+
+```
+Screen 2 + A
+Screen 2 + B
+Screen 2 + C
+```
+
+The client's `session` table names its auditorium as text
+(`Screen_strName`), with no reference to `screens.id`. So when a customer
+picks a session whose `Screen_strName` is `"Screen 2"` and then picks row
+`A`, order creation resolves the matching `(cinema_id, screen name,
+seat_row)` record **server-side**. A screen id supplied by the client is never
+trusted — a QR is printed with whatever row existed at print time, which is
+not necessarily the show the customer selected.
+
+Do **not**, as part of this work:
+
+- create an `auditoriums` table;
+- redesign the `screens` table;
+- modify `screen_layout`;
+- expand this into a broader POS redesign — POS remains on hold (§12).
+
+The current server-side resolution is the intended design, not a workaround
+pending a schema change.
+
+---
+
+## 14. Go-live sign-off
+
+**Before deployment**
 
 ```
 [ ] Database backed up
 [ ] Production environment configured
 [ ] CREDENTIALS_ENCRYPTION_KEY generated and backed up (never rotate casually)
-[ ] Cashfree production credentials configured (global fallback)
-[ ] Per-cinema payment_gateway_config decided for every production cinema
-[ ] Cashfree webhook configured and reachable
-[ ] HTTPS configured
-[ ] Consumer production build verified
+[ ] REDIS_URL deliberately left unset (deferred - see §12)
+[ ] Cinema 8 production Cashfree credentials entered
+[ ] Cinema 8 payment_gateway_config.environment set to production
+[ ] VITE_CASHFREE_MODE=production set on the Consumer
+[ ] Consumer REBUILT after changing VITE_CASHFREE_MODE (build-time value)
 [ ] Dashboard production build verified
 [ ] Kitchen production build verified
 [ ] Image storage configured
-[ ] Payment tested
-[ ] Webhook tested
-[ ] KDS tested
+[ ] HTTPS configured for every application
 [ ] Backup verified
 [ ] Rollback plan confirmed
 ```
+
+**Deployment**
+
+```
+[ ] Backend deployed to a publicly reachable HTTPS domain
+[ ] Rebuilt Consumer deployed in the same change as the backend
+```
+
+**After deployment**
+
+```
+[ ] Production API domain confirmed reachable over HTTPS from outside
+[ ] Cashfree webhook registered in the PRODUCTION dashboard
+[ ] Webhook delivery confirmed reaching the backend (200 in Cashfree Logs)
+[ ] Controlled payment smoke test passed on cinema 8
+[ ] Order/payment state confirmed reconciled after the smoke test
+[ ] KDS received exactly one ticket per paid order
+[ ] Cinema 8 verification complete (§3a)
+[ ] make healthcheck run against production; cinema 8 not listed as unpayable
+```
+
+**Not part of sign-off** — deferred by decision, see §12: Redis, POS
+integration, a QBusto refund API.
