@@ -122,10 +122,10 @@
 
   &__name {
     font-size: var(--font-size-small);
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-normal);
     line-height: var(--line-height-snug);
     letter-spacing: 0;
-    color: var(--color-text-primary);
+    color: var(--color-primary-text);
     /* Shown in full, however many lines it takes. A truncated name is a
        customer guessing what they are buying, which matters more than cards in
        a row being the same height - the grid rows already stretch to the
@@ -156,7 +156,9 @@
     background-color: transparent;
     color: var(--color-text-light);
     cursor: pointer;
-    transition: color var(--transition-fast), background-color var(--transition-fast);
+    transition:
+      color var(--transition-fast),
+      background-color var(--transition-fast);
 
     &:hover {
       background-color: var(--color-bg-secondary);
@@ -168,7 +170,6 @@
       box-shadow: var(--focus-ring);
     }
   }
-
 
   /* Price sits directly above a full-width action, as on the reference. */
   &__footer {
@@ -183,7 +184,7 @@
 
   &__price {
     font-size: var(--font-size-body);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-primary);
     letter-spacing: var(--tracking-tight);
     text-align: center;
@@ -289,7 +290,5 @@
     &__name {
       font-size: var(--font-size-body);
     }
-
-
   }
 }

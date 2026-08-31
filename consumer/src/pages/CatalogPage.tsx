@@ -55,6 +55,30 @@ interface ProductWithPrice extends Product {
 /** How long each header banner stays on screen before the next one. */
 const BANNER_ROTATE_MS = 3000;
 
+/**
+ * How long a rail tap's scroll is given to settle before the rail is allowed to
+ * follow the observer again. Smooth scrolling has no completion callback that
+ * is safe to rely on - `scrollend` is still missing from Safari, which is what
+ * the venue runs on - so this is a duration rather than an event.
+ */
+const RAIL_FOLLOW_RESUME_MS = 700;
+
+/**
+ * Scroll ONE pane, and nothing else.
+ *
+ * `scrollIntoView` walks up the tree and scrolls every scrollable ancestor it
+ * finds, the document included. On iOS that is how tapping a rail entry could
+ * drag the whole page off-screen and leave the customer staring at blank
+ * background with only the cart bar in view. Setting `scrollTop` on the pane
+ * itself cannot move anything above it.
+ */
+function scrollPaneTo(pane: HTMLElement, top: number) {
+  pane.scrollTo({
+    top: Math.max(0, top),
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  });
+}
+
 export default function CatalogPage() {
   const cinemaId = useContextStore((state) => state.cinemaId) as number;
   /**
@@ -126,6 +150,15 @@ export default function CatalogPage() {
   const sectionRefs = useRef(new Map<number, HTMLElement>());
   /** One node per rail button, so the rail can follow the active section. */
   const railRefs = useRef(new Map<number, HTMLElement>());
+  /**
+   * The two independent scroll regions. Held so they can be scrolled directly
+   * rather than through scrollIntoView - see scrollPaneTo.
+   */
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const productsRef = useRef<HTMLElement | null>(null);
+  /** Set while a rail tap's own scroll is in flight; see the rail-follow effect. */
+  const railFollowSuppressed = useRef(false);
+  const railFollowTimer = useRef<number | undefined>(undefined);
 
   /**
    * Guards against out-of-order responses. Switching category twice quickly,
@@ -328,28 +361,60 @@ export default function CatalogPage() {
    * The rail scrolls independently of the product pane, so on a long menu the
    * current category could be highlighted well outside the rail's own
    * viewport - the customer scrolls into DESSERTS and the rail still shows
-   * APPETIZERS because it never moved. `nearest` scrolls only when it actually
-   * needs to, so the rail does not jump on every observer tick.
+   * APPETIZERS because it never moved. Moves only when the button is genuinely
+   * out of view, so the rail does not twitch on every observer tick.
+   *
+   * Held still while a rail tap's own scroll is running: that scroll sweeps the
+   * observer across every section it passes, and letting each tick start a
+   * competing smooth scroll is what stranded the menu in blank space.
    */
   useEffect(() => {
     if (highlightedCategoryId === null) return;
+    if (railFollowSuppressed.current) return;
 
-    railRefs.current.get(highlightedCategoryId)?.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-      block: 'nearest',
-      inline: 'nearest',
-    });
+    const rail = sidebarRef.current;
+    const button = railRefs.current.get(highlightedCategoryId);
+    if (!rail || !button) return;
+
+    const railBox = rail.getBoundingClientRect();
+    const buttonBox = button.getBoundingClientRect();
+    const above = buttonBox.top < railBox.top;
+    const below = buttonBox.bottom > railBox.bottom;
+    if (!above && !below) return;
+
+    scrollPaneTo(
+      rail,
+      above
+        ? rail.scrollTop + (buttonBox.top - railBox.top)
+        : rail.scrollTop + (buttonBox.bottom - railBox.bottom)
+    );
   }, [highlightedCategoryId]);
 
   /** Rail click: move to the section, never refetch. */
   const goToCategory = useCallback((categoryId: number) => {
     setActiveCategoryId(categoryId);
-    sectionRefs.current.get(categoryId)?.scrollIntoView({
-      // Respecting reduced motion here matters: this scrolls a long list.
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-      block: 'start',
-    });
+
+    const pane = productsRef.current;
+    const section = sectionRefs.current.get(categoryId);
+    if (!pane || !section) return;
+
+    // The rail already shows the tapped category, and the observer is about to
+    // fire for every section this scroll flies past. Hold the rail still until
+    // the movement settles.
+    railFollowSuppressed.current = true;
+    window.clearTimeout(railFollowTimer.current);
+    railFollowTimer.current = window.setTimeout(() => {
+      railFollowSuppressed.current = false;
+    }, RAIL_FOLLOW_RESUME_MS);
+
+    scrollPaneTo(
+      pane,
+      pane.scrollTop + (section.getBoundingClientRect().top - pane.getBoundingClientRect().top)
+    );
   }, []);
+
+  /** Leaving the page mid-scroll must not fire the timer into a dead component. */
+  useEffect(() => () => window.clearTimeout(railFollowTimer.current), []);
 
   // Fatal: no rail, nothing to browse.
   if (pageError) {
@@ -425,7 +490,7 @@ export default function CatalogPage() {
       )}
 
       <div className="catalog__layout">
-        <nav className="catalog__sidebar" aria-label="Product categories">
+        <nav className="catalog__sidebar" aria-label="Product categories" ref={sidebarRef}>
           {/*
             No "All items": the list already contains every category, so the
             entry would have selected what is on screen anyway. Each button
@@ -462,6 +527,7 @@ export default function CatalogPage() {
 
         <main
           className="catalog__products"
+          ref={productsRef}
           style={
             innerBanner?.imageUrl
               ? {
