@@ -209,8 +209,10 @@ nothing outside this file plus `DB_*`/`API_BASE_URL` is required).
 
 - Dashboard is at `merchant.cashfree.com/merchants/pg/developers/webhooks?env=test`
   — a separate configuration space from production; nothing here carries over.
-- Each cinema's `payment_gateway_config.environment` is `test` (or `sandbox`),
-  and `VITE_CASHFREE_MODE=test`.
+- Each cinema's `payment_gateway_config.environment` is `test` (or `sandbox`).
+  That column is now the **only** place the environment is set — the Consumer
+  reads it from the `payment-init` response rather than from a build-time
+  variable, so there is nothing to keep in step by hand.
 - The Webhooks tab, with no endpoint added, shows a placeholder row labeled
   `NOTIFY_URL` — this is **not** a configured webhook, it's Cashfree
   describing the per-order `notify_url` fallback mechanism. Confirm whether
@@ -273,20 +275,19 @@ subsection.
       accepted (Cashfree's own docs and dashboard disagree on the word). This
       is a data change on the row, not an environment variable — and nothing
       in the system checks it, so it must be confirmed by looking.
-- [ ] **`VITE_CASHFREE_MODE=production`** on the Consumer, baked in at build
-      time — **must match the `environment` of every cinema this build
-      serves**, or the checkout SDK rejects the payment session id with no
-      fallback and no warning; the build otherwise looks completely healthy.
-      One build carries one mode, so cinemas on mixed environments need
-      separate builds.
-- [ ] **Rebuild the Consumer after setting it** (`cd consumer && npm run
-      build`). `VITE_CASHFREE_MODE` is compile-time only — changing the `.env`
-      without rebuilding changes nothing at all, and the running app keeps
-      whatever mode it was built with.
-- [ ] **Deploy the backend and the rebuilt Consumer together.** A Consumer
-      built for `production` against cinema rows still on `test` (or the
-      reverse) produces a checkout that silently never opens; the two halves
-      must ship as one change.
+- [ ] **Nothing to set on the Consumer.** `VITE_CASHFREE_MODE` no longer
+      exists. `payment-init` returns the environment its session was issued in
+      (`mode`: `sandbox`/`production`), resolved from that cinema's own
+      `payment_gateway_config.environment`, and the Consumer loads the Cashfree
+      SDK with that value. Setting the cinema's `environment` above is
+      therefore the whole change — no Consumer rebuild, no coordinated deploy,
+      and a deployment whose cinemas sit on different environments is served
+      correctly by one build.
+
+      This replaced a build-time constant that had to be kept in step with
+      every cinema row by hand; when the two disagreed the SDK rejected the
+      payment session id and the checkout silently never opened. Removing the
+      second source removed the mismatch.
 - [ ] **`CASHFREE_RETURN_URL`** — set to
       `https://<your-production-consumer-domain>/payment`. Genuinely optional
       (the Consumer reads its order id from `sessionStorage`, not the URL,
@@ -438,7 +439,6 @@ For **each** of `consumer/`, `dashboard/`, `kitchen/`:
 - [ ] `VITE_API_URL` set to the real production HTTPS origin of the backend,
       with **no trailing slash and no `/api` suffix** (each app appends its
       own paths; a value ending in `/api` produces `/api/api/...` and 404s).
-- [ ] Consumer only: `VITE_CASHFREE_MODE=production` (see §3).
 - [ ] Build:
       ```bash
       cd consumer && npm run build     # tsc --noEmit && vite build
@@ -640,9 +640,10 @@ by this repository):
       - **"Cashfree environment in use"** — the environments the active
         `payment_gateway_config` rows are actually on. This must read
         `prod`/`production` for the production cinema, and it must match the
-        `VITE_CASHFREE_MODE` the deployed Consumer was **built** with. The
-        backend cannot check the Consumer's build value, which is exactly why
-        it is printed here for a human to compare.
+        the production cinema. There is nothing to cross-check it against any
+        more: the Consumer takes its SDK mode from the `payment-init`
+        response, so this row is the single source and cannot disagree with
+        the frontend.
 - [ ] **Frontend loading** — each of Consumer, Dashboard, Kitchen loads
       without console errors, and each successfully calls the backend (check
       Network tab for a real `200` from `VITE_API_URL`, not a CORS failure).
@@ -851,8 +852,7 @@ pending a schema change.
 [ ] REDIS_URL deliberately left unset (deferred - see §12)
 [ ] Cinema 8 production Cashfree credentials entered
 [ ] Cinema 8 payment_gateway_config.environment set to production
-[ ] VITE_CASHFREE_MODE=production set on the Consumer
-[ ] Consumer REBUILT after changing VITE_CASHFREE_MODE (build-time value)
+[ ] Consumer production build verified
 [ ] Dashboard production build verified
 [ ] Kitchen production build verified
 [ ] Image storage configured
@@ -865,7 +865,7 @@ pending a schema change.
 
 ```
 [ ] Backend deployed to a publicly reachable HTTPS domain
-[ ] Rebuilt Consumer deployed in the same change as the backend
+[ ] Consumer deployed
 ```
 
 **After deployment**

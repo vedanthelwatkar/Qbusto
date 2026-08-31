@@ -336,12 +336,16 @@ src/
 
 - Serve over HTTPS. Cashfree checkout and browser payment features expect a
   secure context.
-- `VITE_CASHFREE_MODE` is baked in at build time and accepts the same four
-  words the backend's `payment_gateway_config.environment` column does
-  (`test`/`sandbox` are one environment, `prod`/`production` the other). It
-  must match the environment of **every cinema this build serves** — a
-  mismatch causes the Cashfree SDK to reject the payment session id. One build
-  carries one mode, so cinemas on mixed environments need separate builds.
+- **The Cashfree environment is not configured here.** `payment-init` returns
+  the environment its session was issued in (`mode`: `sandbox`/`production`),
+  resolved from that cinema's own `payment_gateway_config.environment`, and
+  the SDK is loaded with it. So switching a cinema between test and production
+  is a change to that row alone — no `VITE_*` value, no rebuild, and cinemas
+  on different environments are served correctly by one build.
+
+  This replaced a build-time `VITE_CASHFREE_MODE`, which was a second
+  independent source for the same fact: when the two disagreed the SDK
+  rejected the payment session id and the checkout silently never opened.
 - Configure the static host to serve `index.html` for unmatched paths, so
   client-side routes such as `/confirmation/:orderId` resolve on a direct visit
   or a page refresh.

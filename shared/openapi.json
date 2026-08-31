@@ -6567,6 +6567,15 @@
                               "nullable": true,
                               "description": "Short-lived token for the Cashfree hosted checkout. Null when a session could not be issued (the caller should retry rather than treat it as a failure), or when `paymentStatus` is `paid` and there is nothing to check out.\n"
                             },
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "sandbox",
+                                "production"
+                              ],
+                              "nullable": true,
+                              "description": "The Cashfree environment THIS session belongs to, in the browser SDK's own vocabulary. Load the SDK with this value: a session issued in one environment simply never opens in the other, with no error to act on. It is returned with the session, rather than configured in the client, because environment is a per-cinema setting (`payment_gateway_config.environment`) and a build-time constant cannot track it. Null when there is no session to open - `paymentStatus` is `paid`, or the cinema has no active gateway configuration.\n"
+                            },
                             "amount": {
                               "type": "integer",
                               "description": "Amount in paise. 0 when `paymentStatus` is `paid`."

@@ -1061,6 +1061,9 @@ async function paymentInit(orderId) {
       amount: 0,
       currency: GATEWAY_CURRENCY,
       paymentStatus: PAYMENT_STATUSES.PAID,
+      // No session, so no SDK is ever loaded and there is no mode to match.
+      // Null rather than a guess: the Consumer skips straight to confirmation.
+      mode: null,
     };
   }
 
@@ -1101,6 +1104,7 @@ async function paymentInit(orderId) {
       paymentSessionId: await resumePaymentSession(order),
       amount: toPaise(order.total),
       currency: GATEWAY_CURRENCY,
+      mode: await cashfree.resolveCheckoutMode(order.cinemaId),
     };
   }
 
@@ -1163,6 +1167,7 @@ async function paymentInit(orderId) {
         })),
       amount: toPaise(order.total),
       currency: GATEWAY_CURRENCY,
+      mode: await cashfree.resolveCheckoutMode(order.cinemaId),
     };
   }
 
@@ -1177,6 +1182,7 @@ async function paymentInit(orderId) {
     paymentSessionId: await resumePaymentSession(reloadedOrder),
     amount: toPaise(reloadedOrder.total),
     currency: GATEWAY_CURRENCY,
+    mode: await cashfree.resolveCheckoutMode(reloadedOrder.cinemaId),
   };
 }
 

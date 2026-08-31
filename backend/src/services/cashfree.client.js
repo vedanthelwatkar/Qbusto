@@ -70,6 +70,48 @@ function db() {
 }
 
 /**
+ * Cashfree has two vocabularies for one setting - its API docs say
+ * `prod`/`sandbox`, its dashboard says `production`/`test` - so the column
+ * accepts all four and this is the ONE place they are collapsed. Anything
+ * unrecognised is sandbox: an unknown value must never be the one that takes
+ * real money.
+ */
+function isProduction(environment) {
+  return environment === 'prod' || environment === 'production';
+}
+
+/**
+ * Which Cashfree environment a cinema's checkout session belongs to, as the
+ * browser SDK's own `mode` vocabulary.
+ *
+ * This exists so the CONSUMER no longer has to guess. A payment session is
+ * issued against one specific environment (see getClientForCinema below), and
+ * handing it to an SDK loaded in the other one simply never opens the
+ * checkout - no error, nothing to act on. The Consumer used to pick its mode
+ * from a build-time `VITE_CASHFREE_MODE`, which is a second, independent
+ * source for a fact this row already settles, and the two could disagree
+ * silently across a deploy or across cinemas on different environments.
+ * Returning it with the session makes them one value.
+ *
+ * Reads only `environment` - no secret is fetched and nothing is decrypted,
+ * so this is a cheap lookup and not a second handling of a credential. Null
+ * when the cinema has no active row; the caller has no session to pair it
+ * with in that case anyway.
+ */
+async function resolveCheckoutMode(cinemaId) {
+  const { models } = db();
+
+  const config = await models.PaymentGatewayConfig.findOne({
+    where: { cinemaId, isActive: true },
+    attributes: ['environment'],
+  });
+
+  if (!config) return null;
+
+  return isProduction(config.environment) ? 'production' : 'sandbox';
+}
+
+/**
  * Resolve which Cashfree credentials to use for one cinema.
  *
  * PRIMARY SOURCE: `payment_gateway_config`, one encrypted row per cinema,
@@ -131,9 +173,7 @@ async function resolveCredentials(cinemaId) {
       throw new Error('Cashfree is not configured for this cinema', { cause: error });
     }
 
-    const isProduction = config.environment === 'prod' || config.environment === 'production';
-
-    return { appId: config.gatewayId, secretKey, isProduction };
+    return { appId: config.gatewayId, secretKey, isProduction: isProduction(config.environment) };
   }
 
   /*
@@ -433,6 +473,7 @@ module.exports = {
   fetchOrderPayments,
   getClientForCinema,
   resolveCredentials,
+  resolveCheckoutMode,
   isTransientError,
   isAuthError,
   isDuplicateOrderError,

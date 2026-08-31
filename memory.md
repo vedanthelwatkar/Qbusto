@@ -556,14 +556,21 @@ credential.
 ### 8.3 Checkout (frontend)
 
 - `@cashfreepayments/cashfree-js`'s `loadCashfree({ mode })` — **not** a CDN
-  `<script>` tag. `mode` comes from `VITE_CASHFREE_MODE`, which accepts the
-  same four words the `environment` column does (`test`/`sandbox`/`prod`/
-  `production`) and maps them onto the SDK's two. It **must match the
-  environment of the cinema whose session it is** or the SDK rejects the
-  session id. Note the shape of this: the Consumer bakes ONE mode in at build
-  time while environment is per-cinema, so a deployment whose cinemas differ
-  can only satisfy some of them. Known limitation, and it pre-dates the removal
-  of the global credentials.
+  `<script>` tag. `mode` comes from the **`payment-init` response**, not from
+  the build: the backend resolves it from that cinema's own
+  `payment_gateway_config.environment` (`cashfree.client.resolveCheckoutMode`,
+  collapsing the column's four accepted words onto the SDK's two) and returns
+  it alongside the session it was issued for. Unrecognised, absent, or a
+  cinema with no active row all fall back to `sandbox` — an unknown value must
+  never be the one that takes real money.
+  The SDK is therefore loaded AFTER `payment-init` returns rather than on
+  mount, which costs one serialised script fetch and buys the guarantee that
+  session and mode always describe the same environment.
+  This replaced a build-time `VITE_CASHFREE_MODE`, now **removed**. It was a
+  second independent source for a fact the backend already knew: one build
+  carried one mode while environment is per-cinema, so a deployment whose
+  cinemas differed could only satisfy some of them, and any mismatch made the
+  SDK reject the session id with no error the customer could act on.
 - `payment-init` is called automatically on mount, once.
 - On "Pay": `cashfree.checkout({ paymentSessionId, redirectTarget: '_modal' })`
   — stays in-page as a modal in the normal case; the SDK only navigates away
@@ -1494,9 +1501,10 @@ Helper scripts in `backend/scripts/`: `create-dev-user.js`, `seed-dev-data.js`,
   up somewhere durable, **outside the database** — every cinema's stored
   Cashfree secret is encrypted with this exact key, and losing or rotating it
   makes every one of them undecryptable.
-- `VITE_CASHFREE_MODE` (consumer, build-time) must match the `environment` of
-  every cinema this build serves, or the SDK rejects the session id. One build
-  carries one mode, so cinemas on mixed environments need separate builds.
+- **No Consumer-side Cashfree configuration.** Switching a cinema between test
+  and production is a change to its `payment_gateway_config.environment` row
+  alone — the Consumer takes the SDK mode from the `payment-init` response, so
+  there is no build-time value to keep in step and no rebuild to remember.
 - Migrations and seeders applied before starting.
 - `FILE_STORAGE_PATH` set to a directory **outside the application directory**,
   created, writable by the service account, and **added to the backup

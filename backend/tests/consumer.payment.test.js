@@ -64,6 +64,11 @@ jest.mock('../src/config/database', () => {
     // for the kitchen by moving initiated -> confirmed.
     OrderStatus: { findOne: jest.fn() },
     OrderStatusLog: { create: jest.fn() },
+    // Read by cashfree.client.resolveCheckoutMode, which payment-init calls to
+    // tell the Consumer which Cashfree environment the session it is handing
+    // back belongs to. Only `environment` is selected - no secret is fetched
+    // and nothing is decrypted on this path.
+    PaymentGatewayConfig: { findOne: jest.fn() },
   };
 
   return {
@@ -140,6 +145,9 @@ beforeEach(() => {
     where.code === 'confirmed' ? { id: CONFIRMED_STATUS_ID } : { id: INITIATED_STATUS_ID }
   );
   models.OrderStatusLog.create.mockResolvedValue({});
+  // The cinema under test runs on Cashfree's test environment, which is what
+  // payment-init should report back as the SDK mode `sandbox`.
+  models.PaymentGatewayConfig.findOne.mockResolvedValue({ environment: 'test' });
 
   // Default provider posture: nothing has been paid.
   cashfree.fetchOrderPayments.mockResolvedValue([]);
@@ -314,15 +322,16 @@ describe('POST /api/consumer/orders/:orderId/payment-init', () => {
   });
 
   test('a coupon that discounted the order to zero settles immediately, without calling Cashfree at all', async () => {
-    models.Order.findByPk.mockResolvedValue(
-      buildOrder({ total: '0.00', gatewayOrderId: null })
-    );
+    models.Order.findByPk.mockResolvedValue(buildOrder({ total: '0.00', gatewayOrderId: null }));
 
     const response = await initRequest();
 
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual({
       orderId: ORDER_ID,
+      // No session was issued, so there is no SDK to load and no environment
+      // to match it to.
+      mode: null,
       gatewayOrderId: null,
       paymentSessionId: null,
       amount: 0,
@@ -518,7 +527,9 @@ describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
     expect(response.status).toBe(503);
     // Crucially NOT a 409 carrying paymentStatus - that shape is what the
     // Consumer treats as authoritative.
-    expect(response.body.error.details && response.body.error.details.paymentStatus).toBeUndefined();
+    expect(
+      response.body.error.details && response.body.error.details.paymentStatus
+    ).toBeUndefined();
     expect(models.PaymentStatusLog.create).not.toHaveBeenCalled();
   });
 
@@ -620,7 +631,9 @@ describe('POST /api/consumer/orders/:orderId/payment-verify', () => {
     const response = await verifyRequest();
 
     expect(response.status).toBe(503);
-    expect(response.body.error.details && response.body.error.details.gatewayPending).toBeUndefined();
+    expect(
+      response.body.error.details && response.body.error.details.gatewayPending
+    ).toBeUndefined();
   });
 
   test('a SUCCESS alongside a PENDING still settles the order exactly once', async () => {
@@ -731,5 +744,100 @@ describe('payment starts fulfilment, exactly once', () => {
     await verifyRequest();
 
     expect(models.OrderStatusLog.create).toHaveBeenCalledTimes(firstTicketCalls);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The checkout mode travels WITH the session
+// ---------------------------------------------------------------------------
+
+/**
+ * A payment session is issued against one specific Cashfree environment, and
+ * that environment is a per-cinema setting. Handing such a session to a
+ * browser SDK loaded in the other environment simply never opens the checkout
+ * - no error, nothing the customer can act on.
+ *
+ * The Consumer used to pick its mode from a build-time `VITE_CASHFREE_MODE`,
+ * an independent second source for a fact the cinema's own
+ * `payment_gateway_config` row already settles. These tests pin the
+ * replacement: the mode comes back WITH the session, from that row, on every
+ * path that issues one - so the two cannot disagree across a deploy, or
+ * across cinemas sitting on different environments.
+ */
+describe('payment-init reports the environment its session belongs to', () => {
+  /** Cashfree's two vocabularies for one setting, and what each must map to. */
+  test.each([
+    ['test', 'sandbox'],
+    ['sandbox', 'sandbox'],
+    ['prod', 'production'],
+    ['production', 'production'],
+  ])('environment %s is reported to the SDK as %s', async (environment, expected) => {
+    models.PaymentGatewayConfig.findOne.mockResolvedValue({ environment });
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    const response = await initRequest();
+
+    expect(response.body.data.mode).toBe(expected);
+  });
+
+  /**
+   * An unrecognised value must never be the one that takes real money, so it
+   * falls back to sandbox rather than being passed through or guessed at.
+   */
+  test('an unrecognised environment falls back to sandbox, never production', async () => {
+    models.PaymentGatewayConfig.findOne.mockResolvedValue({ environment: 'PRODUCTION ' });
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    const response = await initRequest();
+
+    expect(response.body.data.mode).toBe('sandbox');
+  });
+
+  test('a resumed attempt reports the mode too - it is handed a session as well', async () => {
+    models.PaymentGatewayConfig.findOne.mockResolvedValue({ environment: 'prod' });
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: GATEWAY_ORDER_ID }));
+    cashfree.fetchOrderPayments.mockResolvedValue([]);
+
+    const response = await initRequest();
+
+    expect(response.body.data.paymentSessionId).toBe(SESSION_ID);
+    expect(response.body.data.mode).toBe('production');
+  });
+
+  /**
+   * A cinema with no active gateway row cannot reach here with a session at
+   * all, but the lookup must not invent one either - null means "nothing to
+   * open", and the Consumer's own fallback is sandbox.
+   */
+  test('no active gateway configuration reports no mode rather than guessing', async () => {
+    models.PaymentGatewayConfig.findOne.mockResolvedValue(null);
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    const response = await initRequest();
+
+    expect(response.body.data.mode).toBeNull();
+  });
+
+  /**
+   * The mode is a routing hint for the browser SDK, not a credential. This
+   * guards the boundary anyway: whatever else changed, no secret may ride
+   * along with it.
+   */
+  test('reporting the mode does not put any credential in the response', async () => {
+    models.PaymentGatewayConfig.findOne.mockResolvedValue({ environment: 'prod' });
+    models.Order.findByPk.mockResolvedValue(buildOrder({ gatewayOrderId: null }));
+
+    const response = await initRequest();
+    const body = JSON.stringify(response.body);
+
+    expect(body).not.toContain(SECRET_LOOKALIKE);
+    expect(body).not.toContain('gatewaySecret');
+    expect(body).not.toContain('secretKey');
+
+    // Only `environment` is selected - the encrypted secret is never even read
+    // on this path, so there is nothing to leak in the first place.
+    expect(models.PaymentGatewayConfig.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ attributes: ['environment'] })
+    );
   });
 });

@@ -2238,6 +2238,18 @@ export type PostApiConsumerCinemasCinemaIdCouponsValidate200 = SuccessResponse &
 export type PostApiConsumerOrdersOrderIdPaymentInitBody = { [key: string]: unknown };
 
 /**
+ * The Cashfree environment THIS session belongs to, in the browser SDK's own vocabulary. Load the SDK with this value: a session issued in one environment simply never opens in the other, with no error to act on. It is returned with the session, rather than configured in the client, because environment is a per-cinema setting (`payment_gateway_config.environment`) and a build-time constant cannot track it. Null when there is no session to open - `paymentStatus` is `paid`, or the cinema has no active gateway configuration.
+ * @nullable
+ */
+export type PostApiConsumerOrdersOrderIdPaymentInit200DataMode = typeof PostApiConsumerOrdersOrderIdPaymentInit200DataMode[keyof typeof PostApiConsumerOrdersOrderIdPaymentInit200DataMode] | null;
+
+
+export const PostApiConsumerOrdersOrderIdPaymentInit200DataMode = {
+  sandbox: 'sandbox',
+  production: 'production',
+} as const;
+
+/**
  * Present ONLY when a coupon discounted the order to zero: the order was confirmed as paid immediately, with no gateway involved at all, and the caller should skip straight to the confirmation screen rather than opening a checkout with nothing to pay. Absent (not `pending`) for the ordinary case where there is a real amount to collect.
  */
 export type PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus = typeof PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus[keyof typeof PostApiConsumerOrdersOrderIdPaymentInit200DataPaymentStatus];
@@ -2259,6 +2271,11 @@ export type PostApiConsumerOrdersOrderIdPaymentInit200Data = {
      * @nullable
      */
   paymentSessionId?: string | null;
+  /**
+     * The Cashfree environment THIS session belongs to, in the browser SDK's own vocabulary. Load the SDK with this value: a session issued in one environment simply never opens in the other, with no error to act on. It is returned with the session, rather than configured in the client, because environment is a per-cinema setting (`payment_gateway_config.environment`) and a build-time constant cannot track it. Null when there is no session to open - `paymentStatus` is `paid`, or the cinema has no active gateway configuration.
+     * @nullable
+     */
+  mode?: PostApiConsumerOrdersOrderIdPaymentInit200DataMode;
   /** Amount in paise. 0 when `paymentStatus` is `paid`. */
   amount?: number;
   currency?: string;

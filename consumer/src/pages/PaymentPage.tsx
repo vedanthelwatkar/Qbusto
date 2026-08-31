@@ -33,33 +33,46 @@ import '../styles/pages/payment.scss';
 /**
  * Which Cashfree environment the checkout session belongs to.
  *
- * Baked in at build time like every other VITE_* value, and it MUST match the
- * environment the backend created the session in - a session issued by one is
- * meaningless to the other, and the checkout simply never opens.
+ * COMES FROM THE SERVER, WITH THE SESSION. There is deliberately no
+ * VITE_CASHFREE_MODE any more.
  *
- * The accepted values are the backend's, not the SDK's. A cinema's
- * `payment_gateway_config.environment` column takes
- * `test`/`sandbox`/`prod`/`production`, so this takes the same four and maps
- * them onto the two the SDK's `mode` actually has. Two vocabularies for one
- * setting is how a deploy ends up with `prod` here, silently falling through
- * to sandbox against live credentials.
+ * A payment session is issued against one specific Cashfree environment, and
+ * that environment is a property of the CINEMA
+ * (`payment_gateway_config.environment`), resolved by the backend at the
+ * moment it creates the session. Handing such a session to an SDK loaded in
+ * the other environment simply never opens the checkout - no error, nothing
+ * for the customer to act on.
  *
- * KNOWN LIMITATION: this is one build-time value, while environment is per
- * cinema. A deployment whose cinemas are on different Cashfree environments
- * can only satisfy some of them from a single build.
+ * It used to be a build-time constant, which was a second and independent
+ * source for a fact the backend already knew. Two consequences, both real:
+ * changing the environment meant remembering to rebuild the Consumer, and a
+ * deployment whose cinemas sat on different environments could only ever
+ * satisfy some of them from one build. Taking it from `payment-init` makes
+ * session and mode one value that cannot drift.
  *
- * Anything else - unset, misspelt - is sandbox. An omitted value must never be
- * the one that takes real money.
+ * `sandbox` is the fallback when the field is absent or unrecognised - an
+ * older backend, or a cinema with no active gateway row. An unknown value must
+ * never be the one that takes real money.
  */
-const PRODUCTION_ALIASES = ['prod', 'production'];
+const DEFAULT_CASHFREE_MODE = 'sandbox' as const;
 
-const CASHFREE_MODE: 'sandbox' | 'production' = PRODUCTION_ALIASES.includes(
-  String(import.meta.env.VITE_CASHFREE_MODE ?? '')
-    .trim()
-    .toLowerCase()
-)
-  ? 'production'
-  : 'sandbox';
+function toCashfreeMode(mode: string | null | undefined): 'sandbox' | 'production' {
+  return mode === 'production' ? 'production' : DEFAULT_CASHFREE_MODE;
+}
+
+/**
+ * Identity of one SDK load: the session it is for, and the environment it was
+ * loaded in.
+ *
+ * Both halves, because both are what the loading effect keys on - a value that
+ * tracked only the session could report "ready" for an instance loaded in a
+ * different mode. In practice mode cannot change while a session id stays the
+ * same (same order, same cinema), so this is the invariant stated rather than
+ * a case anyone has hit.
+ */
+function sdkKey(sessionId: string, mode: 'sandbox' | 'production'): string {
+  return `${sessionId}|${mode}`;
+}
 
 /**
  * How long verification may run before the copy escalates from "processing" to
@@ -78,8 +91,20 @@ export default function PaymentPage() {
   const [orderIdError, setOrderIdError] = useState<string | null>(null);
   const [paymentData, setPaymentData] =
     useState<PostApiConsumerOrdersOrderIdPaymentInit200Data | null>(null);
-  const [sdkReady, setSdkReady] = useState(false);
-  const [sdkTimedOut, setSdkTimedOut] = useState(false);
+  /**
+   * SDK readiness, tracked as WHICH SESSION it refers to rather than as a bare
+   * boolean, with `sdkReady` / `sdkTimedOut` derived from it below.
+   *
+   * A boolean answers "did an SDK load?" when the question that matters is
+   * "did the SDK for the session on screen right now load?". Those diverge:
+   * "Try again" re-runs payment-init, which issues a FRESH session id, so a
+   * second load follows and a flag left over from the first describes the
+   * wrong one. Deriving costs nothing and cannot be got wrong by ordering -
+   * there is no reset to remember, and no render in which the flag and the
+   * session disagree.
+   */
+  const [sdkLoadedFor, setSdkLoadedFor] = useState<string | null>(null);
+  const [sdkFailedFor, setSdkFailedFor] = useState<string | null>(null);
   /**
    * The loaded Cashfree SDK. A ref rather than state: it is read inside the
    * pay handler, never rendered, and putting it in state would re-render the
@@ -160,31 +185,88 @@ export default function PaymentPage() {
   }, []);
 
   /**
-   * Load the Cashfree SDK.
+   * Load the Cashfree SDK, in the environment THIS session was issued in.
    *
    * The loader fetches the script itself and resolves with a ready instance,
    * so unlike a deferred CDN tag there is nothing to poll for - the promise IS
    * the readiness signal. A rejection means the script could not be fetched at
    * all, which is the same user-visible situation the old timeout covered.
+   *
+   * Deliberately waits for `payment-init` to return rather than loading on
+   * mount: the mode is part of that response (see toCashfreeMode above), and
+   * loading eagerly would mean guessing it. The cost is that the script starts
+   * after the init call instead of alongside it; the benefit is that the SDK
+   * can no longer be loaded in the wrong environment for the session it is
+   * about to be handed, which is a silent, unrecoverable failure.
+   *
+   * The zero-total path returns no session and `mode: null` - there is nothing
+   * to check out - so the effect skips loading entirely rather than pulling in
+   * a script that will never be used.
+   *
+   * THIS EFFECT CAN RUN MORE THAN ONCE. "Try again" clears `paymentData` and
+   * re-runs payment-init, which issues a FRESH session id, so a second load
+   * follows. Each outcome is therefore recorded against the session it belongs
+   * to (`setSdkLoadedFor` / `setSdkFailedFor`) rather than as a bare flag, and
+   * readiness is derived from that below. Two bugs this closes, both real
+   * before the mode moved server-side and this effect stopped running once:
+   *
+   *   - a `sdkTimedOut` left over from a failed first attempt rendered "the
+   *     secure payment window couldn't load" under an enabled Pay button after
+   *     a retry that had loaded perfectly;
+   *   - `sdkReady` stayed true while the new instance was still in flight, so
+   *     the button was enabled against `cashfreeRef`'s stale instance. Harmless
+   *     only because a retry is the same order and therefore the same mode -
+   *     an accident of the flow rather than anything this code guaranteed.
+   *
+   * The ref is dropped here rather than derived, since it is read imperatively
+   * in `handlePayNow`. That handler already refuses a null ref with a "not
+   * ready" message, and the Pay button is disabled while `sdkReady` is false,
+   * so the window in which it is null is not reachable from the UI.
    */
   useEffect(() => {
+    if (!paymentData?.paymentSessionId) return;
+
     let active = true;
 
-    loadCashfree({ mode: CASHFREE_MODE })
+    // The previous instance, if any, was loaded for a different session. It is
+    // dropped before the new load starts so `cashfreeRef` never holds an SDK
+    // that `sdkReady` does not describe.
+    cashfreeRef.current = null;
+
+    const mode = toCashfreeMode(paymentData.mode);
+    const key = sdkKey(paymentData.paymentSessionId, mode);
+
+    loadCashfree({ mode })
       .then((instance) => {
         if (!active) return;
+        // Ref before state: by the time `sdkReady` can become true, the ref it
+        // describes is already in place.
         cashfreeRef.current = instance;
-        setSdkReady(true);
+        setSdkLoadedFor(key);
       })
       .catch(() => {
         if (!active) return;
-        setSdkTimedOut(true);
+        setSdkFailedFor(key);
       });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [paymentData?.paymentSessionId, paymentData?.mode]);
+
+  /**
+   * Readiness for the session ON SCREEN, not for whatever loaded last.
+   *
+   * Both are false the instant a new session arrives, before the effect above
+   * has even run, so a failed first attempt cannot leave "the secure payment
+   * window couldn't load" under an enabled Pay button after a retry that
+   * worked - and the button cannot enable against the previous session's SDK.
+   */
+  const currentSdkKey = paymentData?.paymentSessionId
+    ? sdkKey(paymentData.paymentSessionId, toCashfreeMode(paymentData.mode))
+    : null;
+  const sdkReady = currentSdkKey !== null && sdkLoadedFor === currentSdkKey;
+  const sdkTimedOut = currentSdkKey !== null && sdkFailedFor === currentSdkKey;
 
   // Resolve the order id. Kept separate from any payment logic so a missing or
   // malformed id is reported as itself rather than as a payment failure.

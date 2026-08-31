@@ -192,12 +192,15 @@ async function main() {
     /*
      * Which Cashfree environment the configured cinemas are on.
      *
-     * Printed because the Consumer's matching value, VITE_CASHFREE_MODE, is
-     * baked in at BUILD time and cannot be read from here - and a checkout
-     * session issued in one environment simply never opens in the other, with
-     * no error the customer can act on. Going live therefore means flipping
-     * these rows AND rebuilding the Consumer, and this is the line that makes
-     * the first half visible to whoever is doing the second.
+     * Printed because nothing else states it plainly and getting it wrong is
+     * the most expensive mistake available: a cinema left on `test` collects
+     * no real money while checkout, webhooks and order status all look
+     * completely healthy.
+     *
+     * It no longer needs cross-checking against the frontend. The Consumer
+     * takes its SDK mode from the payment-init response (see
+     * cashfree.client.resolveCheckoutMode), so these rows are the single
+     * source for the environment rather than one of two that could drift.
      */
     try {
       const [envs] = await sequelize.query(`
@@ -214,7 +217,7 @@ async function main() {
           'Cashfree environment in use',
           envs
             .map((row) => `${row.environment}: ${row.cinemas} cinema(s)`)
-            .concat("the Consumer build's VITE_CASHFREE_MODE must match")
+            .concat('the Consumer follows this automatically - nothing to rebuild')
         );
       }
     } catch (error) {
