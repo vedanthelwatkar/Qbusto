@@ -481,6 +481,27 @@ export interface ConsumerSession {
 }
 
 /**
+ * A POS-synced show a customer can order against (Phase B6). Selecting one supplies the order's showId, which the order endpoint uses to derive filmTitle/showTime/screenId itself.
+ */
+export interface ConsumerShow {
+  /** QBusto's own shows.id. */
+  id?: number;
+  /**
+     * QBusto's own screen id, resolved by POS sync from the provider's external screen identifier. Null when unmapped - the show is still offered, just without a resolved auditorium.
+     * @nullable
+     */
+  screenId?: number | null;
+  /**
+     * The auditorium's name, when screenId is resolved.
+     * @nullable
+     */
+  screenName?: string | null;
+  filmTitle?: string;
+  /** Send this show's id as the order's showId. */
+  showTime?: string;
+}
+
+/**
  * A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.
  */
 export interface OrderStatus {
@@ -2120,6 +2141,10 @@ export type GetApiConsumerCinemasCinemaIdBanners200 = SuccessResponse & {
 
 export type GetApiConsumerCinemasCinemaIdSessions200 = SuccessResponse & {
   data?: ConsumerSession[];
+};
+
+export type GetApiConsumerCinemasCinemaIdShows200 = SuccessResponse & {
+  data?: ConsumerShow[];
 };
 
 export type PostApiConsumerOrdersBodySource = typeof PostApiConsumerOrdersBodySource[keyof typeof PostApiConsumerOrdersBodySource];

@@ -16,6 +16,7 @@ import type {
   GetApiConsumerCinemasCinemaIdProductsParams,
   GetApiConsumerCinemasCinemaIdScreensId200,
   GetApiConsumerCinemasCinemaIdSessions200,
+  GetApiConsumerCinemasCinemaIdShows200,
   GetApiConsumerCinemasId200
 } from '../cinemaOrderingAPI.schemas';
 
@@ -116,7 +117,23 @@ const getApiConsumerCinemasCinemaIdSessions = (
     },
       );
     }
-  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners,getApiConsumerCinemasCinemaIdSessions}};
+  /**
+ * Shows synced from the cinema's POS integration, scheduled and within now - 3h ... now + 3h (inclusive both ends), earliest first.
+ *
+ * A distinct data source from GET .../sessions above - this reads the shows table populated by POS sync, not the client's own session table. A cinema with no POS integration, or one whose last sync found nothing in the window, simply returns an empty list rather than an error.
+ *
+ * Selecting one supplies the order's showId; the order endpoint then derives filmTitle/showTime/screenId from the show itself.
+ * @summary Get POS-synced shows for a cinema (Phase B6)
+ */
+const getApiConsumerCinemasCinemaIdShows = (
+    cinemaId: number,
+ ) => {
+      return customInstance<GetApiConsumerCinemasCinemaIdShows200>(
+      {url: `/api/consumer/cinemas/${cinemaId}/shows`, method: 'GET'
+    },
+      );
+    }
+  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners,getApiConsumerCinemasCinemaIdSessions,getApiConsumerCinemasCinemaIdShows}};
 export type GetApiConsumerCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasId']>>>
 export type GetApiConsumerCinemasCinemaIdScreensIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdScreensId']>>>
 export type GetApiConsumerCinemasCinemaIdCategoriesResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdCategories']>>>
@@ -124,3 +141,4 @@ export type GetApiConsumerCinemasCinemaIdProductsResult = NonNullable<Awaited<Re
 export type GetApiConsumerCinemasCinemaIdProductsIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdProductsId']>>>
 export type GetApiConsumerCinemasCinemaIdBannersResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdBanners']>>>
 export type GetApiConsumerCinemasCinemaIdSessionsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdSessions']>>>
+export type GetApiConsumerCinemasCinemaIdShowsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdShows']>>>

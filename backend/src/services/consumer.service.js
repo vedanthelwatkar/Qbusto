@@ -79,6 +79,16 @@ const SESSIONS_PER_SCREEN = 2;
  */
 const SESSION_STATUS_OPEN = 'O';
 
+/**
+ * Window for the POS-synced shows API (Phase B6), mirroring §7/§12.11 of
+ * docs/pos-integration.md: now - 3h ... now + 3h, inclusive both ends.
+ * Deliberately NOT modeled on getSessions's per-screen cap/distance-sorting -
+ * shows.status already excludes cancelled rows, so nothing here needs the
+ * legacy table's grain-conflict workarounds.
+ */
+const SHOW_WINDOW_HOURS = 3;
+const SHOW_WINDOW_MS = SHOW_WINDOW_HOURS * 60 * 60 * 1000;
+
 const pricingService = require('./pricing.service');
 const cache = require('./cache.service');
 const cashfree = require('./cashfree.client');
@@ -629,14 +639,24 @@ async function createOrder(payload, idempotencyKey) {
     if (!cinema.isActive) throw new ConflictError('Cinema is not active', { cinemaId: cinema.id });
 
     // The auditorium is never trusted from the client - only resolved here,
-    // from the screen name of the show the customer picked plus the seat row
-    // they entered, against `screens` (see resolveScreenId and
-    // client-tables.md "screens grain conflict"). A QR's own screenId is not
-    // used: it is fixed at print time and does not track which show the
+    // either from a POS-synced show (showId, Phase B6/B7 - takes priority
+    // when present) or from the screen name of the show the customer picked
+    // plus the seat row they entered, against `screens` (see resolveScreenId
+    // and client-tables.md "screens grain conflict"). A QR's own screenId is
+    // not used: it is fixed at print time and does not track which show the
     // customer actually selected.
     let screenId = null;
+    let show = null;
 
-    if (payload.screenName) {
+    if (payload.showId) {
+      show = await models.Show.findByPk(payload.showId, { transaction });
+
+      if (!show || show.cinemaId !== cinema.id) {
+        throw new NotFoundError('Show');
+      }
+
+      screenId = show.screenId;
+    } else if (payload.screenName) {
       screenId = await resolveScreenId(cinema.id, payload.screenName, payload.seatRow);
 
       if (!screenId) {
@@ -752,8 +772,10 @@ async function createOrder(payload, idempotencyKey) {
         source: orderSource,
         customerMobile: payload.customerMobile || null,
         customerEmail: payload.customerEmail || null,
-        filmTitle: payload.filmTitle || null,
-        showTime: payload.showTime || null,
+        // A POS-synced show overrides any client-supplied filmTitle/showTime -
+        // those are only a fallback for a cinema with no synced shows yet.
+        filmTitle: show ? show.filmTitle : payload.filmTitle || null,
+        showTime: show ? show.showTime : payload.showTime || null,
         notes: payload.notes || null,
         subtotal: toDecimalString(subtotalPaise),
         discount: toDecimalString(discountPaise),
@@ -771,6 +793,21 @@ async function createOrder(payload, idempotencyKey) {
       })),
       { transaction }
     );
+
+    // POS identifiers, snapshotted at order time - immutable per-order record
+    // of which show this order was placed against (Phase B6/B7).
+    if (show) {
+      await models.OrderPosContext.create(
+        {
+          orderId: order.id,
+          posIntegrationId: show.posIntegrationId,
+          externalSessionId: show.externalSessionId,
+          externalFilmId: show.externalFilmId,
+          externalScreenId: show.externalScreenId,
+        },
+        { transaction }
+      );
+    }
 
     // Create idempotency key association
     try {
@@ -1737,6 +1774,63 @@ async function getSessions(cinemaId) {
   });
 }
 
+/**
+ * POS-synced shows (Phase B6) - a distinct data source from getSessions'
+ * client-owned `session` table above. Deliberately minimal: no per-screen
+ * cap, no distance-sorting, because `shows` rows are already scoped to one
+ * cinema and one window, and `status` already excludes anything cancelled -
+ * none of getSessions' grain-conflict workarounds apply here.
+ */
+async function getShows(cinemaId) {
+  const cinema = await models.Cinema.findByPk(cinemaId, {
+    where: { isActive: true },
+    attributes: ['id'],
+  });
+
+  if (!cinema) throw new NotFoundError('Cinema');
+
+  const now = new Date();
+  const windowStarts = new Date(now.getTime() - SHOW_WINDOW_MS);
+  const windowEnds = new Date(now.getTime() + SHOW_WINDOW_MS);
+
+  const shows = await models.Show.findAll({
+    where: {
+      cinemaId: cinema.id,
+      status: 'scheduled',
+      showTime: {
+        [Op.gte]: windowStarts,
+        [Op.lte]: windowEnds,
+      },
+    },
+    attributes: ['id', 'screenId', 'filmTitle', 'showTime'],
+    include: [
+      {
+        association: 'screen',
+        attributes: ['name'],
+        required: false,
+      },
+    ],
+    order: [['showTime', 'ASC']],
+  });
+
+  return shows
+    .slice()
+    .sort((a, b) => {
+      const timeDiff = a.showTime - b.showTime;
+      if (timeDiff !== 0) return timeDiff;
+      const nameA = (a.screen && a.screen.name) || '';
+      const nameB = (b.screen && b.screen.name) || '';
+      return nameA.localeCompare(nameB);
+    })
+    .map((show) => ({
+      id: show.id,
+      screenId: show.screenId,
+      screenName: show.screen ? show.screen.name : null,
+      filmTitle: show.filmTitle,
+      showTime: show.showTime,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Read-through cache
 //
@@ -1823,6 +1917,7 @@ module.exports = {
 
   // Uncached on purpose - see cache.service.js.
   getSessions,
+  getShows,
   createOrder,
   validateCouponPreview,
   paymentInit,

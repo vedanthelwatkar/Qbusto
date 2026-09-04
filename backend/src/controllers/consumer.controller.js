@@ -137,6 +137,18 @@ async function getSessions(req, res, next) {
   }
 }
 
+async function getShows(req, res, next) {
+  try {
+    const { cinemaId } = req.params;
+
+    const shows = await consumerService.getShows(parseInt(cinemaId));
+
+    return success(res, { data: shows, message: 'Shows found' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Order endpoints
 
 async function createOrder(req, res, next) {
@@ -223,6 +235,7 @@ module.exports = {
   getProductDetail,
   getBanners,
   getSessions,
+  getShows,
   createOrder,
   validateCoupon,
   paymentInit,

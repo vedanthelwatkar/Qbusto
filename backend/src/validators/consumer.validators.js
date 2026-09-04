@@ -72,6 +72,10 @@ const createOrder = {
       .default(null),
     filmTitle: optionalText(200).default(null),
     showTime: Joi.date().iso().allow(null).default(null),
+    // POS-synced show (Phase B6/B7). When present, the service derives
+    // filmTitle/showTime/screenId from the show itself and ignores any
+    // client-supplied filmTitle/showTime - see consumer.service.createOrder.
+    showId: id.optional().allow(null).default(null),
     notes: optionalText(500).default(null),
     // Validated for real against `offers` inside the service - this only
     // bounds its shape. `null`/omitted means no coupon was applied.

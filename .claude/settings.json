@@ -29,5 +29,8 @@
         ]
       }
     ]
-  }
+  },
+  "enabledMcpjsonServers": ["figma", "atlassian", "playwright"],
+  "showThinkingSummaries": true,
+  "verbose": true
 }

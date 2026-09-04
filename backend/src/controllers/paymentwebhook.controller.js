@@ -101,6 +101,10 @@ async function handleCashfreeWebhook(req, res, next) {
   if (!webhookService.isTimestampFresh(timestamp)) {
     logger.warn('Cashfree webhook rejected: timestamp outside accepted window', {
       requestId: req.id,
+      // Both sides of the comparison, so a rejection says whether the cause is
+      // server clock drift or a timestamp that is not in the expected unit.
+      receivedTimestamp: timestamp,
+      serverEpochSeconds: Math.floor(Date.now() / 1000),
     });
     return res.status(400).json({ success: false, error: { message: 'Stale delivery' } });
   }

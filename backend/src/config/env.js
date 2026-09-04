@@ -230,6 +230,23 @@ const envSchema = Joi.object({
       'string.pattern.base':
         'CREDENTIALS_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes for AES-256)',
     }),
+
+  /**
+   * ---- ShowBiz POS (Phase B4, read-only schedule sync) ----
+   *
+   * PartnerId/PartnerPwd exist on ShowBiz's transactional/booking operations
+   * (confirmed from the WSDL), not on the read-only schedule operation this
+   * adapter calls - see src/pos/showbizAdapter.js's module header. Neither is
+   * read by that adapter today, so both stay optional here; they are wired
+   * through now so the future booking-side work has nowhere else to add them
+   * later, and so a real deployment's value is validated at boot rather than
+   * silently accepted as an unknown var.
+   */
+  SHOWBIZ_PARTNER_ID: Joi.string().allow('').optional(),
+  SHOWBIZ_PARTNER_PASSWORD: Joi.string().allow('').optional(),
+
+  /** Same purpose as CASHFREE_TIMEOUT_MS: bound how long we wait on the provider. */
+  SHOWBIZ_TIMEOUT_MS: Joi.number().integer().positive().max(30000).default(8000),
 }).unknown(true);
 
 const { value, error } = envSchema.validate(process.env, {
@@ -421,6 +438,17 @@ const env = {
      * secret in this module - callers check truthiness, not `typeof`.
      */
     credentialsEncryptionKey: value.CREDENTIALS_ENCRYPTION_KEY || '',
+  },
+
+  showbiz: {
+    /*
+     * Not read by the schedule adapter today (see the schema note above) -
+     * kept here only so a future booking-side caller has a single place to
+     * read them from, matching every other credential in this module.
+     */
+    partnerId: value.SHOWBIZ_PARTNER_ID || '',
+    partnerPassword: value.SHOWBIZ_PARTNER_PASSWORD || '',
+    timeoutMs: value.SHOWBIZ_TIMEOUT_MS,
   },
 
   uploads: {

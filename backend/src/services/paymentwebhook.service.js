@@ -269,8 +269,14 @@ async function verifyIncomingWebhook(rawBody, signature, timestamp) {
  * and pass in the other.
  */
 function isTimestampFresh(timestamp, nowSeconds = Math.floor(Date.now() / 1000)) {
-  const value = Number(timestamp);
+  let value = Number(timestamp);
   if (!Number.isFinite(value)) return false;
+  // Observed live: this webhook version sends x-webhook-timestamp in
+  // milliseconds despite the documented seconds format, which otherwise
+  // reads as ~56,000 years stale and rejects every delivery. A seconds-epoch
+  // value is ~1.8e9 today; a millisecond one is ~1.8e12 - three orders of
+  // magnitude apart, so 1e12 safely separates the two for decades to come.
+  if (value > 1e12) value = value / 1000;
   return Math.abs(nowSeconds - value) <= MAX_TIMESTAMP_SKEW_SECONDS;
 }
 

@@ -606,6 +606,37 @@ const definition = {
           seatsAvailable: { type: 'integer', nullable: true },
         },
       },
+      ConsumerShow: {
+        type: 'object',
+        description:
+          'A POS-synced show a customer can order against (Phase B6). Selecting ' +
+          "one supplies the order's showId, which the order endpoint uses to " +
+          'derive filmTitle/showTime/screenId itself.',
+        properties: {
+          id: { type: 'integer', example: 501, description: "QBusto's own shows.id." },
+          screenId: {
+            type: 'integer',
+            nullable: true,
+            example: 22,
+            description:
+              "QBusto's own screen id, resolved by POS sync from the provider's " +
+              'external screen identifier. Null when unmapped - the show is still ' +
+              'offered, just without a resolved auditorium.',
+          },
+          screenName: {
+            type: 'string',
+            nullable: true,
+            example: 'IMAX',
+            description: "The auditorium's name, when screenId is resolved.",
+          },
+          filmTitle: { type: 'string', example: 'Toxic: A Fairy Tale For Grown-ups' },
+          showTime: {
+            type: 'string',
+            format: 'date-time',
+            description: "Send this show's id as the order's showId.",
+          },
+        },
+      },
       OrderStatus: {
         type: 'object',
         description:

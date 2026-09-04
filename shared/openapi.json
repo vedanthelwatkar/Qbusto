@@ -1093,6 +1093,38 @@
           }
         }
       },
+      "ConsumerShow": {
+        "type": "object",
+        "description": "A POS-synced show a customer can order against (Phase B6). Selecting one supplies the order's showId, which the order endpoint uses to derive filmTitle/showTime/screenId itself.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 501,
+            "description": "QBusto's own shows.id."
+          },
+          "screenId": {
+            "type": "integer",
+            "nullable": true,
+            "example": 22,
+            "description": "QBusto's own screen id, resolved by POS sync from the provider's external screen identifier. Null when unmapped - the show is still offered, just without a resolved auditorium."
+          },
+          "screenName": {
+            "type": "string",
+            "nullable": true,
+            "example": "IMAX",
+            "description": "The auditorium's name, when screenId is resolved."
+          },
+          "filmTitle": {
+            "type": "string",
+            "example": "Toxic: A Fairy Tale For Grown-ups"
+          },
+          "showTime": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Send this show's id as the order's showId."
+          }
+        }
+      },
       "OrderStatus": {
         "type": "object",
         "description": "A row from order_statuses or payment_statuses. Address these by `code`; the numeric `id` is database detail and no endpoint accepts one.",
@@ -6227,6 +6259,55 @@
                           "type": "array",
                           "items": {
                             "$ref": "#/components/schemas/ConsumerSession"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cinema not found"
+          }
+        }
+      }
+    },
+    "/api/consumer/cinemas/{cinemaId}/shows": {
+      "get": {
+        "tags": [
+          "Consumer - Catalog"
+        ],
+        "summary": "Get POS-synced shows for a cinema (Phase B6)",
+        "description": "Shows synced from the cinema's POS integration, scheduled and within now - 3h ... now + 3h (inclusive both ends), earliest first.\n\nA distinct data source from GET .../sessions above - this reads the shows table populated by POS sync, not the client's own session table. A cinema with no POS integration, or one whose last sync found nothing in the window, simply returns an empty list rather than an error.\n\nSelecting one supplies the order's showId; the order endpoint then derives filmTitle/showTime/screenId from the show itself.\n",
+        "parameters": [
+          {
+            "name": "cinemaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shows list (empty array when none are in the window)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ConsumerShow"
                           }
                         }
                       }

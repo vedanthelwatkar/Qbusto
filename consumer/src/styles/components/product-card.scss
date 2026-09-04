@@ -54,11 +54,27 @@
     /* 120px where the card has room, but NEVER wider than the card.
        The grid is two columns, so on a narrow phone a column's content box is
        under 120px - a hard 120 then overflowed the card and `margin: 0 auto`
-       had no space left to centre in, which is what read as "off-centre".
-       `aspect-ratio` keeps it square at whatever width it settles on. */
+       had no space left to centre in, which is what read as "off-centre". */
     width: min(120px, 100%);
-    aspect-ratio: 1;
+    /* An EXPLICIT height, not `aspect-ratio: 1`, and the difference is the
+       whole bug. A height derived from `aspect-ratio` is not a definite
+       height, so the image's `height: 100%` had nothing to resolve against
+       and fell back to `auto`: a portrait 200ml can then rendered at its own
+       intrinsic height (roughly 2.5x the box) and `object-fit` never even
+       engaged, because the element it was fitting had already been sized by
+       the picture inside it. A length here is definite, so `height: 100%`
+       below resolves to exactly this, on every card, whatever was uploaded.
+       On a phone column narrower than 120px the box is then slightly taller
+       than wide rather than square - a fixed height is the property that
+       matters here, and every card is still identical. */
+    height: 120px;
     flex-shrink: 0;
+    /* The card is a flex COLUMN, so this is a flex item and its automatic
+       `min-height: auto` is content-based - belt-and-braces against a tall
+       child ever setting the floor. `overflow` is the last line of defence:
+       with a definite height and `contain` below, nothing should reach it. */
+    min-height: 0;
+    overflow: hidden;
     /* Both: `margin` centres it in a block context, `align-self` in the flex
        column the card actually is - without the latter a stretched item would
        be pulled off-centre. */
@@ -73,6 +89,10 @@
   &__image {
     /* `contain`, so the whole product stays visible and is never cropped or
        distorted. The box centres it (flex, above). */
+    /* Both percentages resolve, because the box above has a definite width
+       AND a definite height. That is what makes `contain` do its job:
+       letterbox inside a fixed frame instead of describing a frame the
+       picture had already stretched. */
     width: 100%;
     height: 100%;
     object-fit: contain;

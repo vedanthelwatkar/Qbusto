@@ -310,6 +310,49 @@ router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
  *         description: Cinema not found
  */
 router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
+/**
+ * @openapi
+ * /api/consumer/cinemas/{cinemaId}/shows:
+ *   get:
+ *     tags: [Consumer - Catalog]
+ *     summary: Get POS-synced shows for a cinema (Phase B6)
+ *     description: >
+ *       Shows synced from the cinema's POS integration, scheduled and within
+ *       now - 3h ... now + 3h (inclusive both ends), earliest first.
+ *
+ *
+ *       A distinct data source from GET .../sessions above - this reads the
+ *       shows table populated by POS sync, not the client's own session
+ *       table. A cinema with no POS integration, or one whose last sync
+ *       found nothing in the window, simply returns an empty list rather
+ *       than an error.
+ *
+ *
+ *       Selecting one supplies the order's showId; the order endpoint then
+ *       derives filmTitle/showTime/screenId from the show itself.
+ *     parameters:
+ *       - name: cinemaId
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Shows list (empty array when none are in the window)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/ConsumerShow'
+ *       404:
+ *         description: Cinema not found
+ */
+router.get('/cinemas/:cinemaId/shows', consumerController.getShows);
 
 // Order endpoints
 
