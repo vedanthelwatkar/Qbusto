@@ -2,7 +2,7 @@ import { memo } from 'react';
 
 import type { BoardOrder } from '../types/kitchen';
 import { fulfilmentElapsed, formatClock, formatElapsedWords, describeDuration, urgencyOf } from '../utils/time';
-import { STATUS_ICON, STATUS_LABEL, destinationOf, sourceLabel } from '../utils/workflow';
+import { STATUS_ICON, STATUS_LABEL, destinationOf, nextAction, sourceLabel } from '../utils/workflow';
 
 interface OrderCardProps {
   order: BoardOrder;
@@ -25,7 +25,9 @@ interface OrderCardProps {
    * away in the focus view.
    */
   compact?: boolean;
+  pending?: boolean;
   onOpen: (id: number) => void;
+  onAdvance: (order: BoardOrder) => void;
 }
 
 /**
@@ -58,13 +60,14 @@ const CARD_ITEM_LIMIT = 4;
  * every other render - a transition elsewhere on the board, or a poll that
  * leaves this order untouched, then costs nothing here.
  */
-function OrderCardImpl({ order, now, position, compact = false, onOpen }: OrderCardProps) {
+function OrderCardImpl({ order, now, position, compact = false, pending = false, onOpen, onAdvance }: OrderCardProps) {
   // A delivered order's clock is stopped, and settled work is never late.
   const { ms: elapsed, settled } = fulfilmentElapsed(order, now);
   const urgency = settled ? 'normal' : urgencyOf(elapsed);
 
   const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
   const hiddenItemCount = Math.max(0, order.items.length - CARD_ITEM_LIMIT);
+  const action = nextAction(order.status);
 
   return (
     <article
@@ -122,7 +125,12 @@ function OrderCardImpl({ order, now, position, compact = false, onOpen }: OrderC
             <ul className="card__items">
               {order.items.slice(0, CARD_ITEM_LIMIT).map((item) => (
                 <li key={item.id} className="card__item">
-                  <span className="card__item-name">{item.productName}</span>
+                  <span className="card__item-name">
+                    {item.productName}
+                    {item.specialInstructions && (
+                      <span className="card__item-instruction">Note: {item.specialInstructions}</span>
+                    )}
+                  </span>
                   <span className="card__item-qty" aria-label={`quantity ${item.quantity}`}>
                     &times;{item.quantity}
                   </span>
@@ -176,6 +184,25 @@ function OrderCardImpl({ order, now, position, compact = false, onOpen }: OrderC
             </span>
           </span>
         </footer>
+
+        {!compact && (
+          <div className="card__stages" role="group" aria-label={`Update order ${order.id} status`}>
+            {(['preparing', 'ready', 'delivered'] as const).map((stage) => {
+              const isNext = action?.status === stage;
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  className={`card__stage card__stage--${stage}${isNext ? ' card__stage--next' : ''}`}
+                  disabled={!isNext || pending}
+                  onClick={() => isNext && onAdvance(order)}
+                >
+                  {isNext && pending ? 'Working…' : STATUS_LABEL[stage]}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </article>
   );

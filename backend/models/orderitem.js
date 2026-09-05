@@ -26,6 +26,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(200),
         allowNull: false,
       },
+      // Preparation instructions are immutable snapshots of this exact line.
+      specialInstructions: {
+        type: DataTypes.STRING(500),
+        allowNull: true,
+      },
       posItemId: {
         type: DataTypes.STRING(50),
         allowNull: true,

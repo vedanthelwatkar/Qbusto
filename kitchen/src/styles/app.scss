@@ -843,6 +843,45 @@ body {
   flex-shrink: 0;
 }
 
+.card__item-instruction,
+.detail__item-instruction {
+  display: block;
+  margin-top: 2px;
+  color: #9a6500;
+  font-size: 0.76em;
+  font-weight: 700;
+}
+
+.card__stages {
+  position: relative;
+  z-index: 3;
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s1);
+  margin-top: var(--s2);
+}
+
+.card__stage {
+  min-height: 38px;
+  border: 1px solid var(--paper-line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--on-paper-2);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: not-allowed;
+  min-width: 0;
+
+  &--next {
+    border-color: var(--on-paper);
+    background: var(--on-paper);
+    color: #fff;
+    cursor: pointer;
+  }
+}
+
 .card__notes {
   display: grid;
   gap: 2px;
@@ -1521,6 +1560,10 @@ body {
     flex: 1;
     justify-content: center;
     padding: 0 var(--s3);
+  }
+
+  .card__stage {
+    font-size: 0.62rem;
   }
 }
 

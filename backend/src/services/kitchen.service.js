@@ -71,7 +71,15 @@ const KDS_ATTRIBUTES = [
   'updatedAt',
 ];
 
-const ITEM_ATTRIBUTES = ['id', 'productId', 'productName', 'quantity', 'unitPrice', 'total'];
+const ITEM_ATTRIBUTES = [
+  'id',
+  'productId',
+  'productName',
+  'specialInstructions',
+  'quantity',
+  'unitPrice',
+  'total',
+];
 
 /**
  * Roles that are chain-level by design.
@@ -199,6 +207,7 @@ function serializeKdsOrder(order) {
       id: item.id,
       productId: item.productId,
       productName: item.productName,
+      specialInstructions: item.specialInstructions,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       total: item.total,

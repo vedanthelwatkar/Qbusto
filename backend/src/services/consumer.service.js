@@ -1616,7 +1616,7 @@ async function buildOrderLines(cinema, payload, now, transaction) {
   const day = isoDayOfWeek(now);
   const lines = [];
 
-  for (const { productId, quantity } of items) {
+  for (const { productId, quantity, specialInstructions } of items) {
     const product = productById.get(productId);
     if (!product) throw new NotFoundError(`Product ${productId}`);
 
@@ -1642,6 +1642,7 @@ async function buildOrderLines(cinema, payload, now, transaction) {
       item: {
         productId,
         productName: product.name,
+        specialInstructions: specialInstructions || null,
         quantity,
         unitPrice: toDecimalString(unitPaise),
         discount: toDecimalString(lineDiscountPaise),

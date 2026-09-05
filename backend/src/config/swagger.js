@@ -714,6 +714,12 @@ const definition = {
             example: 'Salted Popcorn',
             description: "The product's name at the time of the order.",
           },
+          specialInstructions: {
+            type: 'string',
+            nullable: true,
+            maxLength: 500,
+            description: 'Special preparation instructions for this product line.',
+          },
           posItemId: {
             type: 'string',
             nullable: true,
@@ -804,6 +810,7 @@ const definition = {
                 id: { type: 'integer' },
                 productId: { type: 'integer' },
                 productName: { type: 'string', example: 'Large Popcorn' },
+                specialInstructions: { type: 'string', nullable: true, maxLength: 500 },
                 quantity: { type: 'integer', example: 2 },
                 unitPrice: { type: 'number', format: 'double' },
                 total: { type: 'number', format: 'double' },

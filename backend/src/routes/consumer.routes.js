@@ -432,6 +432,10 @@ router.get(
  *                     quantity:
  *                       type: integer
  *                       minimum: 1
+ *                     specialInstructions:
+ *                       type: string
+ *                       maxLength: 500
+ *                       nullable: true
  *     responses:
  *       201:
  *         description: Order created

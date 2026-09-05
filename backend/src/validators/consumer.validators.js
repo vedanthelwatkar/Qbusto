@@ -42,6 +42,7 @@ const { ORDER_SOURCE_NAMES } = require('../constants');
 const orderItem = Joi.object({
   productId: id.required(),
   quantity: Joi.number().integer().min(1).max(999).required(),
+  specialInstructions: optionalText(500).default(null),
 });
 
 const items = Joi.array().items(orderItem).min(1).max(50).required().messages({

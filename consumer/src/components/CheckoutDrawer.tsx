@@ -18,6 +18,7 @@ import type { ConsumerSession } from "@/api/generated/cinemaOrderingAPI.schemas"
 import {
   AlertIcon,
   BagIcon,
+  ChevronDownIcon,
   CloseIcon,
   LockIcon,
   MinusIcon,
@@ -137,6 +138,7 @@ export default function CheckoutDrawer() {
   const items = useCartStore((state) => state.items);
   const removeItem = useCartStore((state) => state.removeItem);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
+  const updateSpecialInstructions = useCartStore((state) => state.updateSpecialInstructions);
   const estimatedSubtotal = useCartStore((state) => state.estimatedSubtotal);
 
   const cartOpen = useUIStore((state) => state.cartOpen);
@@ -167,6 +169,7 @@ export default function CheckoutDrawer() {
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [openInstructionIds, setOpenInstructionIds] = useState<Set<number>>(() => new Set());
 
   // Coupon: validated ENTIRELY server-side (see previewCoupon) - this state
   // only remembers the last accepted answer to show it back to the customer.
@@ -268,7 +271,10 @@ export default function CheckoutDrawer() {
    * dependency list: setting it would re-run the effect, the re-run would tear
    * down the first one, and the response it discarded would never arrive.
    */
-  const sessionsRequestedFor = useRef<number | null>(null);
+  // A cinema can have many QR screens. The server's `isCurrent` flag depends
+  // on the screen named by that QR, so caching only by cinema leaves a new QR
+  // context reusing a response that was calculated for a different auditorium.
+  const sessionsRequestedFor = useRef<string | null>(null);
 
   /**
    * Load the cinema's sessions the first time the sheet is opened.
@@ -282,9 +288,10 @@ export default function CheckoutDrawer() {
    * stale, meaning the cinema changed while it was in flight.
    */
   useEffect(() => {
-    if (!cartOpen || sessionsRequestedFor.current === cinemaId) return;
+    const sessionRequestKey = `${cinemaId}:${screenId ?? 'none'}`;
+    if (!cartOpen || sessionsRequestedFor.current === sessionRequestKey) return;
 
-    sessionsRequestedFor.current = cinemaId;
+    sessionsRequestedFor.current = sessionRequestKey;
     setSessionsLoading(true);
     setSessionsFailed(false);
 
@@ -299,7 +306,7 @@ export default function CheckoutDrawer() {
      */
     fetchSessions(cinemaId, screenId).then(
       (loaded) => {
-        if (sessionsRequestedFor.current !== cinemaId) return;
+        if (sessionsRequestedFor.current !== sessionRequestKey) return;
         setSessions(loaded);
         setSessionsLoading(false);
 
@@ -316,12 +323,21 @@ export default function CheckoutDrawer() {
          */
         const current = loaded.find((candidate) => candidate.isCurrent);
 
-        if (current?.id !== undefined && !getValues("sessionId")) {
-          setValue("sessionId", String(current.id), { shouldValidate: false });
+        // This request is keyed by the QR screen. A server-confirmed current
+        // show must replace a value retained from a previous QR screen (or a
+        // prior attempt before the screen context finished loading). A manual
+        // choice made after this initial load is still preserved: this effect
+        // does not run again for the same cinema/screen key.
+        if (current?.id !== undefined) {
+          setValue("sessionId", String(current.id), {
+            shouldDirty: false,
+            shouldTouch: false,
+            shouldValidate: false,
+          });
         }
       },
       () => {
-        if (sessionsRequestedFor.current !== cinemaId) return;
+        if (sessionsRequestedFor.current !== sessionRequestKey) return;
         setSessionsFailed(true);
         setSessionsLoading(false);
         // Clear the marker so reopening the sheet retries rather than sitting
@@ -413,8 +429,9 @@ export default function CheckoutDrawer() {
     if (target && document.contains(target)) target.focus();
   }, [cartOpen]);
 
+  const selectedSessionId = watch("sessionId");
   const selectedSession = sessions.find(
-    (session) => String(session.id) === watch("sessionId"),
+    (session) => String(session.id) === selectedSessionId,
   );
 
   /**
@@ -571,6 +588,7 @@ export default function CheckoutDrawer() {
           items: items.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
+            specialInstructions: item.specialInstructions,
           })),
           source,
           couponCode: appliedCoupon?.code ?? null,
@@ -764,6 +782,45 @@ export default function CheckoutDrawer() {
                           <TrashIcon size={18} />
                         </button>
                       </div>
+
+                      <div className="cart-drawer__instruction">
+                        <button
+                          type="button"
+                          className="cart-drawer__instruction-toggle"
+                          disabled={busy}
+                          aria-expanded={openInstructionIds.has(item.productId)}
+                          aria-controls={`instruction-${item.productId}`}
+                          onClick={() =>
+                            setOpenInstructionIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(item.productId)) next.delete(item.productId);
+                              else next.add(item.productId);
+                              return next;
+                            })
+                          }
+                        >
+                          <span>
+                            {item.specialInstructions ? "Special instructions added" : "Add special instructions"}
+                          </span>
+                          <ChevronDownIcon
+                            size={18}
+                            className={openInstructionIds.has(item.productId) ? "is-open" : undefined}
+                          />
+                        </button>
+                        {openInstructionIds.has(item.productId) && (
+                          <textarea
+                            id={`instruction-${item.productId}`}
+                            rows={2}
+                            maxLength={500}
+                            disabled={busy}
+                            value={item.specialInstructions ?? ""}
+                            onChange={(event) =>
+                              updateSpecialInstructions(item.productId, event.target.value)
+                            }
+                            placeholder="e.g. no salt, extra cheese"
+                          />
+                        )}
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -793,6 +850,7 @@ export default function CheckoutDrawer() {
                       aria-describedby={
                         errors.sessionId ? "checkout-session-error" : undefined
                       }
+                      value={selectedSessionId ?? ""}
                       {...register("sessionId")}
                     >
                       <option value="">

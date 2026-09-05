@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-interface CartItem {
+export interface CartItem {
   productId: number;
   productName: string;
   quantity: number;
@@ -11,6 +11,7 @@ interface CartItem {
    * `/uploads/...` path - resolveImageUrl handles both at render time.
    */
   imageUrl?: string | null;
+  specialInstructions: string | null;
 }
 
 interface CartState {
@@ -22,6 +23,7 @@ interface CartState {
     imageUrl?: string | null
   ): void;
   updateQuantity(productId: number, quantity: number): void;
+  updateSpecialInstructions(productId: number, specialInstructions: string): void;
   removeItem(productId: number): void;
   clear(): void;
   isEmpty(): boolean;
@@ -44,10 +46,26 @@ export const useCartStore = create<CartState>((set, get) => ({
       return {
         items: [
           ...state.items,
-          { productId, productName, quantity: 1, unitPrice, imageUrl },
+          {
+            productId,
+            productName,
+            quantity: 1,
+            unitPrice,
+            imageUrl,
+            specialInstructions: null,
+          },
         ],
       };
     });
+  },
+  updateSpecialInstructions: (productId, specialInstructions) => {
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.productId === productId
+          ? { ...item, specialInstructions: specialInstructions || null }
+          : item
+      ),
+    }));
   },
   updateQuantity: (productId, quantity) => {
     if (quantity <= 0) {

@@ -131,7 +131,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-md);
-    padding: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
 
     & + & {
       border-top: 1px solid var(--color-border);
@@ -198,7 +198,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-md);
-    margin-top: var(--space-md);
+    margin-top: var(--space-sm);
   }
 
   /* No `overflow: hidden` here: it clipped the focus ring on the buttons
@@ -271,6 +271,48 @@
 
     &:active {
       background-color: var(--color-primary-muted);
+    }
+  }
+
+  &__instruction {
+    display: grid;
+    margin-top: var(--space-xs);
+
+    &-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      width: 100%;
+      min-height: 30px;
+      padding: 0;
+      color: var(--color-text-secondary);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      text-align: left;
+
+      svg {
+        flex-shrink: 0;
+        transition: transform var(--transition-fast);
+
+        &.is-open {
+          transform: rotate(180deg);
+        }
+      }
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 64px;
+      resize: vertical;
+      padding: var(--space-sm);
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      font: inherit;
+      margin-top: 2px;
     }
   }
 

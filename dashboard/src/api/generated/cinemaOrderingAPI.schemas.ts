@@ -670,6 +670,12 @@ export interface OrderItem {
   /** The product's name at the time of the order. */
   productName?: string;
   /**
+     * Special preparation instructions for this product line.
+     * @maxLength 500
+     * @nullable
+     */
+  specialInstructions?: string | null;
+  /**
      * Set by the POS integration phase. Null otherwise.
      * @nullable
      */
@@ -729,6 +735,11 @@ export type KitchenOrderItemsItem = {
   id?: number;
   productId?: number;
   productName?: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  specialInstructions?: string | null;
   quantity?: number;
   unitPrice?: number;
   total?: number;
@@ -2800,6 +2811,11 @@ export type PostApiConsumerOrdersBodyItemsItem = {
   productId: number;
   /** @minimum 1 */
   quantity: number;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  specialInstructions?: string | null;
 };
 
 export type PostApiConsumerOrdersBody = {

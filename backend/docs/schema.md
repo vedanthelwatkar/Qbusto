@@ -557,13 +557,14 @@ before the database constraint would); it must be deactivated instead.
 | order_id     | int           | FK -> orders.id, NOT NULL       |
 | product_id   | int           | FK -> products.id, NOT NULL     |
 | product_name | varchar(200)  | NOT NULL                        |
+| special_instructions | varchar(500) | nullable                     |
 | pos_item_id  | varchar(50)   | nullable                        |
 | quantity     | int           | NOT NULL, CHECK > 0             |
 | unit_price   | decimal(10,2) | NOT NULL, CHECK >= 0            |
 | discount     | decimal(10,2) | NOT NULL, default 0, CHECK >= 0 |
 | total        | decimal(10,2) | NOT NULL, CHECK >= 0            |
 
-`product_name`, `unit_price`, and `discount` are frozen snapshots for historical accuracy.
+`product_name`, `unit_price`, `discount`, and `special_instructions` are frozen snapshots for historical accuracy.
 
 ---
 

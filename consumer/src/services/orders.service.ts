@@ -141,7 +141,7 @@ export interface PlaceOrderInput {
   seatNumber: string;
   customerMobile: string;
   customerEmail: string | null;
-  items: Array<{ productId: number; quantity: number }>;
+  items: Array<{ productId: number; quantity: number; specialInstructions?: string | null }>;
   source: PostApiConsumerOrdersBody['source'];
   /**
    * Re-validated and applied server-side at order creation - this is not

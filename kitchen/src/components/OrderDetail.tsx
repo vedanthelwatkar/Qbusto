@@ -127,24 +127,18 @@ export function OrderDetail({ order, now, position, pending, onClose, onAdvance 
             <ul>
               {order.items.map((item) => (
                 <li key={item.id} className="detail__item">
-                  <span className="detail__item-name">{item.productName}</span>
+                  <span className="detail__item-name">
+                    {item.productName}
+                    {item.specialInstructions && (
+                      <span className="detail__item-instruction">Note: {item.specialInstructions}</span>
+                    )}
+                  </span>
                   <span className="detail__item-qty">&times;{item.quantity}</span>
                 </li>
               ))}
             </ul>
           </section>
 
-          <section className="detail__notes-panel" aria-label="Special instructions">
-            <h2 className="detail__section-title">Special instructions</h2>
-            {order.notes ? (
-              <p className="detail__notes">{order.notes}</p>
-            ) : (
-              // Said plainly rather than left blank: an empty panel reads as a
-              // loading failure, and a cook needs to know there is nothing
-              // special about this order.
-              <p className="detail__notes detail__notes--empty">None</p>
-            )}
-          </section>
         </div>
 
         <footer className="detail__foot">

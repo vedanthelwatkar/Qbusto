@@ -13,6 +13,8 @@ interface BoardLaneProps {
    */
   startIndex: number;
   onOpen: (id: number) => void;
+  pendingOrderIds: Set<number>;
+  onAdvance: (order: BoardOrder) => void;
 }
 
 /**
@@ -30,7 +32,7 @@ interface BoardLaneProps {
  * The heading is screen-reader only (`sr-only`, no styled class of its own):
  * the row still needs an accessible name for aria-labelledby.
  */
-export function BoardLane({ status, orders, now, startIndex, onOpen }: BoardLaneProps) {
+export function BoardLane({ status, orders, now, startIndex, onOpen, pendingOrderIds, onAdvance }: BoardLaneProps) {
   if (orders.length === 0) return null;
 
   return (
@@ -49,6 +51,8 @@ export function BoardLane({ status, orders, now, startIndex, onOpen }: BoardLane
             // Finished work is a lookup, not a ticket to cook from.
             compact={status === 'delivered'}
             onOpen={onOpen}
+            pending={pendingOrderIds.has(order.id)}
+            onAdvance={onAdvance}
           />
         ))}
       </div>

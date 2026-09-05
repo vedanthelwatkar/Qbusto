@@ -102,6 +102,7 @@ function buildOrder(overrides = {}) {
         id: 54,
         productId: 17,
         productName: 'Large Popcorn',
+        specialInstructions: 'No butter',
         quantity: 2,
         unitPrice: 250,
         total: 450,
@@ -371,6 +372,7 @@ describe('GET /api/kitchen/orders', () => {
     });
     expect(response.body.data[0].items[0]).toMatchObject({
       productName: 'Large Popcorn',
+      specialInstructions: 'No butter',
       quantity: 2,
     });
   });

@@ -47,6 +47,7 @@ export interface BoardOrderItem {
   id: number;
   productName: string;
   quantity: number;
+  specialInstructions: string | null;
 }
 
 /** How overdue an order is. Drives colour, icon AND text - never colour alone. */
@@ -86,5 +87,10 @@ function toBoardItem(raw: KitchenOrderItemsItem): BoardOrderItem | null {
     return null;
   }
 
-  return { id: raw.id, productName: raw.productName, quantity: raw.quantity };
+  return {
+    id: raw.id,
+    productName: raw.productName,
+    quantity: raw.quantity,
+    specialInstructions: raw.specialInstructions ?? null,
+  };
 }

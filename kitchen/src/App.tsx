@@ -259,6 +259,8 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
                   now={now}
                   startIndex={laneStartIndex[status]}
                   onOpen={setOpenOrderId}
+                  pendingOrderIds={pending}
+                  onAdvance={handleAdvance}
                 />
               ))}
             </div>
@@ -270,6 +272,8 @@ function Board({ onSignOut, cinemaName }: { onSignOut: () => void; cinemaName: s
                 now={now}
                 startIndex={0}
                 onOpen={setOpenOrderId}
+                pendingOrderIds={pending}
+                onAdvance={handleAdvance}
               />
             )}
           </>
