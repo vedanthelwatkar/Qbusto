@@ -60,33 +60,44 @@ value. No filesystem path is ever stored, so the server-side storage directory
 can be changed or moved without touching a row, and no image bytes are stored
 in SQL Server.
 
-### Films and sessions
+### Sessions - the one table of showtimes
 
-`film` and `session` are the client's tables, renamed from `Film` and `Session`
-in 20260823001000 so that every table in this schema reads the same way. Only
-the identifiers changed - not one row, type, key or constraint moved.
+`session` is the client's table, renamed from `Session` in 20260823001000 so
+that every table in this schema reads the same way, and reshaped to ten columns
+in 20260904000100.
+
+It is the **only** table of screenings. There is no `film` table, no `shows`
+table and no per-provider copy: every POS provider's showtimes are normalized
+into this one table by the show sync service, so nothing downstream can tell
+which provider a screening came from, and no frontend ever talks to a POS.
 
 ```
-film --< session >-- cinemas   (by code, not by id)
+cinemas --< session          (by code, not by id)
 ```
 
-They are the source system's, and QBusto reads them **read-only**. Their columns
-keep the provider's names (`Film_strCode`, `Session_dtmRealShow`, and so on)
-because the client syncs against those names; renaming them would break that
-mapping for no benefit here. The models give the application its own vocabulary
-for the handful of columns it reads, so services and API responses never carry a
-`Film_str…` prefix.
+Its columns keep the provider's names (`Film_strCode`, `Session_dtmRealShow`,
+and so on) because the client syncs against those names; renaming them would
+break that mapping for no benefit here. The model gives the application its own
+vocabulary, so services and API responses never carry a `Film_str…` prefix.
 
-Two consequences worth knowing:
+Three consequences worth knowing:
 
-- **Keys are the source system's.** A film is addressed by `Film_strCode`, a
-  varchar, not an integer id of ours. A session has a composite key of
+- **Keys are the source system's.** A session has a composite key of
   `(Code, Session_lngSessionId)`, and its cinema is joined by `cinemas.code`.
+- **The film title is a column, not a join.** `Film_strName` holds it. The
+  earlier shape joined a separate `film` table with `required: true`, which
+  silently dropped any screening whose film row was missing; the title was
+  backfilled onto every session row and the `film` table was dropped.
+  `Film_strCode` remains as the provider's film code and points at nothing.
 - **A session does not reference a screen.** It names the auditorium in
-  `Screen_strName`. Matching that against `screens` is currently ambiguous - the
-  client's `screens` data holds several rows per auditorium - so nothing
-  attempts it, and an order takes its screen from the customer's entry context
-  instead.
+  `Screen_strName`. Matching that against `screens` is ambiguous - the client's
+  `screens` data holds several rows per auditorium - so the resolution happens
+  at order time, on `(cinema_id, name, seat_row)`.
+
+`Session_dtmFinishShow` is what lets the backend answer "which show is running
+right now": the consumer picker matches `Session_dtmRealShow <= now <
+Session_dtmFinishShow`, against the **server's** clock, for the auditorium the
+QR code belongs to. The customer can still change the selection.
 
 The date columns are `datetime` rather than `datetime2`. Sequelize's DATE
 serializer emits an offset-bearing literal that `datetime` rejects, so
@@ -97,15 +108,13 @@ mixed-case columns were lowered to snake_case at the same time. It identifies a
 screen by name rather than by `screens.id`, which is the client's structure and
 is left as they built it.
 
-**Provisioning.** None of `film`, `session`, `screen_layout` or
+**Provisioning.** None of `session`, `screen_layout` or
 `screens.category`/`seat_row` were ever created by a migration - they reached
 this database only because the client's own backup was restored into it (see
 docs/client-database-changes.md). `20260824000100-provision-client-schema`
 closes that gap: it creates each of them, matching the client's exact shapes,
 but only where they are absent. Every step is existence-guarded, so applying
-it to the client's own database is a verified no-op - confirmed by identical
-row counts, identical foreign-key counts and an identical `film` table
-checksum before and after.
+it to the client's own database is a verified no-op.
 
 **`Session_strStatus` vocabulary**, as confirmed by the client:
 
@@ -146,9 +155,12 @@ scope for the current work.
 **Historical note.** Two earlier internal implementations preceded this. A
 single `cinema_shows` table repeated the film title on every screening; it was
 replaced by QBusto-owned `films` and `sessions` tables. Both were superseded
-once the client's own `Film`/`Session` data arrived, and neither exists: their
-migrations were removed before ever being applied, so no database has carried
-them and no data was lost.
+once the client's own `Film`/`Session` data arrived: their migrations were
+removed before ever being applied, so no database has carried them. A third
+attempt, a POS-mirror `shows` table, WAS built and applied - and was dropped in
+20260904000100 for the same reason as the others. Two tables of screenings mean
+two answers to "what is playing now"; `session` is the one the client's systems
+populate, so it is the one that survived.
 
 ### Cinema profile data
 
@@ -375,21 +387,23 @@ The existing POS credential pattern still uses `pos_integrations.credential_ref`
 
 ### Shows
 
-`shows` is the catalog of scheduled shows mirrored from the POS. The POS and show architecture is maintained separately by the development team.
+There is no `shows` table. It existed briefly as a POS mirror and was dropped in
+20260904000100 with 0 rows, no inbound foreign keys and no remaining reader;
+`session` is the catalog now. See "Sessions - the one table of showtimes" above.
 
-It exists because every earlier representation of a show is a _consequence of an order_. `orders.film_title`, `orders.show_time` and `order_pos_context.external_session_id` are per-order snapshots created at checkout and immutable afterwards. None of them can answer "what is playing at this cinema in the next three hours", because a show with no orders would not exist anywhere. The consumer Show Time dropdown needs exactly that question answered, so a catalog table is required.
+The argument that made a catalog table necessary in the first place is still
+worth stating, because it is why the per-order snapshot is not enough on its
+own: `orders.film_title`, `orders.show_time` and
+`order_pos_context.external_session_id` are all created at checkout and
+immutable afterwards, so none of them can answer "what is playing at this cinema
+in the next three hours" - a screening with no orders would not exist anywhere.
+`session` answers it. QBusto keeps the per-order snapshot as well, which is
+correct for history: PopExpress had only that half, carrying
+`Session_lngSessionId`, `Film_strTitle` and `Session_dtmRealShow` on the order
+row and reading live session data from Vista at selection time.
 
-This mirrors, and deliberately corrects, the legacy design. PopExpress had no shows table either: `DAE_Orders` carried `Session_lngSessionId`, `Film_strTitle` and `Session_dtmRealShow` directly on the order row and read live session data from Vista at selection time. QBusto keeps the per-order snapshot, which is correct for history, and adds the catalog half that the legacy schema never had.
-
-The natural key is `(pos_integration_id, external_session_id)`. Synchronization is an upsert on that pair, so the unique index is what prevents duplicates rather than any application-side check-then-write. The same pair is already stored per order on `order_pos_context`, which means an order can be joined back to its show on a unique key without adding a `show_id` column to the frozen `orders` table.
-
-`shows` follows the machine-written conventions rather than the master-data ones:
-
-- No `created_by` / `updated_by`, because the POS sync writes these rows, not a user. This matches `order_pos_context` and `pos_transactions`.
-- No `is_active`. Soft delete is a staff-managed master-data convention, and these rows mirror external state. Lifecycle is `status` (`scheduled` / `cancelled`) plus `last_synced_at`.
-- `screen_id` is nullable, because a show can arrive before its external screen has been mapped. The alternative — refusing or hiding such shows — would silently lose them. The raw `external_screen_id` is kept so the mapping can be resolved later.
-
-`show_time` stores IST wall clock, like every QBusto-owned datetime column. The POS supplies cinema-local wall clock; turning it into a Date is the synchronization service's job (Phase B5), done in one place so the Vista and Showbiz adapters cannot drift apart. Provider adapters return wall clock and never convert.
+The sync service converts a provider's cinema-local wall clock into a Date in
+one place, so provider adapters return wall clock and never convert.
 
 ### User permissions
 

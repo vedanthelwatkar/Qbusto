@@ -53,7 +53,7 @@ unconfigured test cinema affects only itself. `make healthcheck` lists them
 | Item | Decision | Where documented |
 | --- | --- | --- |
 | **Redis caching** | Implemented in code, **not enabled** for this deployment. `REDIS_URL` stays unset; every catalogue request goes to SQL Server, which remains the source of truth. | §12 |
-| **POS integration** (Vista/Showbiz) | **On hold.** No adapter exists and none is required for this release. | §12 |
+| **POS integration** (Vista/Showbiz) | **On hold.** One ShowBiz adapter exists (transport verified only); nothing is required for this release. Showtimes come from the client's own `session` table. | §12 |
 | **QBusto refund API** | **Not being built.** Refunds are performed in the Cashfree Dashboard by the operator. | §12, §11 |
 
 None of the three blocks go-live. Do not promote them to requirements.
@@ -99,9 +99,11 @@ None of the three blocks go-live. Do not promote them to requirements.
         confirm none of this data is present in the production-bound database.
         Query `orders`, `session`, `users` for anything you don't recognize as
         genuine client data before go-live.
-- [ ] **Verify client data is intact** — `film` and `session` are the client's
-      own Vista tables (not QBusto-owned); confirm row counts and a spot-check
-      of a few known films/sessions match what the client's system expects.
+- [ ] **Verify client data is intact** — `session` is the client's own table
+      (not QBusto-owned) and the single source of showtimes; there is no longer
+      a `film` or `shows` table. Confirm row counts and a spot-check of a few
+      known screenings match what the client's system expects, and that
+      `Film_strName` (the title) is populated.
       `screens` and `screen_layout` similarly hold client-provided
       category/seat_row data. **The screen/seat-row model is settled and
       intentional** — see §13 before changing anything here; a `screens` row is
@@ -793,15 +795,145 @@ so that nobody re-derives them as outstanding work.
   the client handover, so this checklist deliberately does not link to it.
 - Do not implement, modify or expand POS functionality as part of this
   production work.
-- Note that the client's `film` and `session` tables — which the Consumer
-  reads today — are **not** part of POS integration; they are populated by the
-  client's own system and are unaffected by this hold.
+- Note that the client's `session` table — which the Consumer reads today — is
+  **not** part of POS integration; it is populated by the client's own system
+  and is unaffected by this hold. It is now the single source of showtimes;
+  `film` and `shows` were dropped in `20260904000100`.
 
 ### QBusto refund API — not being built
 
 - Refunds are performed by the cinema/operator in the **Cashfree Dashboard**;
   see §11 for the procedure.
 - The absence of a refund API is **not a production blocker**.
+
+---
+
+## 12a. WhatsApp order confirmation — Jalpi
+
+A customer gets a WhatsApp message when their order is confirmed.
+
+**The provider is Jalpi** (`https://app.jalpi.com`), confirmed by the client
+and already in use by their own systems. `src/services/whatsapp.client.js`
+posts to `POST /api/v1/sendTemplateMessage` from Node. An earlier Meta Cloud
+API implementation, written before any provider was confirmed, has been
+removed; no Meta account, token or template was ever provisioned, so nothing
+was migrated.
+
+**QBusto does not use the client's `USP_SENDWHATSAPPALERT` stored procedure,
+or any stored procedure, to send notifications.** That procedure was read as a
+specification for the request contract and the template mapping; the
+integration itself is entirely backend code. Nothing in QBusto calls it, and
+turning it off does not affect QBusto's messages. If the client's own systems
+still run it for POPExpress orders, both paths would fire for an order visible
+to both — worth confirming before go-live.
+
+- [ ] **Confirm the client has disabled `USP_SENDWHATSAPPALERT` for orders
+      QBusto now owns**, so a customer does not get two messages.
+
+**The template is `sos_order`, language `en`, already approved on the client's
+Jalpi account.** It takes exactly **two** positional body parameters, as
+documented by the client's own implementation:
+
+```
+{{1}}  #: <order id> | Screen #: <screen> | Seat #: <seat>
+{{2}}  cinema location
+```
+
+Everything else the customer reads — the greeting, "Thank you for visiting …
+Cinemas!!", the 25–30 minute delivery promise — is **fixed text inside the
+approved template** and is not sent from QBusto. `buildBodyParameters` in
+`notification.service.js` builds exactly these two values; **the parameter
+count is fixed at approval time** and the provider rejects a mismatch, so
+changing the body means re-approving the template AND editing that function.
+
+`{{2}}` is read from **`cinemas.city`** on the order's own cinema (falling back
+to `cinemas.name`), which is what the client's hard-coded `CL01 → Noida`,
+`CL02 → Akola` mapping actually produced. QBusto hard-codes no cinema names.
+
+**No image header.** Jalpi's request shape allows
+`headertype`/`link`/`filename`/`headertext`; the client's own working call for
+`sos_order` sends none of them, so neither does QBusto. There is no invented
+image URL anywhere.
+
+- [ ] **If the client later re-approves `sos_order` with an image header**,
+      that needs a publicly reachable image URL supplied as configuration.
+      QBusto has none today — `shared/uploads/` is served from the deployment
+      and is not necessarily reachable from Jalpi's network.
+
+**Jalpi answers `200 OK` whether it sends the message or refuses it.** Both
+observed live:
+
+```
+refused:  {"ErrorCode":"506","ErrorMessage":"your waba configuration not found"}
+sent:     {"ErrorCode":"000","ErrorMessage":"success","Data":[{ ... }]}
+```
+
+So HTTP status alone proves nothing, and `ErrorCode` is the signal — `000` is
+success, any other populated value is a refusal. `interpretResponse` in
+`whatsapp.client.js` is the only place this is decided:
+
+> **The success body echoes the API key and the customer's mobile number
+> back**, in `Data[0].Key` and `Data[0].mobileNumber`. Only `Data[0].MaskId` is
+> read out, at that boundary; the parsed body never leaves the function and is
+> never logged. Treat any change to that function as a credential-handling
+> change.
+
+End-to-end delivery verified live: order 109 at 1Cinemas Noida, message
+received on the customer's handset.
+
+| Outcome | Treated as |
+| --- | --- |
+| Transport failure / timeout | failed |
+| Non-2xx HTTP | failed |
+| 2xx with an explicit failure signal (`status:false`, a populated `error`) | failed |
+| 2xx with no failure signal | **provisionally accepted** |
+
+A key that Jalpi does not recognise fails as `ErrorCode 506, "your waba
+configuration not found"` — the same answer a garbage key gets, and it is
+returned before the template or the parameters are looked at. If every message
+starts failing with 506, suspect the key or the instance, not this code.
+
+- [ ] **Confirm which Jalpi instance is live.** The key is an *instance* API
+      key (instance `919217497755` at the time of writing), not an account-wide
+      one. Rotating the instance means rotating `JALPI_API_KEY`.
+
+**Known limitation, accepted:** there is **no retry**. A transient Jalpi
+outage or timeout costs that one message; the order is unaffected and the row
+records `whatsapp_status = 'failed'`. There is also no delivery webhook, so
+`success` means "accepted by Jalpi", not "read by the customer".
+
+**Environment**, all optional — see `backend/.env.example`: `JALPI_BASE_URL`,
+`JALPI_API_KEY`, `JALPI_TEMPLATE_NAME`, `JALPI_LANGUAGE_CODE`,
+`JALPI_TIMEOUT_MS`, `WHATSAPP_DEFAULT_COUNTRY_CODE`.
+
+- [ ] **`JALPI_API_KEY` is set in the deployment environment only.** It is
+      never in the database, never in `.env.example`, never logged. Note that
+      Jalpi authenticates with it as a **field in the JSON body**, not a
+      header, so the request body is never logged either. There is deliberately
+      no `JALPI_USERNAME`/`JALPI_PASSWORD`: the credentials issued alongside
+      the key are for the Jalpi web console, and this endpoint neither accepts
+      nor needs them.
+- [ ] **Rotate the key that appears in `USP_SENDWHATSAPPALERT.sql`.** That
+      file carries a live Jalpi key in plaintext. It has not been copied into
+      QBusto's code, tests, documentation or `.env.example`, and it should not
+      be — but it has been readable to anyone with the file.
+- [ ] A failed send logs the HTTP status and, where the provider supplies a
+      short scalar one, its error code. Never the response body: it can echo
+      the customer's phone number and the request back.
+- [ ] Leaving the variables unset is a **valid production state**: the backend
+      boots normally and simply never sends. It refuses to boot for a bad
+      Cashfree config, but not for a notification channel.
+- [ ] **Turn the channel on per cinema** with `cinemas.whatsapp_enabled`. Off
+      means never attempted, and `orders.whatsapp_status` stays NULL.
+
+**A WhatsApp failure never invalidates an order.** The send is registered with
+`transaction.afterCommit`, so it does not begin until the order has committed;
+every path is wrapped; the outcome is a log line plus
+`orders.whatsapp_status = 'failed'`. A Jalpi outage costs messages, not orders.
+
+- [ ] After go-live, spot-check `SELECT whatsapp_status, COUNT(*) FROM orders
+      GROUP BY whatsapp_status`. A wall of `failed` means a configuration
+      problem, not an ordering problem.
 
 ---
 

@@ -12,6 +12,7 @@ import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { Cinema, PaymentGatewayConfig } from '@/api/generated/cinemaOrderingAPI.schemas';
 import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
+import CinemaCategoryOrderModal from '@/components/cinemas/CinemaCategoryOrderModal';
 import { toApiError } from '@/services/api';
 import * as cinemasService from '@/services/cinemas.service';
 import * as gatewayConfigService from '@/services/paymentGatewayConfig.service';
@@ -47,6 +48,7 @@ export default function CinemaDetailsDrawer({
   const [gatewayLoading, setGatewayLoading] = useState(true);
   const [gatewayError, setGatewayError] = useState<string | null>(null);
   const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
+  const [categoryOrderOpen, setCategoryOrderOpen] = useState(false);
 
   /** Closes itself, then tells the parent, so the slide-out animation runs. */
   const [visible, setVisible] = useState(true);
@@ -272,12 +274,43 @@ export default function CinemaDetailsDrawer({
         </>
       ) : null}
 
+      {cinema ? (
+        <>
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
+            Menu
+          </Typography.Title>
+
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="Category order">
+              <Text type="secondary">
+                The order categories appear in for THIS cinema. Unordered cinemas show them
+                alphabetically.
+              </Text>
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Space style={{ marginTop: 12 }}>
+            <Button size="small" onClick={() => setCategoryOrderOpen(true)}>
+              Set category order
+            </Button>
+          </Space>
+        </>
+      ) : null}
+
       {gatewayModalOpen && cinema ? (
         <CinemaPaymentGatewayModal
           cinemaId={cinemaId}
           cinemaName={cinema.name ?? 'this cinema'}
           onClose={() => setGatewayModalOpen(false)}
           onSaved={fetchGatewayConfig}
+        />
+      ) : null}
+
+      {categoryOrderOpen && cinema ? (
+        <CinemaCategoryOrderModal
+          cinemaId={cinemaId}
+          cinemaName={cinema.name ?? 'this cinema'}
+          onClose={() => setCategoryOrderOpen(false)}
         />
       ) : null}
     </Drawer>

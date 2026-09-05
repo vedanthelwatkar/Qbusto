@@ -366,7 +366,7 @@ export default function PaymentPage() {
             {
               phase: 'unresolved',
               message:
-                'We have not been able to confirm this payment yet. Please do not pay again — show your order reference at the counter and they can check it for you.',
+                'We have not been able to confirm this payment yet. Please do not pay again. Show your order reference at the counter and they can check it for you.',
               attemptId: attempt.attemptId,
             },
             attempt.attemptId
@@ -398,8 +398,8 @@ export default function PaymentPage() {
             // as evidence about the payment itself — both branches say the
             // same thing about the money, which is that we do not know yet.
             message: navigator.onLine
-              ? 'We could not check your payment just now. Please do not pay again — try again in a moment.'
-              : 'You appear to be offline, so we cannot check your payment yet. Please do not pay again — this will resume automatically when you reconnect.',
+              ? 'We could not check your payment just now. Please do not pay again. Try again in a moment.'
+              : 'You appear to be offline, so we cannot check your payment yet. Please do not pay again. This will resume automatically when you reconnect.',
             attemptId: attempt.attemptId,
           },
           attempt.attemptId
@@ -597,7 +597,7 @@ export default function PaymentPage() {
           {
             phase: 'unresolved',
             message:
-              'We could not confirm your payment yet. Please do not pay again — check the status below.',
+              'We could not confirm your payment yet. Please do not pay again. Check the status below.',
             attemptId: attempt.attemptId,
           },
           attempt.attemptId
@@ -655,7 +655,7 @@ export default function PaymentPage() {
               {
                 phase: 'unresolved',
                 message:
-                  'Your payment is still being processed. Please do not pay again — check the status below in a moment.',
+                  'Your payment is still being processed. Please do not pay again. Check the status below in a moment.',
                 attemptId: attempt.attemptId,
               },
               attempt.attemptId
@@ -698,7 +698,7 @@ export default function PaymentPage() {
           {
             phase: 'unresolved',
             message:
-              'We could not check your payment just now. Please do not pay again — try again in a moment.',
+              'We could not check your payment just now. Please do not pay again. Try again in a moment.',
             attemptId: attempt.attemptId,
           },
           attempt.attemptId
@@ -1025,7 +1025,7 @@ export default function PaymentPage() {
                 )}
               </button>
               <p className="payment__unverified">
-                This only checks what happened — it will not charge you again. If it stays
+                This only checks what happened, and it will not charge you again. If it stays
                 unresolved, show order <strong>#{orderId}</strong> at the counter.
               </p>
 

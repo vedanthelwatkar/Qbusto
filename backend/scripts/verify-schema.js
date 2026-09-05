@@ -15,8 +15,8 @@
  *
  * (2) exists because (1) alone is not a database check at all: a model
  * initializes correctly whether or not its table exists, so a database
- * missing `film`/`session`/`screen_layout` used to print a clean ✓ for all
- * three. That happened for real - see docs/client-database-changes.md and
+ * missing `session`/`screen_layout` used to print a clean ✓ for all
+ * both. That happened for real - see docs/client-database-changes.md and
  * the 20260824000100 migration that fixes the missing tables. This script
  * would have caught it on day one if it had ever queried the database.
  *

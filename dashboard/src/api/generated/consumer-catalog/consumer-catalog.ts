@@ -16,7 +16,7 @@ import type {
   GetApiConsumerCinemasCinemaIdProductsParams,
   GetApiConsumerCinemasCinemaIdScreensId200,
   GetApiConsumerCinemasCinemaIdSessions200,
-  GetApiConsumerCinemasCinemaIdShows200,
+  GetApiConsumerCinemasCinemaIdSessionsParams,
   GetApiConsumerCinemasId200
 } from '../cinemaOrderingAPI.schemas';
 
@@ -102,38 +102,26 @@ const getApiConsumerCinemasCinemaIdBanners = (
       );
     }
   /**
- * Scheduled screenings at this cinema that have not started yet, earliest first. Each session joins a film to an auditorium at a time.
+ * Screenings at this cinema a customer may order food against: status `O` (open) and starting within three hours either side of now, at most two per auditorium, chronological.
+ *
+ * `session` is the single source of show data in QBusto. The film title is a column on the screening itself, so there is no separate film or shows endpoint and no second list to reconcile this one against.
  *
  * The Consumer offers these as a single picker at checkout, and the selected session supplies the order's `screenName`, `filmTitle` and `showTime` together, so the customer does not enter these separately and they cannot disagree. `screenName` plus the row the customer enters (or picks from `seatRows`, when non-empty) resolve to the order's actual screen id server-side.
  *
- * Sessions whose film or auditorium is no longer active are excluded, so every option offered can actually be ordered against.
+ * AUTO-SELECTION. Pass the QR's `screenId` and the server decides which screening is running on that auditorium right now - cinema, screen and the SERVER clock against the screening's start and end - and flags it `isCurrent: true`. At most one session in the response carries it, and it is always included in the list even when the window or the per-screen cap would otherwise have dropped it, so the Consumer can preselect it. No time is accepted from the client. The customer can still choose any other session in the list.
  * @summary Get bookable sessions for a cinema
  */
 const getApiConsumerCinemasCinemaIdSessions = (
     cinemaId: number,
+    params?: GetApiConsumerCinemasCinemaIdSessionsParams,
  ) => {
       return customInstance<GetApiConsumerCinemasCinemaIdSessions200>(
-      {url: `/api/consumer/cinemas/${cinemaId}/sessions`, method: 'GET'
+      {url: `/api/consumer/cinemas/${cinemaId}/sessions`, method: 'GET',
+        params
     },
       );
     }
-  /**
- * Shows synced from the cinema's POS integration, scheduled and within now - 3h ... now + 3h (inclusive both ends), earliest first.
- *
- * A distinct data source from GET .../sessions above - this reads the shows table populated by POS sync, not the client's own session table. A cinema with no POS integration, or one whose last sync found nothing in the window, simply returns an empty list rather than an error.
- *
- * Selecting one supplies the order's showId; the order endpoint then derives filmTitle/showTime/screenId from the show itself.
- * @summary Get POS-synced shows for a cinema (Phase B6)
- */
-const getApiConsumerCinemasCinemaIdShows = (
-    cinemaId: number,
- ) => {
-      return customInstance<GetApiConsumerCinemasCinemaIdShows200>(
-      {url: `/api/consumer/cinemas/${cinemaId}/shows`, method: 'GET'
-    },
-      );
-    }
-  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners,getApiConsumerCinemasCinemaIdSessions,getApiConsumerCinemasCinemaIdShows}};
+  return {getApiConsumerCinemasId,getApiConsumerCinemasCinemaIdScreensId,getApiConsumerCinemasCinemaIdCategories,getApiConsumerCinemasCinemaIdProducts,getApiConsumerCinemasCinemaIdProductsId,getApiConsumerCinemasCinemaIdBanners,getApiConsumerCinemasCinemaIdSessions}};
 export type GetApiConsumerCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasId']>>>
 export type GetApiConsumerCinemasCinemaIdScreensIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdScreensId']>>>
 export type GetApiConsumerCinemasCinemaIdCategoriesResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdCategories']>>>
@@ -141,4 +129,3 @@ export type GetApiConsumerCinemasCinemaIdProductsResult = NonNullable<Awaited<Re
 export type GetApiConsumerCinemasCinemaIdProductsIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdProductsId']>>>
 export type GetApiConsumerCinemasCinemaIdBannersResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdBanners']>>>
 export type GetApiConsumerCinemasCinemaIdSessionsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdSessions']>>>
-export type GetApiConsumerCinemasCinemaIdShowsResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getConsumerCatalog>['getApiConsumerCinemasCinemaIdShows']>>>

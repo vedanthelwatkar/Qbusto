@@ -129,21 +129,21 @@ async function getSessions(req, res, next) {
   try {
     const { cinemaId } = req.params;
 
-    const sessions = await consumerService.getSessions(parseInt(cinemaId));
+    /*
+     * The QR's screen, when it carried one.
+     *
+     * It is the only thing the request contributes to picking the current
+     * show - the time is the server's. Optional, because a lobby QR names no
+     * screen and a kiosk has none; the response then simply flags nothing as
+     * current.
+     */
+    const { screenId } = req.validated ? req.validated.query : {};
+
+    const sessions = await consumerService.getSessions(parseInt(cinemaId), {
+      screenId: screenId ?? null,
+    });
 
     return success(res, { data: sessions, message: 'Sessions found' });
-  } catch (error) {
-    next(error);
-  }
-}
-
-async function getShows(req, res, next) {
-  try {
-    const { cinemaId } = req.params;
-
-    const shows = await consumerService.getShows(parseInt(cinemaId));
-
-    return success(res, { data: shows, message: 'Shows found' });
   } catch (error) {
     next(error);
   }
@@ -235,7 +235,6 @@ module.exports = {
   getProductDetail,
   getBanners,
   getSessions,
-  getShows,
   createOrder,
   validateCoupon,
   paymentInit,

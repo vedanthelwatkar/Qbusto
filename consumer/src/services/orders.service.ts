@@ -109,15 +109,25 @@ export async function verifyOrderPayment(
 /**
  * Everything checkout needs to place one order.
  *
- * The show contributes most of these: an order carries `screenName`,
- * `filmTitle` and `showTime` separately, and the picker's job is to supply all
- * three from one choice rather than asking the customer for each. The
- * auditorium itself is never sent as an id - only `screenName` plus the
- * `seatRow` the customer entered, which the backend resolves to the real
- * `screens.id` itself (see consumer.service.resolveScreenId on the backend).
+ * The chosen screening supplies most of these. `sessionId` is the one that
+ * matters: the backend reads the film title, the show time and the
+ * auditorium's name off that session row and ignores anything this app claims
+ * about them, so a tampered payload cannot put one film's title on another
+ * film's screening. `screenName`/`filmTitle`/`showTime` are still sent because
+ * an order MAY be placed with no screening selected (a kiosk or counter
+ * terminal), and they are the fallback for exactly that case.
+ *
+ * The auditorium is never sent as an id - only `screenName` plus the `seatRow`
+ * the customer entered, which the backend resolves to the real `screens.id`
+ * itself (see consumer.service.resolveScreenId on the backend).
  */
 export interface PlaceOrderInput {
   cinemaId: number;
+  /**
+   * The screening the customer picked, from the picker's own list. The
+   * backend derives the film, the time and the screen name from it.
+   */
+  sessionId: number | null;
   /** The session's own screen name. Null when no show was selected. */
   screenName: string | null;
   /**
@@ -158,6 +168,7 @@ export async function placeOrder(
 ): Promise<PostApiConsumerOrders201Data | undefined> {
   const orderData: PostApiConsumerOrdersBody = {
     cinemaId: input.cinemaId,
+    sessionId: input.sessionId,
     screenName: input.screenName,
     seatRow: input.seatRow,
     seatNumber: input.seatNumber,

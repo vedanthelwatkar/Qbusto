@@ -309,6 +309,10 @@ describe('pos/externalShow', () => {
       externalFilmId: 'FILM-9',
       filmTitle: 'A Test Double Film',
       showTimeLocal: '2026-08-13T18:30:00',
+      // Null unless the provider supplies one. session.Session_dtmFinishShow
+      // is NOT NULL, so the sync service skips such a row rather than
+      // inventing an end time - see src/pos/externalShow.js.
+      showTimeEndLocal: null,
       cancelled: false,
     });
   });

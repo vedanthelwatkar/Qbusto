@@ -488,47 +488,13 @@ const definition = {
           updatedAt: { type: 'string', format: 'date-time' },
         },
       },
-      Film: {
-        type: 'object',
-        description:
-          'A film as the source system supplies it. Read-only: the catalogue is ' +
-          'synced, so QBusto does not write it.',
-        properties: {
-          code: {
-            type: 'string',
-            example: 'HO00012070',
-            description: "The source system's film code. This is the primary key.",
-          },
-          title: { type: 'string', nullable: true, example: 'Toxic: A Fairy Tale For Grown-ups' },
-          certification: { type: 'string', nullable: true, example: 'U/A' },
-          durationMinutes: { type: 'integer', nullable: true, example: 125 },
-          imageUrl: {
-            type: 'string',
-            nullable: true,
-            description: 'Poster art from the source system.',
-          },
-          status: {
-            type: 'string',
-            nullable: true,
-            description: "The source system's lifecycle flag.",
-          },
-          nowShowingFlag: {
-            type: 'string',
-            nullable: true,
-            example: 'N',
-            description:
-              "The source system's raw flag, passed through without interpretation - " +
-              "its vocabulary is not documented and the client's data has never " +
-              "contained a 'Y' value.",
-          },
-          openingDate: { type: 'string', format: 'date-time', nullable: true },
-        },
-      },
       Session: {
         type: 'object',
         description:
-          'One screening as the source system supplies it. Read-only. The ' +
-          'auditorium is named rather than referenced by id.',
+          'One screening. The single source of show data in QBusto: the film ' +
+          'title is a column on this row, not a join. Read-only - the schedule is ' +
+          'synchronized from the POS. The auditorium is named rather than ' +
+          'referenced by id.',
         properties: {
           cinemaCode: { type: 'string', example: 'NOIDA' },
           sessionId: {
@@ -536,15 +502,30 @@ const definition = {
             example: 18757,
             description: "The source system's session id, unique within a cinema.",
           },
-          filmCode: { type: 'string', nullable: true, example: 'HO00012070' },
+          filmCode: {
+            type: 'string',
+            example: 'HO00012070',
+            description:
+              "The source system's film identifier. Kept for POS reconciliation; " +
+              'there is no film table for it to resolve to.',
+          },
+          filmTitle: {
+            type: 'string',
+            nullable: true,
+            example: 'Toxic: A Fairy Tale For Grown-ups',
+            description: 'The title, stored on the session row itself.',
+          },
           screenNumber: { type: 'integer', nullable: true, example: 5 },
           screenName: { type: 'string', nullable: true, example: 'IMAX' },
           startsAt: { type: 'string', format: 'date-time' },
           endsAt: { type: 'string', format: 'date-time' },
-          seatsTotal: { type: 'integer', nullable: true },
-          seatsAvailable: { type: 'integer', nullable: true },
-          status: { type: 'string', example: 'O', description: "The source system's status flag." },
-          filmTitle: { type: 'string', nullable: true },
+          status: {
+            type: 'string',
+            example: 'O',
+            description:
+              "The source system's status flag. O = open (the only bookable one), " +
+              'C = closed, I = inactive.',
+          },
           cinemaName: { type: 'string', nullable: true },
           cinemaId: { type: 'integer', nullable: true },
         },
@@ -595,46 +576,33 @@ const definition = {
             example: 'Toxic: A Fairy Tale For Grown-ups',
             description: "Send this as the order's filmTitle.",
           },
-          certification: { type: 'string', nullable: true, example: 'U/A' },
-          durationMinutes: { type: 'integer', nullable: true, example: 125 },
           startsAt: {
             type: 'string',
             format: 'date-time',
             description: "Send this as the order's showTime.",
           },
           endsAt: { type: 'string', format: 'date-time', nullable: true },
-          seatsAvailable: { type: 'integer', nullable: true },
+          isCurrent: {
+            type: 'boolean',
+            example: true,
+            description:
+              'True for the screening running RIGHT NOW on this auditorium, ' +
+              'decided server-side against the server clock. At most one session ' +
+              'per screen carries it. The Consumer preselects the one whose screen ' +
+              "matches the QR's screenId.",
+          },
         },
       },
-      ConsumerShow: {
+      CategoryOrderEntry: {
         type: 'object',
         description:
-          'A POS-synced show a customer can order against (Phase B6). Selecting ' +
-          "one supplies the order's showId, which the order endpoint uses to " +
-          'derive filmTitle/showTime/screenId itself.',
+          "One category's place in a cinema's display order. `sequence` 0 " +
+          'means nobody has placed it, and such a category sorts after every ' +
+          'placed one, alphabetically.',
         properties: {
-          id: { type: 'integer', example: 501, description: "QBusto's own shows.id." },
-          screenId: {
-            type: 'integer',
-            nullable: true,
-            example: 22,
-            description:
-              "QBusto's own screen id, resolved by POS sync from the provider's " +
-              'external screen identifier. Null when unmapped - the show is still ' +
-              'offered, just without a resolved auditorium.',
-          },
-          screenName: {
-            type: 'string',
-            nullable: true,
-            example: 'IMAX',
-            description: "The auditorium's name, when screenId is resolved.",
-          },
-          filmTitle: { type: 'string', example: 'Toxic: A Fairy Tale For Grown-ups' },
-          showTime: {
-            type: 'string',
-            format: 'date-time',
-            description: "Send this show's id as the order's showId.",
-          },
+          id: { type: 'integer', example: 7 },
+          name: { type: 'string', example: 'Desserts' },
+          sequence: { type: 'integer', example: 1 },
         },
       },
       OrderStatus: {

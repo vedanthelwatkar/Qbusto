@@ -28,7 +28,7 @@ only. Show the generated file and ask before running it against any shared
 database, since `make migrate` is not reversible in the way a local dry run
 would be.
 
-If the migration touches `film`/`session`/`screen`/`screen_layout`, also
+If the migration touches `session`/`screen`/`screen_layout`, also
 read [.claude/rules/client-tables.md](../../rules/client-tables.md) — those
-tables have rules (provider columns never renamed, `screens` grain conflict
-unresolved) this skill will not itself enforce.
+tables have rules (provider columns never renamed, one and only one table of
+showtimes, `screens` grain conflict) this skill will not itself enforce.

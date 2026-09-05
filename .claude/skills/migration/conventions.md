@@ -55,14 +55,18 @@ Two SQL Server quirks, verified live:
   table can mean either "this migration created it" or "it arrived empty
   from the client," and only the first case is safe to reverse.
 
-## 4. Never touch `film`/`session` provider columns
+## 4. Never touch `session` provider columns
 
-Columns like `Film_strCode`, `Session_lngSessionId`, `Session_dtmRealShow`
-are the client's Vista source-system contract. Never `sp_rename` or `ALTER
-COLUMN` them, no matter how tempting the naming inconsistency looks.
+Columns like `Film_strCode`, `Film_strName`, `Session_lngSessionId`,
+`Session_dtmRealShow` are the client's source-system contract. Never
+`sp_rename` or `ALTER COLUMN` them, no matter how tempting the naming
+inconsistency looks.
 
-## 5. Never create a QBusto-owned `films`/`sessions` duplicate
+## 5. Never create a second table of showtimes
 
-`film`/`session` (lowercase) are the canonical client-owned tables. Earlier
-migrations that created duplicate QBusto-owned `films`/`sessions` tables
-were removed on purpose — don't reintroduce them.
+`session` (lowercase, client-owned) is the ONE source of screenings. There is
+no `film` table, no `shows` table and no provider-specific copy — every one
+that was tried has been dropped on purpose, most recently by
+`20260904000100-session-sole-show-source.js`. A new `films`, `sessions` or
+`shows` table, or a per-provider variant of any of them, is the mistake, not
+the fix.

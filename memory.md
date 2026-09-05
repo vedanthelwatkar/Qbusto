@@ -39,11 +39,12 @@ through a generated typed client.
 
 ```
 backend/src/
-  routes/       21 files  (api, auth, availability, banner, category, chain,
-                           cinema, cinemaproduct, consumer, film, health,
-                           kitchen, order, orderstatus, pricing, product,
-                           screen, session, upload, user, webhook)
-  controllers/  18 files
+  routes/       22 files  (api, auth, availability, banner, category, chain,
+                           cinema, cinemaproduct, consumer, health, kitchen,
+                           offer, order, orderstatus, paymentgatewayconfig,
+                           pricing, product, screen, session, upload, user,
+                           webhook)
+  controllers/  20 files
   services/     20 files
   validators/   16 files  (Joi)
   middleware/   authenticate, authorize, errorHandler, notFound,
@@ -133,14 +134,14 @@ relates the two. Nothing under `src/` should read DB connection settings from
 `cinema_products`, `product_availability_hours`, `product_pricing`, `banners`,
 `users`, `user_permissions`, `orders`, `order_items`, `order_status_logs`,
 `payment_status_logs`, `order_statuses`, `payment_statuses`,
-`idempotency_keys`, `razorpay_webhook_events`, `shows`,
+`idempotency_keys`, `razorpay_webhook_events`,
 `payment_gateway_config`, and the POS tables (`pos_integrations`,
 `screen_pos_mappings`, `product_pos_mappings`, `order_pos_context`,
 `pos_transactions`).
 
 ### Client-owned tables
 
-`film`, `session`, `screen_layout` — see §7.
+`session`, `screen_layout` — see §7.
 
 ### Notable schema facts
 
@@ -157,7 +158,7 @@ relates the two. Nothing under `src/` should read DB connection settings from
 
 ## 5. Migrations
 
-32 files in `backend/migrations/`, timestamp-ordered:
+43 files in `backend/migrations/`, timestamp-ordered (the list below is the state as written and is not maintained per-migration; `ls backend/migrations` is authoritative):
 
 - `20260809000100`–`20260809002600` — the original schema: statuses, chains,
   cinemas, users, permissions, screens, categories, products, pricing, banners,
@@ -168,6 +169,15 @@ relates the two. Nothing under `src/` should read DB connection settings from
 - `20260817000200-unique-order-razorpay-order-id.js`
 - `20260823001000-align-client-naming.js` ← recent alignment work
 - `20260824000100-provision-client-schema.js` ← recent alignment work
+- `20260904000100-session-sole-show-source.js` ← **the destructive one.** Drops
+  `film`, `shows` and (by renaming it into place) `session_old`; leaves
+  `session` as the ten-column single source of showtimes. `down()` cannot
+  restore the dropped rows: recovery is a database restore, not a rollback.
+
+> **The two sections below are migration history and are left as written.**
+> They describe what those files did at the time. `film` has since been dropped
+> and `session` reshaped by `20260904000100`; migration history is not rewritten
+> to make a text search clean.
 
 ### `20260823001000-align-client-naming.js`
 
@@ -239,7 +249,9 @@ until a user is created (`backend/scripts/create-dev-user.js`, or
 Historical note: `SequelizeMeta` on the client's database once lagged the repo
 by 3 migrations. Older `films`/`sessions` migrations that created
 **QBusto-owned duplicates** of the client's tables were **removed** rather than
-applied; `20260824000100` supersedes them.
+applied; `20260824000100` supersedes them. A third duplicate, the POS-mirror
+`shows` table, WAS applied — and was dropped by `20260904000100` for the same
+reason. Two tables of screenings mean two answers to "what is playing now".
 
 ---
 
@@ -314,44 +326,54 @@ refunded → terminal
 
 ---
 
-## 7. Films, Sessions, Screens (client-owned)
+## 7. Sessions and Screens (client-owned)
 
 **The most surprising area of the repo, and absent from README.md.**
 
-`film` and `session` are the **client's own Vista tables**, living in the QBusto
-database. They are not QBusto tables and are not reshaped. Their columns keep
-the source system's names because the client syncs against them; the Sequelize
-models supply QBusto vocabulary purely through `field:` mappings.
+`session` is the **client's own table**, living in the QBusto database. It is
+not a QBusto table. Its columns keep the source system's names because the
+client syncs against them; the Sequelize model supplies QBusto vocabulary
+purely through `field:` mappings.
 
-### `film` (`backend/models/film.js`)
+### `session` is the ONE source of showtimes
 
-- Table `film`; **`timestamps: false`** (the table has only `Film_dtmStamp`).
-- PK `code` ← `Film_strCode` **varchar(20)** — not an integer id of ours.
-- Mapped: `title`←`Film_strTitle`, `certification`←`Film_strCensor`,
-  `durationMinutes`←`Film_intDuration`, `imageUrl`←`Film_strURLforGraphic`,
-  `status`←`Film_strStatus`, `nowShowingFlag`←`Film_strNowShowingFlag`,
-  `openingDate`←`Film_dtmOpeningDate`.
-- Only the columns QBusto needs are declared; ~30 others stay in the table,
-  unread. The table also carries a stray `test_column nchar(1000)` (client test
-  debris).
-- `status` and `nowShowingFlag` are **passed through raw** — the client has not
-  defined their vocabulary, and guessing which codes mean "active" would invent
-  a rule.
-- `Film.hasMany(Session)` on `filmCode`/`code`.
+`20260904000100-session-sole-show-source.js` made it so. Dropped in that
+migration: **`film`** (its titles backfilled onto `session.Film_strName`, 223 of
+223 resolved), **`shows`** (0 rows, no inbound FKs, both readers retargeted) and
+the staging table **`session_old`** (renamed into place as the new `session`,
+after the 10 rows that existed only in the old `session` were copied across).
+
+```
+POS provider -> adapter (src/pos/) -> showSync.service -> session
+                                                            |
+                                              QBusto APIs (consumer + staff)
+                                                            |
+                                       Consumer / Dashboard / Kitchen / Reports
+```
+
+**No frontend calls a POS.** Provider URLs and credentials are backend-only.
 
 ### `session` (`backend/models/session.js`)
 
-- Table `session`; **`timestamps: false`**.
-- **Composite PK** `(Code, Session_lngSessionId)` → `cinemaCode` + `sessionId`.
-- `cinemaCode` FKs to **`cinemas.code`**, not `cinemas.id` — hence
-  `Session.belongsTo(Cinema, { targetKey: 'code' })`.
-- Mapped: `filmCode`, `screenNumber`←`Screen_bytNum`,
-  `screenName`←`Screen_strName`, `startsAt`←`Session_dtmRealShow`,
-  `endsAt`←`Session_dtmFinishShow`, `seatsAvailable`, `seatsTotal`, `status`.
-- **There is no `screens.id` here.** The source system identifies the auditorium
-  by number/name, so resolving a session to a QBusto screen is a lookup, not a
-  join — and it is currently ambiguous because `screens` holds several rows per
-  auditorium. Both columns are exposed as-is; **no resolution is attempted.**
+- Table `session`; **`timestamps: false`**; ten columns, nothing else.
+- **Composite PK** `(Code, Session_lngSessionId)` -> `cinemaCode` + `sessionId`.
+- `cinemaCode` FKs to **`cinemas.code`**, not `cinemas.id`. The only
+  association is `Cinema.hasMany(Session, { foreignKey: 'cinemaCode',
+  sourceKey: 'code' })`.
+- Mapped: `filmTitle`<-`Film_strName`, `filmCode`<-`Film_strCode`,
+  `screenNumber`<-`Screen_bytNum`, `screenName`<-`Screen_strName`,
+  `startsAt`<-`Session_dtmRealShow`, `endsAt`<-`Session_dtmFinishShow`,
+  `status`<-`Session_strStatus`, `stampedAt`<-`Session_dtmStamp`.
+- **The title is a column, not a join.** The old shape joined `film` with
+  `required: true`, which silently DROPPED screenings whose film row was
+  missing. `Film_strCode` survives as the provider's code and points at nothing.
+- **There is no `screens.id` here.** The source system names the auditorium, so
+  resolving a session to a QBusto screen is a lookup, not a join, and it is
+  ambiguous because `screens` holds several rows per auditorium. The resolution
+  happens at order time, on `(cinema_id, name, seat_row)`.
+- No date getters, and none may be added — see the timezone section.
+- Indexes: `PK_session`, `FK_session_cinemas`,
+  `IX_session_cinema_screen_start (Code, Screen_strName, Session_dtmRealShow)`.
 
 ### Session status values (client-defined, confirmed)
 
@@ -361,6 +383,9 @@ models supply QBusto vocabulary purely through `field:` mappings.
 | `C` | **Closed** — no longer selling | Excluded |
 | `I` | **Inactive** — not in service | Excluded |
 
+A small number of live rows carry an **undocumented `Y`**. Nothing interprets
+it; because it is not `'O'` it is never offered.
+
 `SESSION_STATUS_OPEN = 'O'` in `consumer.service.js`. The exclusion is a **SQL
 predicate**, not a step in the response mapping — so a non-Open session never
 leaves the database. It cannot be bypassed by a client and cannot be lost to a
@@ -368,25 +393,43 @@ later refactor of the response shape.
 
 ### Consumer session picker (`getSessions`)
 
-- `PROGRAMMING_DAY_START_HOUR = 6` — the programming day runs **06:00 → 06:00**,
-  so a 01:00 screening belongs to the night before. Matches the client's own
-  scheduling query.
-- Window starts at **now**, not the start of the day: a screening already under
-  way is not something food can be ordered against.
-- Before 06:00, the running programming day started yesterday, so the window
-  still closes at 06:00 today.
+- `SESSION_WINDOW_HOURS = 3` — a flat window **three hours either side of now**,
+  not tied to a programming day, so a 23:45 screening is still offered at 01:30.
+  The lookback half is deliberate: someone twenty minutes into a film is the
+  customer most likely to want food.
 - `SESSIONS_PER_SCREEN = 2` — capped **per auditorium**, so one busy screen
   can't fill the picker and hide the others.
-- Returns `screenName` **as text**; no screen id is derived (see grain conflict).
-- Film join is `required: true`.
+- Returns `screenName` as text, plus a resolved `screenId` when the name alone
+  is unambiguous and `seatRows` otherwise (see grain conflict).
 
-### Film/Session API surface
+### The current show is chosen SERVER-SIDE
 
-`film.routes.js` and `session.routes.js` expose **GET only**, guarded by
+`GET /cinemas/:cinemaId/sessions?screenId=` flags at most one entry
+`isCurrent: true`, and the Consumer preselects it into an **empty** field only.
+
+- `screenId` is the QR's screen; it is resolved to a screen NAME within that
+  cinema (`is_active` only). Unknown or out-of-scope means "no current show",
+  not an error.
+- Match: `startsAt <= now < endsAt`, `now` from the **server's** clock. No
+  client-supplied time is accepted; a phone with a wrong clock must not be able
+  to pick a different show. Comparison via `utils/sqlDate.sqlDateTimeLiteral()`.
+- Rows with `endsAt <= startsAt` (a provider data fault; some exist) are
+  excluded from auto-selection but stay hand-selectable. Not repaired by QBusto.
+- Overlapping screenings on one auditorium exist, so candidates are ordered
+  `startsAt DESC` and the most recently begun wins.
+- The flagged entry is merged back in even if the 3h / 2-per-screen filters
+  would have dropped it.
+
+At order time the backend re-reads by `(cinemaCode, sessionId)`, 409s on a
+non-`O` status, and takes `filmTitle`, `showTime` and the screen name **from
+that row** — never from the request body.
+
+### Session API surface
+
+`session.routes.js` exposes **GET only**, guarded by
 `authorize(MODULES.SETTINGS, ACTIONS.READ)`. There is no create/update/delete —
-this data is the client's.
-
-Dashboard has `FilmsPage.tsx` and `SessionsPage.tsx`.
+this data is the client's. Dashboard has `SessionsPage.tsx`; there is no
+FilmsPage, because there is no film catalogue to browse.
 
 ### `screens` grain conflict — UNRESOLVED
 
@@ -1107,9 +1150,9 @@ ready → delivered`. Orders become visible only via
 
 ## 10. Dashboard
 
-Pages: Banners, Categories, Chains, Cinemas, ComingSoon, Dashboard, Films,
+Pages: Banners, Categories, Chains, Cinemas, ComingSoon, Dashboard,
 Forbidden, Login, NotFound, Offers, Orders, Pricing, Products, Screens,
-Sessions, Users. Films/Sessions are read-only views over client data. Reports
+Sessions, Users. Sessions is a read-only view over client data. Reports
 and POS Integrations are `ComingSoonPage` placeholders. Offers (§8.15) is a
 plain page with local `useState`, not a Zustand store like Banners/
 Categories - nothing else in the Dashboard needs to read the offers list, so
@@ -1319,7 +1362,7 @@ shared/openapi.json
 affected clients. Regenerate **once** at the end of a change, not repeatedly.
 
 `backend/src/config/swagger.js` holds component schemas (including `Screen`,
-`Film`, `Session`).
+`Session`, `ConsumerSession`).
 
 ---
 
@@ -1327,7 +1370,7 @@ affected clients. Regenerate **once** at the end of a change, not repeatedly.
 
 `backend/src/services/upload.service.js`.
 
-- Entity allowlist → permission module: `banners`→Banners, `films`→Settings,
+- Entity allowlist → permission module: `banners`→Banners,
   `categories`→Categories, `chains`→Settings, `products`→Products. This is the
   **only** source of directory names, so a caller can never introduce a folder
   and `..`/absolute paths can never reach `path.join`.
@@ -1545,7 +1588,7 @@ rules forbid adding layers without demonstrated need.
   `AppError.message` is returned to the client verbatim.
 - `registerAdapter` rejects duplicate registration, so behaviour never depends on
   `require` order. `unregisterAdapter` exists **only** for test cleanup.
-- **No route or service reads or writes a POS table.** `shows` is still empty.
+- **`showSync.service` writes POS showtimes into `session`.** No other route or service reads or writes a POS table.
 - `providerRegistry.js` is the **only** place in the backend that reads the
   provider value; adding Vista/Showbizz later must not require an edit above
   that line.
@@ -1559,7 +1602,7 @@ are Dashboard navigation placeholders.
 
 Confirmed **outdated or incomplete** in README.md:
 
-1. **No mention of `film` / `session` / `screen_layout` at all** — the entire
+1. **No mention of `session` / `screen_layout` at all** — the entire
    client-owned data area, the `O`/`C`/`I` session vocabulary, the read-only
    Film/Session API, and the Dashboard Films/Sessions pages are absent. Largest
    gap.
@@ -1587,9 +1630,10 @@ alignment migrations (a status note at its top says so), and its §6 reference t
 ## 20. Pitfalls & conventions
 
 1. Never hand-edit `shared/openapi.json` or `src/api/generated/**`.
-2. Never add a QBusto-owned `films`/`sessions` table — `film`/`session` are
+2. Never add a second table of showtimes (`films`, `sessions`, `shows`, or a
+   per-provider copy) — `session` is
    canonical. Earlier duplicating migrations were removed on purpose.
-3. Never rename provider columns inside `film`/`session`.
+3. Never rename provider columns inside `session`.
 4. Don't assume one `screens` row = one auditorium.
 5. Never let a gateway signal set payment status `failed` — staff-only.
 6. Never route the webhook through `express.json()` — it needs the raw body for

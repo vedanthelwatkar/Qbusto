@@ -384,59 +384,27 @@ export interface PaymentGatewayConfig {
 }
 
 /**
- * A film as the source system supplies it. Read-only: the catalogue is synced, so QBusto does not write it.
- */
-export interface Film {
-  /** The source system's film code. This is the primary key. */
-  code?: string;
-  /** @nullable */
-  title?: string | null;
-  /** @nullable */
-  certification?: string | null;
-  /** @nullable */
-  durationMinutes?: number | null;
-  /**
-     * Poster art from the source system.
-     * @nullable
-     */
-  imageUrl?: string | null;
-  /**
-     * The source system's lifecycle flag.
-     * @nullable
-     */
-  status?: string | null;
-  /**
-     * The source system's raw flag, passed through without interpretation - its vocabulary is not documented and the client's data has never contained a 'Y' value.
-     * @nullable
-     */
-  nowShowingFlag?: string | null;
-  /** @nullable */
-  openingDate?: string | null;
-}
-
-/**
- * One screening as the source system supplies it. Read-only. The auditorium is named rather than referenced by id.
+ * One screening. The single source of show data in QBusto: the film title is a column on this row, not a join. Read-only - the schedule is synchronized from the POS. The auditorium is named rather than referenced by id.
  */
 export interface Session {
   cinemaCode?: string;
   /** The source system's session id, unique within a cinema. */
   sessionId?: number;
-  /** @nullable */
-  filmCode?: string | null;
+  /** The source system's film identifier. Kept for POS reconciliation; there is no film table for it to resolve to. */
+  filmCode?: string;
+  /**
+     * The title, stored on the session row itself.
+     * @nullable
+     */
+  filmTitle?: string | null;
   /** @nullable */
   screenNumber?: number | null;
   /** @nullable */
   screenName?: string | null;
   startsAt?: string;
   endsAt?: string;
-  /** @nullable */
-  seatsTotal?: number | null;
-  /** @nullable */
-  seatsAvailable?: number | null;
-  /** The source system's status flag. */
+  /** The source system's status flag. O = open (the only bookable one), C = closed, I = inactive. */
   status?: string;
-  /** @nullable */
-  filmTitle?: string | null;
   /** @nullable */
   cinemaName?: string | null;
   /** @nullable */
@@ -468,37 +436,21 @@ export interface ConsumerSession {
      * @nullable
      */
   filmTitle?: string | null;
-  /** @nullable */
-  certification?: string | null;
-  /** @nullable */
-  durationMinutes?: number | null;
   /** Send this as the order's showTime. */
   startsAt?: string;
   /** @nullable */
   endsAt?: string | null;
-  /** @nullable */
-  seatsAvailable?: number | null;
+  /** True for the screening running RIGHT NOW on this auditorium, decided server-side against the server clock. At most one session per screen carries it. The Consumer preselects the one whose screen matches the QR's screenId. */
+  isCurrent?: boolean;
 }
 
 /**
- * A POS-synced show a customer can order against (Phase B6). Selecting one supplies the order's showId, which the order endpoint uses to derive filmTitle/showTime/screenId itself.
+ * One category's place in a cinema's display order. `sequence` 0 means nobody has placed it, and such a category sorts after every placed one, alphabetically.
  */
-export interface ConsumerShow {
-  /** QBusto's own shows.id. */
+export interface CategoryOrderEntry {
   id?: number;
-  /**
-     * QBusto's own screen id, resolved by POS sync from the provider's external screen identifier. Null when unmapped - the show is still offered, just without a resolved auditorium.
-     * @nullable
-     */
-  screenId?: number | null;
-  /**
-     * The auditorium's name, when screenId is resolved.
-     * @nullable
-     */
-  screenName?: string | null;
-  filmTitle?: string;
-  /** Send this show's id as the order's showId. */
-  showTime?: string;
+  name?: string;
+  sequence?: number;
 }
 
 /**
@@ -1985,49 +1937,6 @@ export type GetVersion200 = SuccessResponse & {
   data?: GetVersion200Data;
 };
 
-export type GetApiFilmsParams = {
-page?: number;
-limit?: number;
-/**
- * Matches the title.
- */
-search?: string;
-/**
- * Exact match on the source system's raw now-showing flag. Not interpreted - the client's data has never contained a 'Y' value, so no boolean meaning is assumed here. Pass the exact stored character to filter on it.
- * @maxLength 1
- */
-nowShowingFlag?: string;
-sort?: GetApiFilmsSort;
-order?: GetApiFilmsOrder;
-};
-
-export type GetApiFilmsSort = typeof GetApiFilmsSort[keyof typeof GetApiFilmsSort];
-
-
-export const GetApiFilmsSort = {
-  code: 'code',
-  title: 'title',
-  certification: 'certification',
-  durationMinutes: 'durationMinutes',
-  openingDate: 'openingDate',
-} as const;
-
-export type GetApiFilmsOrder = typeof GetApiFilmsOrder[keyof typeof GetApiFilmsOrder];
-
-
-export const GetApiFilmsOrder = {
-  asc: 'asc',
-  desc: 'desc',
-} as const;
-
-export type GetApiFilms200 = SuccessResponse & {
-  data?: Film[];
-};
-
-export type GetApiFilmsCode200 = SuccessResponse & {
-  data?: Film;
-};
-
 export type GetApiConsumerCinemasId200 = SuccessResponse & {
   data?: Cinema;
 };
@@ -2139,12 +2048,15 @@ export type GetApiConsumerCinemasCinemaIdBanners200 = SuccessResponse & {
   data?: Banner[];
 };
 
-export type GetApiConsumerCinemasCinemaIdSessions200 = SuccessResponse & {
-  data?: ConsumerSession[];
+export type GetApiConsumerCinemasCinemaIdSessionsParams = {
+/**
+ * The screen the QR was printed for. Used only to decide which screening is currently running. A screenId belonging to another cinema, or to no screen, is ignored rather than rejected - a QR printed against a since-deleted screen must still let someone order.
+ */
+screenId?: number;
 };
 
-export type GetApiConsumerCinemasCinemaIdShows200 = SuccessResponse & {
-  data?: ConsumerShow[];
+export type GetApiConsumerCinemasCinemaIdSessions200 = SuccessResponse & {
+  data?: ConsumerSession[];
 };
 
 export type PostApiConsumerOrdersBodySource = typeof PostApiConsumerOrdersBodySource[keyof typeof PostApiConsumerOrdersBodySource];
@@ -2182,9 +2094,20 @@ export type PostApiConsumerOrdersBody = {
   customerMobile?: string | null;
   /** @nullable */
   customerEmail?: string | null;
-  /** @nullable */
+  /**
+     * The screening the customer picked, as returned in `ConsumerSession.id`. When present the server reads the film title, the show time and the auditorium's name off the session row itself and IGNORES filmTitle/showTime/ screenName in this body. A session that is not open, or belongs to another cinema, is rejected.
+     * @nullable
+     */
+  sessionId?: number | null;
+  /**
+     * Fallback only, for an order placed with no session selected (a kiosk or counter terminal). Ignored when sessionId is present.
+     * @nullable
+     */
   filmTitle?: string | null;
-  /** @nullable */
+  /**
+     * Fallback only. Ignored when sessionId is present.
+     * @nullable
+     */
   showTime?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -2787,6 +2710,18 @@ export type PostApiCategoriesBody = {
 
 export type PostApiCategories201 = SuccessResponse & {
   data?: Category;
+};
+
+export type GetApiCategoriesOrderCinemaId200 = SuccessResponse & {
+  data?: CategoryOrderEntry[];
+};
+
+export type PutApiCategoriesOrderCinemaIdBody = {
+  categoryIds: number[];
+};
+
+export type PutApiCategoriesOrderCinemaId200 = SuccessResponse & {
+  data?: CategoryOrderEntry[];
 };
 
 export type GetApiCategoriesId200 = SuccessResponse & {

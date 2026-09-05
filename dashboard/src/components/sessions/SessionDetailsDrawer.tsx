@@ -88,13 +88,6 @@ export default function SessionDetailsDrawer({ sessionId, onClose }: SessionDeta
           <Descriptions.Item label="Ends">
             {session.endsAt ? formatDateTime(session.endsAt) : <Text type="secondary">-</Text>}
           </Descriptions.Item>
-          <Descriptions.Item label="Seats">
-            {session.seatsTotal === null || session.seatsTotal === undefined ? (
-              <Text type="secondary">-</Text>
-            ) : (
-              `${session.seatsAvailable ?? '?'} available of ${session.seatsTotal}`
-            )}
-          </Descriptions.Item>
           <Descriptions.Item label="Status">
             {session.status ?? <Text type="secondary">-</Text>}
           </Descriptions.Item>

@@ -24,7 +24,7 @@ shared/openapi.json
 ```
 
 `backend/src/config/swagger.js` holds component schemas (including
-`Screen`, `Film`, `Session`).
+`Screen`, `Session`, `ConsumerSession`).
 
 **Never hand-edit** `shared/openapi.json` or anything under
 `src/api/generated/`. Change an endpoint ⇒ regenerate the spec, then the

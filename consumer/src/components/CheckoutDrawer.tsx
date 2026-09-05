@@ -136,6 +136,17 @@ export default function CheckoutDrawer() {
   const toggleCart = useUIStore((state) => state.toggleCart);
 
   const cinemaId = useContextStore((state) => state.cinemaId) as number;
+  /*
+   * The screen the QR was printed for.
+   *
+   * Used ONLY to ask the backend which show is running on it right now (see
+   * the sessions effect). It is deliberately never sent as the order's screen
+   * - that is resolved from the chosen show's screen NAME plus the seat row,
+   * because a QR's screenId is fixed at print time and, at a cinema whose
+   * screen data is one row per seat row, points at a seat-row record rather
+   * than an auditorium.
+   */
+  const screenId = useContextStore((state) => state.screenId);
   const contextRow = useContextStore((state) => state.row);
   const contextSeat = useContextStore((state) => state.seat);
   const filmTitle = useContextStore((state) => state.filmTitle);
@@ -242,11 +253,37 @@ export default function CheckoutDrawer() {
     setSessionsLoading(true);
     setSessionsFailed(false);
 
-    fetchSessions(cinemaId).then(
+    /*
+     * The QR's screen goes with the request.
+     *
+     * It is the only input the auto-selection takes from this device: the
+     * server matches it to an auditorium, checks its OWN clock against each
+     * screening's start and end, and flags the one running now. Sending a time
+     * from here instead would let a phone with a wrong clock pick the wrong
+     * show.
+     */
+    fetchSessions(cinemaId, screenId).then(
       (loaded) => {
         if (sessionsRequestedFor.current !== cinemaId) return;
         setSessions(loaded);
         setSessionsLoading(false);
+
+        /*
+         * PRESELECT THE SHOW THE CUSTOMER IS SITTING IN.
+         *
+         * `isCurrent` is the server's answer, not a guess made here - at most
+         * one session in the list carries it. Only ever applied to an EMPTY
+         * field, so a customer who has already chosen a different show does
+         * not have their choice overwritten when the list refreshes.
+         *
+         * When nothing is running - between shows, or a QR with no screen -
+         * the field stays empty and the customer picks, exactly as before.
+         */
+        const current = loaded.find((candidate) => candidate.isCurrent);
+
+        if (current?.id !== undefined && !getValues('sessionId')) {
+          setValue('sessionId', String(current.id), { shouldValidate: false });
+        }
       },
       () => {
         if (sessionsRequestedFor.current !== cinemaId) return;
@@ -257,7 +294,7 @@ export default function CheckoutDrawer() {
         sessionsRequestedFor.current = null;
       }
     );
-  }, [cartOpen, cinemaId]);
+  }, [cartOpen, cinemaId, screenId, getValues, setValue]);
 
   /**
    * Whether the order is in flight, readable from the keydown handler without
@@ -378,7 +415,7 @@ export default function CheckoutDrawer() {
     if (appliedCouponFingerprintRef.current === itemsFingerprint) return;
 
     setAppliedCoupon(null);
-    setCouponMessage('Your cart changed — please re-apply your coupon.');
+    setCouponMessage('Your cart changed, so please re-apply your coupon.');
     // Reacting to external state (the cart store) changing, not to a plain
     // render. This previously carried an eslint-disable for
     // react-hooks/set-state-in-effect; the rule no longer reports here, and
@@ -473,6 +510,10 @@ export default function CheckoutDrawer() {
           // printed with whatever screens row existed at the time, and for a
           // cinema whose screen data is one row per SEAT ROW that value is a
           // seat-row record, not an auditorium.
+          // The screening itself. Everything the backend needs about the show
+          // is read from this row server-side; the three fields below are the
+          // no-session fallback and are ignored when this is present.
+          sessionId: session.id ?? null,
           screenName: session.screenName ?? null,
           seatRow: submittedRow,
           // Film and show time come off the one selected session, so they
@@ -926,7 +967,7 @@ export default function CheckoutDrawer() {
               */}
               <p className="cart-drawer__note">
                 {selectedSession && `${sessionLabel(selectedSession)} · `}
-                Taxes may apply — final amount shown at payment.
+                Taxes may apply. Final amount shown at payment.
               </p>
 
               <button

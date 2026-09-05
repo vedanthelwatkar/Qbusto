@@ -12,7 +12,6 @@ import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import BannersPage from '@/pages/BannersPage';
-import FilmsPage from '@/pages/FilmsPage';
 import SessionsPage from '@/pages/SessionsPage';
 import CategoriesPage from '@/pages/CategoriesPage';
 import ChainsPage from '@/pages/ChainsPage';
@@ -47,7 +46,6 @@ const PAGES: Record<string, ReactNode> = {
   '/settings/chains': <ChainsPage />,
   '/settings/cinemas': <CinemasPage />,
   '/settings/screens': <ScreensPage />,
-  '/settings/films': <FilmsPage />,
   '/settings/sessions': <SessionsPage />,
 };
 

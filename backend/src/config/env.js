@@ -247,6 +247,67 @@ const envSchema = Joi.object({
 
   /** Same purpose as CASHFREE_TIMEOUT_MS: bound how long we wait on the provider. */
   SHOWBIZ_TIMEOUT_MS: Joi.number().integer().positive().max(30000).default(8000),
+
+  /**
+   * ---- WhatsApp order confirmations - provider: JALPI ----
+   *
+   * THE CREDENTIAL LIVES HERE AND NOWHERE ELSE.
+   *
+   * There is no `whatsapp_config` table and no column holding a key. The only
+   * credential QBusto keeps in the database is the per-cinema Cashfree secret,
+   * and that is there because it is genuinely per-cinema and is encrypted at
+   * rest (`payment_gateway_config.gateway_secret_encrypted` via
+   * utils/credentials.js). A WhatsApp sender is per-deployment, so the
+   * environment is its home; a second place a credential can live would be a
+   * step backwards.
+   *
+   * `cinemas.whatsapp_enabled` stays in the database on purpose - it is an
+   * operational switch a staff user flips, not a secret.
+   *
+   * Everything here is OPTIONAL, and a deployment that sets none of it simply
+   * never sends: notification.service logs and records `whatsapp_status =
+   * 'failed'` for a cinema that has the channel on with no sender configured.
+   * Refusing to boot instead would take the whole platform down over a
+   * notification channel.
+   */
+
+  /** Jalpi API root. The path is appended by whatsapp.client. */
+  JALPI_BASE_URL: Joi.string().uri().default('https://app.jalpi.com'),
+
+  /**
+   * The request credential. Secret. Never logged, never returned by an API.
+   *
+   * Jalpi authenticates with this as a `key` FIELD IN THE JSON BODY, not a
+   * header. There is deliberately no JALPI_USERNAME/JALPI_PASSWORD: the
+   * credentials issued alongside this key are for the Jalpi web console, and
+   * `/sendTemplateMessage` neither accepts nor needs them. Configuration the
+   * endpoint does not use would only invite someone to send it.
+   */
+  JALPI_API_KEY: Joi.string().allow('').optional(),
+
+  /**
+   * The approved template's name and language.
+   *
+   * WhatsApp forbids free-form text to a customer who has not messaged the
+   * business in 24 hours, which is every food order, so a confirmation must be
+   * a template - and a template has to be approved on the Jalpi account before
+   * it can be sent. `sos_order` already is. Its two positional body parameters
+   * are documented in notification.service.js.
+   */
+  JALPI_TEMPLATE_NAME: Joi.string().default('sos_order'),
+  JALPI_LANGUAGE_CODE: Joi.string().default('en'),
+
+  /** Same purpose as CASHFREE_TIMEOUT_MS: bound how long we wait on the provider. */
+  JALPI_TIMEOUT_MS: Joi.number().integer().positive().max(30000).default(8000),
+
+  /**
+   * Prefixed to a stored mobile number that carries no country code.
+   * `orders.customer_mobile` is collected as 10 bare digits by the Consumer.
+   * Not Jalpi-specific - it describes OUR data, so it keeps its own name.
+   */
+  WHATSAPP_DEFAULT_COUNTRY_CODE: Joi.string()
+    .pattern(/^\d{1,4}$/)
+    .default('91'),
 }).unknown(true);
 
 const { value, error } = envSchema.validate(process.env, {
@@ -438,6 +499,24 @@ const env = {
      * secret in this module - callers check truthiness, not `typeof`.
      */
     credentialsEncryptionKey: value.CREDENTIALS_ENCRYPTION_KEY || '',
+  },
+
+  whatsapp: {
+    /*
+     * The channel is WhatsApp; the provider is Jalpi. Keyed by the channel so
+     * that swapping provider again is one file (services/whatsapp.client.js)
+     * plus this block, not a rename through every caller.
+     *
+     * `apiKey` is the only secret here. It is read by whatsapp.client.js and
+     * placed in exactly one request body; nothing logs it, no API returns it,
+     * and no database column holds it.
+     */
+    baseUrl: value.JALPI_BASE_URL.replace(/\/+$/, ''),
+    apiKey: value.JALPI_API_KEY || '',
+    templateName: value.JALPI_TEMPLATE_NAME,
+    languageCode: value.JALPI_LANGUAGE_CODE,
+    defaultCountryCode: value.WHATSAPP_DEFAULT_COUNTRY_CODE,
+    timeoutMs: value.JALPI_TIMEOUT_MS,
   },
 
   showbiz: {

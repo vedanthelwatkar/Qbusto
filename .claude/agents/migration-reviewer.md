@@ -39,22 +39,23 @@ anything, they are the pattern every new migration should match.
    should log via `console.warn` (not throw) when it declines to remove
    something rather than silently succeeding while leaving data behind.
    `20260824000100-provision-client-schema.js`'s `down()` is the reference:
-   it drops `session`/`film` only if empty, drops `screens.category`/
+   it drops the tables it created only if empty, drops `screens.category`/
    `seat_row` only if every value is NULL, and **never** auto-drops
    `screen_layout` even when empty (because an empty table there could
    mean either "this migration created it" or "the client supplied it
    empty", and only the second case is real).
-4. **Never renames a provider column inside `film`/`session`.** Columns
-   like `Film_strCode`, `Session_lngSessionId`, `Session_dtmRealShow` are
-   the client's Vista source-system contract — renaming any of them breaks
-   the sync the client depends on. Grep the migration for any `sp_rename`
-   or `ALTER COLUMN` touching a `Film_*`/`Session_*` column and flag it
-   unconditionally, no exceptions.
-5. **Never creates a QBusto-owned `films`/`sessions` duplicate table.**
-   `film`/`session` (lowercase, client-owned) are canonical. A migration
-   that creates a new `films` or `sessions` table, or any table clearly
-   meant to duplicate them, is exactly the mistake earlier removed
-   migrations made — flag it as a BLOCKER, not a style note.
+4. **Never renames a provider column inside `session`.** Columns like
+   `Film_strCode`, `Film_strName`, `Session_lngSessionId`,
+   `Session_dtmRealShow` are the client's source-system contract — renaming
+   any of them breaks the sync the client depends on. Grep the migration for
+   any `sp_rename` or `ALTER COLUMN` touching a `Film_*`/`Session_*` column
+   and flag it unconditionally, no exceptions.
+5. **Never creates a second table of showtimes.** `session` (lowercase,
+   client-owned) is the only one. `film`, `shows` and `session_old` were
+   dropped by `20260904000100-session-sole-show-source.js`. A migration that
+   creates a new `films`, `sessions` or `shows` table, or a per-provider
+   variant of any of them, is exactly the mistake earlier removed migrations
+   made — flag it as a BLOCKER, not a style note.
 
 ## Output
 

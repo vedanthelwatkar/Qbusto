@@ -103,16 +103,34 @@ async function main() {
     );
   }
 
-  // Films with a title and a duration, so the picker has something to render.
+  /*
+   * Titles to schedule, taken from the real rows already in `session`.
+   *
+   * There is no `film` table any more - the title is a column on the session
+   * itself - so the source of a plausible title is the existing schedule. The
+   * client's own rows are read but never modified: everything this script
+   * writes uses an id at or above DEV_ID_BASE.
+   *
+   * The runtime comes from the rows too, as the median-ish gap between a real
+   * start and finish; a fixed fallback covers a database with no usable row.
+   */
   const [films] = await sequelize.query(
-    `SELECT TOP 4 Film_strCode, Film_strTitle, Film_intDuration
-       FROM film
-      WHERE Film_strTitle IS NOT NULL AND Film_intDuration > 0
+    `SELECT TOP 4
+            Film_strCode,
+            MIN(Film_strName) AS Film_strName,
+            MIN(DATEDIFF(MINUTE, Session_dtmRealShow, Session_dtmFinishShow)) AS durationMinutes
+       FROM [session]
+      WHERE Film_strName IS NOT NULL
+        AND Session_lngSessionId < ${DEV_ID_BASE}
+        AND Session_dtmFinishShow > Session_dtmRealShow
+      GROUP BY Film_strCode
       ORDER BY Film_strCode`
   );
 
   if (films.length === 0) {
-    throw new Error('No usable rows in `film`. The client schedule data is missing.');
+    throw new Error(
+      'No usable rows in `session` to borrow a film title from. Load the client schedule first.'
+    );
   }
 
   let sessionId = DEV_ID_BASE;
@@ -131,7 +149,8 @@ async function main() {
       }
 
       const film = films[index % films.length];
-      const endsAt = new Date(startsAt.getTime() + film.Film_intDuration * 60 * 1000);
+      const runtimeMinutes = film.durationMinutes > 0 ? film.durationMinutes : 120;
+      const endsAt = new Date(startsAt.getTime() + runtimeMinutes * 60 * 1000);
 
       // Two screens, so the picker's per-screen cap of 2 is exercised rather
       // than hidden.
@@ -142,20 +161,19 @@ async function main() {
 
       await sequelize.query(
         `INSERT INTO [session] (
-           Code, Session_lngSessionId, Film_strCode, Screen_bytNum, Screen_strName,
-           Session_strStatus, Session_strType, Session_dtmRealShow, Session_dtmFinishShow,
-           PGroup_strCode, Session_intSeatsAvail, Session_intSeatsTotal,
-           Session_strSeatAllocation, Session_strComments, Session_dtmStamp
+           Code, Session_lngSessionId, Film_strName, Film_strCode,
+           Screen_bytNum, Screen_strName, Session_strStatus,
+           Session_dtmRealShow, Session_dtmFinishShow, Session_dtmStamp
          ) VALUES (
-           :code, :sessionId, :filmCode, :screenNumber, :screenName,
-           'O', 'N', :startsAt, :endsAt,
-           'STD', 120, 150,
-           'Y', '', :stamp
+           :code, :sessionId, :filmTitle, :filmCode,
+           :screenNumber, :screenName, 'O',
+           :startsAt, :endsAt, :stamp
          )`,
         {
           replacements: {
             code: cinema.code,
             sessionId,
+            filmTitle: film.Film_strName,
             filmCode: film.Film_strCode,
             screenNumber,
             screenName,
@@ -169,7 +187,7 @@ async function main() {
       inserted += 1;
       console.log(
         `  ${cinema.code.padEnd(8)} ${screenName.padEnd(9)} ` +
-          `${toSqlDateTime(startsAt).slice(0, 16)}  ${film.Film_strTitle}`
+          `${toSqlDateTime(startsAt).slice(0, 16)}  ${film.Film_strName}`
       );
     }
   }

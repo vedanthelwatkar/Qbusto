@@ -36,6 +36,7 @@
 const { models } = require('../config/database');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../constants');
 const { ConflictError } = require('../utils/errors');
+const notificationService = require('./notification.service');
 
 /**
  * Legal fulfilment moves, keyed by the code the order is currently in.
@@ -252,6 +253,20 @@ async function confirmOnPayment(orderId, transaction) {
     },
     { transaction }
   );
+
+  /*
+   * The customer's WhatsApp confirmation.
+   *
+   * Attached HERE because this line is reached exactly once per order - the
+   * compare-and-set above is what makes that true, so a webhook racing the
+   * browser cannot produce two messages, exactly as it cannot produce two
+   * kitchen tickets.
+   *
+   * QUEUED, not sent. It runs after this transaction commits, outside it, and
+   * it cannot throw back into this function. A WhatsApp outage must never roll
+   * back a paid order - see notification.service.js.
+   */
+  notificationService.queueOrderConfirmed(transaction, orderId);
 
   return { confirmed: true };
 }

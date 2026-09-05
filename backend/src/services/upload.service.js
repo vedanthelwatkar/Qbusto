@@ -47,7 +47,6 @@ const { ValidationError } = require('../utils/errors');
  */
 const UPLOAD_ENTITIES = Object.freeze({
   banners: 'Banners',
-  films: 'Settings',
   categories: 'Categories',
   chains: 'Settings',
   products: 'Products',

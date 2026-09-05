@@ -27,7 +27,7 @@ export default function NotFoundPage() {
         title="This page doesn't exist"
         body={
           cinemaId
-            ? 'The link you followed does not lead anywhere. Your cart is still here — head back to the menu to carry on.'
+            ? 'The link you followed does not lead anywhere. Your cart is still here. Head back to the menu to carry on.'
             : 'The link you followed does not lead anywhere. Scan the QR code at your seat to start an order.'
         }
         actions={

@@ -545,7 +545,7 @@ afterwards.
 
 ---
 
-## Films and sessions
+## Sessions - the one source of showtimes
 
 `GET /api/consumer/cinemas/{cinemaId}/sessions` returns the screenings a cinema
 has scheduled within three hours either side of now, earliest first, capped at
@@ -554,23 +554,40 @@ reaches backwards on purpose: a customer twenty minutes into a film is exactly
 who wants food. The Consumer offers them as a single picker at checkout.
 
 ```
-film --< session >-- cinemas   (joined by code, not by id)
+cinemas --< session        (joined by code, not by id)
 ```
 
-**These are the client's tables**, renamed from `Film` and `Session` for naming
-consistency. They are synced from the client's source system, so QBusto reads
-them and never writes them: `GET /api/films`, `GET /api/films/{code}`,
-`GET /api/sessions` and `GET /api/sessions/{id}` are the whole surface, all
-authorised against the **Settings** module. The Dashboard shows them under
-Settings as read-only lists.
+**`session` is the only table of screenings.** There is no `film` table, no
+`shows` table and no per-provider copy: whatever a POS returns is normalized
+into `session` by `showSync.service`, so nothing downstream knows which
+provider a screening came from, and **no frontend ever calls a POS**. The film
+title is a column on the session row (`Film_strName`), not a join.
 
-A film is addressed by the source system's `code`, not an integer id. A session
-is addressed by its numeric session id, which is unique within a cinema.
+It is the client's own table, renamed from `Session` for naming consistency and
+reshaped to ten columns in `20260904000100-session-sole-show-source.js`. QBusto
+reads it and writes it only through the POS sync: `GET /api/sessions` and
+`GET /api/sessions/{id}` are the whole staff surface, authorised against the
+**Settings** module, and the Dashboard lists them read-only.
+
+A session is addressed by its numeric session id, which is unique within a
+cinema.
+
+### Which show is running right now
+
+Pass the QR's screen as `?screenId=`. The backend resolves it to an auditorium
+NAME within that cinema, matches `startsAt <= now < endsAt` against **its own
+clock**, and flags that one entry `isCurrent: true`; the Consumer preselects it
+and the customer can still change it. No client-supplied time is accepted on
+this path, so a device with a wrong clock cannot select a different show. An
+unknown screen simply means "no current show".
+
+At order time the backend re-reads the session by `(cinemaCode, sessionId)`,
+refuses a non-`O` status with a 409, and derives the film title, the show time
+and the screen from that row - never from the request body.
 
 **A session does not carry a screen id.** It names the auditorium instead, so
-the Consumer takes the order's `screenId` from the customer's entry context -
-the QR they scanned is physically at their screen - and takes only the film and
-show time from the session.
+the order's `screenId` is resolved from the screen name plus the seat row the
+customer entered.
 
 Orders are unaffected by any of this: an order snapshots `screenId`,
 `filmTitle` and `showTime` when it is placed, so a schedule change cannot

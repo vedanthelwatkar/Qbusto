@@ -164,15 +164,23 @@ that case and nothing is written. Since there is no longer a screen input of
 its own, that failure — and any about the film or the time — is shown against
 the show picker, which is the control the customer can actually act on.
 
+**The show the customer is sitting in is preselected, by the server.** The
+request carries the QR's `screenId` and nothing else; the backend matches that
+auditorium against **its own clock** and flags one entry `isCurrent`. That
+entry is filled into an empty picker, and only an empty one - a customer who
+has already chosen a different show keeps their choice. No time is sent from
+this app: a phone with a wrong clock must not be able to select the wrong show.
+
 If a cinema has no upcoming shows the picker says so rather than presenting an
-empty dropdown. The schedule comes from the cinema's own source system and is
-read-only in QBusto - the Dashboard shows it under **Settings → Films** and
+empty dropdown. The schedule comes from the cinema's own source system, or from
+the POS sync, and is read-only in QBusto - the Dashboard shows it under
 **Settings → Sessions** but does not edit it.
 
-The selected session supplies the film and the show time. It does **not** supply
-a screen: the schedule names its auditorium rather than referencing a screen id,
-so the order takes `screenId` from the entry context instead - the QR the
-customer scanned is physically at their screen.
+The selected session's **id** is what the order carries. The backend reads the
+film title, the show time and the auditorium's name off that row and ignores
+anything this app claims about them. It does **not** supply a screen id: the
+schedule names its auditorium rather than referencing one, so `screenId` is
+resolved from that name plus the seat row the customer entered.
 
 ### Kiosk behaviour
 

@@ -944,7 +944,11 @@ describe('the fixed section takes a slot in the page it appears on', () => {
       // mock that returned every id whatever the window asked for would pass
       // even if the arithmetic under test were wrong.
       .mockImplementationOnce((sql, options) => {
-        const [, , , , offset, take] = options.replacements;
+        // The id window's replacements are, in order: cinemaId (products),
+        // cinemaId (pricing), EVERY_DAY, today, cinemaId (the
+        // cinema_categories LEFT JOIN that carries the display order), offset,
+        // take.
+        const [, , , , , offset, take] = options.replacements;
         return Promise.resolve(
           ids.slice(offset, offset + take).map((id) => ({ id, name: `CAT ${id}` }))
         );
@@ -962,7 +966,7 @@ describe('the fixed section takes a slot in the page it appears on', () => {
     const idQuery = sequelize.query.mock.calls[1];
     if (!idQuery) return null;
     const replacements = idQuery[1].replacements;
-    return { offset: replacements[4], limit: replacements[5] };
+    return { offset: replacements[5], limit: replacements[6] };
   }
 
   it('never returns more than `limit` entries on page 1', async () => {

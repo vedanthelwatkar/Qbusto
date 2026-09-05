@@ -28,8 +28,7 @@ jest.mock('../src/config/database', () => {
   const models = {
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
     Session: { findAll: jest.fn() },
-    Screen: { findAll: jest.fn() },
-    Film: {},
+    Screen: { findAll: jest.fn(), findOne: jest.fn() },
   };
 
   return {
@@ -64,27 +63,24 @@ const SCREENS = [
   { id: 23, name: 'SCREEN 2' },
 ];
 
-/** A session row as `Session.findAll` returns it, with its film loaded. */
+/**
+ * A session row as `Session.findAll` returns it.
+ *
+ * No nested `film`: the title is a column on the session now, and there is no
+ * film table to join. That removal is the point - the old `required: true`
+ * include silently dropped any screening whose film row was missing.
+ */
 function buildSession(overrides = {}) {
-  const { film = {}, ...rest } = overrides;
-
   return {
     sessionId: 1001,
     cinemaCode: CINEMA_CODE,
     filmCode: 'HO00012070',
+    filmTitle: 'Interstellar',
     screenName: 'SCREEN 1',
     status: 'O',
     startsAt: new Date(2026, 7, 23, 20, 0, 0),
     endsAt: new Date(2026, 7, 23, 22, 30, 0),
-    seatsAvailable: 120,
-    film: {
-      code: 'HO00012070',
-      title: 'Interstellar',
-      certification: 'UA',
-      durationMinutes: 169,
-      ...film,
-    },
-    ...rest,
+    ...overrides,
   };
 }
 
@@ -102,8 +98,29 @@ function serveSessions(rows, screens = SCREENS) {
       .filter((row) =>
         where.cinemaCode === undefined ? true : row.cinemaCode === where.cinemaCode
       )
+      .filter((row) => matchesTimeBounds(row, where))
       .sort((a, b) => a.startsAt - b.startsAt);
   });
+}
+
+/**
+ * Apply the CONTAINMENT predicate only.
+ *
+ * The service issues two different `findAll`s against this mock. getSessions
+ * bounds `startsAt` on both sides (the picker window); findCurrentSession
+ * bounds `startsAt` on one side and `endsAt` on the other (the [start, end)
+ * containment test). Only the second is simulated here, because it is the one
+ * whose result the auto-selection assertions turn on - the picker window has
+ * its own tests that assert the emitted literals directly, and simulating it
+ * here as well would force every fixture in this file to sit inside it.
+ *
+ * The `endsAt` clause is what distinguishes the two queries.
+ */
+function matchesTimeBounds(row, where) {
+  if (!where.endsAt) return true;
+
+  const now = new Date();
+  return row.startsAt <= now && row.endsAt > now;
 }
 
 /** The `where` object the service passed to the database on the last call. */
@@ -442,5 +459,241 @@ describe('screen id resolution from the schedule name', () => {
     const response = await listSessions();
 
     expect(response.body.data[0].seatRows).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-selecting the show that is running right now
+// ---------------------------------------------------------------------------
+
+/**
+ * The requirement: a customer scans the QR stuck to a seat in Screen 2 at
+ * 22:05, and the picker opens already showing the 22:00-00:00 screening.
+ *
+ * The decision is entirely server-side. The request contributes the QR's
+ * screenId and nothing else - in particular there is no `now` parameter, so a
+ * device with a wrong or deliberately edited clock cannot steer the answer.
+ *
+ * The containment rule is [start, end): closed at the start so a scan at
+ * exactly 22:00 gets the 22:00 show, open at the end so that show and the one
+ * following it on the same screen can never both be current.
+ */
+describe('current-show auto-selection', () => {
+  /** The QR's screen resolves to a name, which is what a session carries. */
+  function withQrScreen(screen) {
+    models.Screen.findOne.mockResolvedValue(screen);
+  }
+
+  const listForScreen = (screenId) =>
+    request(app).get(`/api/consumer/cinemas/${CINEMA_ID}/sessions?screenId=${screenId}`);
+
+  /** Flags the one session marked current, or null. */
+  const currentOf = (response) => response.body.data.find((session) => session.isCurrent) ?? null;
+
+  it('flags the screening running now on the QR screen', async () => {
+    // NOW is 10:00. This one runs 09:30-11:30 on SCREEN 2.
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+      buildSession({
+        sessionId: 501,
+        screenName: 'SCREEN 1',
+        startsAt: new Date(2026, 7, 23, 9, 45),
+        endsAt: new Date(2026, 7, 23, 11, 45),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    const response = await listForScreen(23);
+
+    expect(response.status).toBe(200);
+    expect(currentOf(response)).toEqual(expect.objectContaining({ id: 500 }));
+    // Exactly one, never two.
+    expect(response.body.data.filter((session) => session.isCurrent)).toHaveLength(1);
+  });
+
+  it('matches the auditorium name case-insensitively', async () => {
+    // The client's own data spells the same auditorium both ways.
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+    ]);
+    withQrScreen({ name: 'Screen 2' });
+
+    const response = await listForScreen(23);
+
+    expect(currentOf(response)).toEqual(expect.objectContaining({ id: 500 }));
+  });
+
+  it('flags nothing when the QR named no screen', async () => {
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+    ]);
+
+    const response = await listSessions();
+
+    expect(currentOf(response)).toBeNull();
+    // No screen was named, so no screen lookup was made either.
+    expect(models.Screen.findOne).not.toHaveBeenCalled();
+  });
+
+  it('flags nothing, and does not error, for a screenId at another cinema', async () => {
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+    ]);
+    // The scope is in the query, so a foreign screen simply does not resolve.
+    withQrScreen(null);
+
+    const response = await listForScreen(9999);
+
+    // A QR printed against a since-deleted screen must still let someone order.
+    expect(response.status).toBe(200);
+    expect(response.body.data).not.toHaveLength(0);
+    expect(currentOf(response)).toBeNull();
+  });
+
+  it('scopes the QR screen lookup to this cinema and to active screens', async () => {
+    serveSessions([buildSession()]);
+    withQrScreen({ name: 'SCREEN 1' });
+
+    await listForScreen(22);
+
+    expect(models.Screen.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 22, cinemaId: CINEMA_ID, isActive: true },
+      })
+    );
+  });
+
+  it('flags nothing between shows, when no screening contains now', async () => {
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 7, 0),
+        endsAt: new Date(2026, 7, 23, 9, 0),
+      }),
+      buildSession({
+        sessionId: 501,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 11, 0),
+        endsAt: new Date(2026, 7, 23, 13, 0),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    const response = await listForScreen(23);
+
+    expect(currentOf(response)).toBeNull();
+  });
+
+  it('treats the start instant as inside the show and the end instant as outside', async () => {
+    // NOW is exactly 10:00 and both shows touch it.
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 8, 0),
+        endsAt: new Date(2026, 7, 23, 10, 0),
+      }),
+      buildSession({
+        sessionId: 501,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 10, 0),
+        endsAt: new Date(2026, 7, 23, 12, 0),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    const response = await listForScreen(23);
+
+    // The one that has just begun, not the one that has just ended.
+    expect(currentOf(response)).toEqual(expect.objectContaining({ id: 501 }));
+  });
+
+  it('ignores a screening whose end precedes its start rather than matching it', async () => {
+    // 39 Open rows on the live database are like this. An impossible interval
+    // must not be auto-selected; the customer can still pick it by hand.
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 21, 11, 30),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    const response = await listForScreen(23);
+
+    expect(currentOf(response)).toBeNull();
+  });
+
+  it('never auto-selects a screening that is not Open', async () => {
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        status: 'C',
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    const response = await listForScreen(23);
+
+    expect(currentOf(response)).toBeNull();
+    expect(response.body.data).toEqual([]);
+  });
+
+  it('rejects a screenId that is not a positive integer', async () => {
+    serveSessions([buildSession()]);
+
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/sessions?screenId=not-a-number`
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it('accepts no client-supplied time: a `now` parameter is ignored entirely', async () => {
+    serveSessions([
+      buildSession({
+        sessionId: 500,
+        screenName: 'SCREEN 2',
+        startsAt: new Date(2026, 7, 23, 9, 30),
+        endsAt: new Date(2026, 7, 23, 11, 30),
+      }),
+    ]);
+    withQrScreen({ name: 'SCREEN 2' });
+
+    // A device claiming it is the middle of the night. validate() runs with
+    // stripUnknown, so this never reaches the service at all - and the answer
+    // is the same one the server clock gives.
+    const response = await request(app).get(
+      `/api/consumer/cinemas/${CINEMA_ID}/sessions?screenId=23&now=2026-08-24T03:00:00.000Z`
+    );
+
+    expect(response.status).toBe(200);
+    expect(currentOf(response)).toEqual(expect.objectContaining({ id: 500 }));
   });
 });

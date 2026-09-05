@@ -66,7 +66,7 @@ router.use(authenticate());
  *
  *       Requires the `edit` permission for the module that owns the entity:
  *       `banners` → Banners, `categories` → Categories, `products` → Products,
- *       `chains` and `films` → Settings.
+ *       `chains` → Settings.
  *     parameters:
  *       - in: path
  *         name: entity
@@ -74,7 +74,7 @@ router.use(authenticate());
  *         description: Which entity the image belongs to. Determines the folder and the permission required.
  *         schema:
  *           type: string
- *           enum: [banners, categories, chains, cinemas, films, products]
+ *           enum: [banners, categories, chains, cinemas, products]
  *     requestBody:
  *       required: true
  *       content:

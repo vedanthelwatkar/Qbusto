@@ -243,14 +243,30 @@ export async function fetchBanners(
 }
 
 /**
- * Scheduled screenings that have not started yet, earliest first.
+ * The screenings a customer may order against, chronological.
  *
  * Backs the checkout picker. One selected session carries the screen, the film
  * and the start time together, which is why checkout asks for a session rather
  * than for those three values separately.
+ *
+ * WHY `screenId` IS SENT
+ *
+ * It is the QR's screen, and it is the only thing this app contributes to
+ * deciding which show is running right now. The server does the deciding -
+ * cinema, screen and its OWN clock against each screening's start and end -
+ * and flags the answer `isCurrent`, which the drawer preselects.
+ *
+ * Deliberately no time is sent. The device's clock is not evidence: a phone
+ * with the wrong date would otherwise select the wrong show, or none.
  */
-export async function fetchSessions(cinemaId: number): Promise<ConsumerSession[]> {
-  const response = await catalogClient.getApiConsumerCinemasCinemaIdSessions(cinemaId);
+export async function fetchSessions(
+  cinemaId: number,
+  screenId?: number | null
+): Promise<ConsumerSession[]> {
+  const response = await catalogClient.getApiConsumerCinemasCinemaIdSessions(
+    cinemaId,
+    screenId ? { screenId } : undefined
+  );
   return response.data.data || [];
 }
 

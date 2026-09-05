@@ -9,11 +9,14 @@ import type {
   DeleteApiCategoriesId200,
   GetApiCategories200,
   GetApiCategoriesId200,
+  GetApiCategoriesOrderCinemaId200,
   GetApiCategoriesParams,
   PostApiCategories201,
   PostApiCategoriesBody,
   PutApiCategoriesId200,
-  PutApiCategoriesIdBody
+  PutApiCategoriesIdBody,
+  PutApiCategoriesOrderCinemaId200,
+  PutApiCategoriesOrderCinemaIdBody
 } from '../cinemaOrderingAPI.schemas';
 
 import { customInstance } from '../../../services/api';
@@ -45,6 +48,39 @@ const postApiCategories = (
       {url: `/api/categories`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: postApiCategoriesBody
+    },
+      );
+    }
+  /**
+ * Every active category in the cinema's chain, in the order a customer sees them: placed categories first by `sequence`, then the unplaced ones alphabetically. `sequence` is 0 for a category nobody has placed.
+ *
+ * The order is per CINEMA, not per chain - two cinemas in one chain can lead with different sections. It is stored on the existing `cinema_categories` link row; there is no separate ordering table.
+ * @summary Get a cinema's category display order
+ */
+const getApiCategoriesOrderCinemaId = (
+    cinemaId: number,
+ ) => {
+      return customInstance<GetApiCategoriesOrderCinemaId200>(
+      {url: `/api/categories/order/${cinemaId}`, method: 'GET'
+    },
+      );
+    }
+  /**
+ * `categoryIds` IS the order: position 1 becomes sequence 1, position 2 becomes sequence 2, and so on. A positional list cannot express a duplicate sequence or a gap, which is why the endpoint takes one rather than a map of explicit numbers.
+ *
+ * Any category NOT in the list is reset to unplaced (sequence 0) and falls to the alphabetical tail - a half-applied order is worse than none. An empty array clears the order entirely.
+ *
+ * Every category named must belong to the cinema's chain; one that does not is a 404, like any other out-of-scope resource.
+ * @summary Set a cinema's category display order
+ */
+const putApiCategoriesOrderCinemaId = (
+    cinemaId: number,
+    putApiCategoriesOrderCinemaIdBody: PutApiCategoriesOrderCinemaIdBody,
+ ) => {
+      return customInstance<PutApiCategoriesOrderCinemaId200>(
+      {url: `/api/categories/order/${cinemaId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: putApiCategoriesOrderCinemaIdBody
     },
       );
     }
@@ -86,9 +122,11 @@ const deleteApiCategoriesId = (
     },
       );
     }
-  return {getApiCategories,postApiCategories,getApiCategoriesId,putApiCategoriesId,deleteApiCategoriesId}};
+  return {getApiCategories,postApiCategories,getApiCategoriesOrderCinemaId,putApiCategoriesOrderCinemaId,getApiCategoriesId,putApiCategoriesId,deleteApiCategoriesId}};
 export type GetApiCategoriesResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['getApiCategories']>>>
 export type PostApiCategoriesResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['postApiCategories']>>>
+export type GetApiCategoriesOrderCinemaIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['getApiCategoriesOrderCinemaId']>>>
+export type PutApiCategoriesOrderCinemaIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['putApiCategoriesOrderCinemaId']>>>
 export type GetApiCategoriesIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['getApiCategoriesId']>>>
 export type PutApiCategoriesIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['putApiCategoriesId']>>>
 export type DeleteApiCategoriesIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCategories>['deleteApiCategoriesId']>>>

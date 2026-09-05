@@ -9,10 +9,10 @@ paths:
 # Image upload / storage architecture
 
 `POST /api/uploads/{entity}` (dashboard) → disk; read via `GET
-/uploads/...`. Entity allowlist: `banners`, `films`, `categories`, `chains`,
+/uploads/...`. Entity allowlist: `banners`, `categories`, `chains`,
 `cinemas`, `products`.
 
-- Entity allowlist → permission module: `banners`→Banners, `films`→Settings,
+- Entity allowlist → permission module: `banners`→Banners,
   `categories`→Categories, `chains`→Settings, `cinemas`→Settings
   (the per-cinema screensaver; `MODULES` is frozen and mirrors a DB CHECK
   constraint, so there is no "Cinemas" module to add), `products`→Products. This is

@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, DatePicker, Empty, Space, Table } from 'antd';
+import { Alert, Button, Card, DatePicker, Empty, Input, Space, Table } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { ReloadOutlined } from '@ant-design/icons';
@@ -23,7 +23,6 @@ import type { Dayjs } from 'dayjs';
 import type { GetApiSessionsParams, Session } from '@/api/generated/cinemaOrderingAPI.schemas';
 import PageHeader from '@/components/PageHeader';
 import CinemaSelect from '@/components/cinemas/CinemaSelect';
-import FilmSelect from '@/components/films/FilmSelect';
 import SessionDetailsDrawer from '@/components/sessions/SessionDetailsDrawer';
 import { useSessionsStore } from '@/stores/sessions.store';
 import { formatDate, formatTime } from '@/utils/datetime';
@@ -154,15 +153,6 @@ export default function SessionsPage() {
       render: (_, session) => timeCell(session.endsAt),
     },
     {
-      title: 'Seats',
-      key: 'seats',
-      width: 120,
-      render: (_, session) =>
-        session.seatsTotal === null || session.seatsTotal === undefined
-          ? '-'
-          : `${session.seatsAvailable ?? '?'} / ${session.seatsTotal}`,
-    },
-    {
       title: '',
       key: 'actions',
       align: 'right',
@@ -219,11 +209,19 @@ export default function SessionsPage() {
             style={{ width: 240 }}
           />
 
-          <FilmSelect
+          {/*
+           * A free-text film code rather than a picker.
+           *
+           * The picker read a `film` catalogue that no longer exists - the
+           * title lives on the session row itself now, so there is no list of
+           * films to choose from. The code is still a real filter the API
+           * accepts, and staff who have one (from a POS report) can use it.
+           */}
+          <Input
             allowClear
-            placeholder="Any film"
+            placeholder="Any film code"
             value={query.filmCode}
-            onChange={(filmCode) => setQuery({ filmCode: filmCode ?? undefined })}
+            onChange={(event) => setQuery({ filmCode: event.target.value || undefined })}
             style={{ width: 240 }}
           />
 

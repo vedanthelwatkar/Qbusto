@@ -25,21 +25,23 @@ backend, and the interface reflects what the current user is permitted to do.
 | Pricing    | Price per cinema, product and day of week, with per-source discounts |
 | Banners    | Cinema-specific promotional banners                                  |
 | Users      | Staff accounts and their per-module permissions                      |
-| Settings   | Chains, cinemas, screens, films and sessions                          |
+| Settings   | Chains, cinemas, screens and sessions                                 |
 
 Reports and POS Integrations appear in the navigation as placeholders and are
 not implemented.
 
-Chains, cinemas, screens, films and sessions live under Settings because the
+Chains, cinemas, screens and sessions live under Settings because the
 permission model defines no separate modules for them. Its module list mirrors
 a CHECK constraint on the database, so adding one is a schema change rather
 than a configuration change.
 
-**Films** and **Sessions** are **read-only**. Both live in the client's own
-tables and are synced from their source system, so the Dashboard lists them but
-does not create or edit them - a write here would not survive the next sync.
-Sessions are chain-scoped through their cinema; films are shared across every
-cinema.
+**Sessions** are **read-only**. They live in the client's own `session` table
+and arrive from their source system or the POS sync, so the Dashboard lists them
+but does not create or edit them - a write here would not survive the next sync.
+Sessions are chain-scoped through their cinema.
+
+There is no Films page. `session` carries the film title as a column, so there
+is no separate film catalogue to browse.
 
 ---
 

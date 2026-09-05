@@ -15,7 +15,12 @@ module.exports = (sequelize, DataTypes) => {
       Cinema.hasMany(models.ProductPricing, { foreignKey: 'cinemaId', as: 'productPricings' });
       Cinema.hasMany(models.Order, { foreignKey: 'cinemaId', as: 'orders' });
       Cinema.hasMany(models.PosIntegration, { foreignKey: 'cinemaId', as: 'posIntegrations' });
-      Cinema.hasMany(models.Show, { foreignKey: 'cinemaId', as: 'shows' });
+      // Sessions carry the cinema's CODE, not its id - see models/session.js.
+      Cinema.hasMany(models.Session, {
+        foreignKey: 'cinemaCode',
+        sourceKey: 'code',
+        as: 'sessions',
+      });
       Cinema.hasMany(models.PaymentGatewayConfig, {
         foreignKey: 'cinemaId',
         as: 'paymentGatewayConfigs',

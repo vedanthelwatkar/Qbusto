@@ -3,8 +3,8 @@
 Authoritative startup context. Read this before scanning the repo.
 Fuller backup copy: [memory.md](./memory.md).
 
-> **README.md is partially outdated.** It predates the Film/Session work, the
-> client-database alignment and the Cashfree decision. Where README.md and the
+> **README.md is partially outdated.** It predates the session/show-source
+> work, the client-database alignment and the Cashfree decision. Where README.md and the
 > code disagree, **the code wins**. See "README drift" at the bottom.
 
 ---
@@ -47,7 +47,8 @@ Frontends hold **no business rules**. Every rule lives in the backend.
   Change both together.
 - **Order snapshots:** `order_items` freezes `productName`, `unitPrice`,
   `discount`, `total` at order time; `orders` freezes `filmTitle`/`showTime`.
-  Catalogue edits must never rewrite history.
+  Catalogue edits must never rewrite history. Both are read off the `session`
+  row the customer picked, server-side, never from the request body.
 - **Client-side prices are never trusted.** The consumer sends only
   `productId` + `quantity`; the backend computes everything.
 
@@ -63,6 +64,27 @@ four `applyPaidTransition()` discovery paths, webhook signature algorithm,
 per-cinema credentials, coupon rules): see "Scoped rules" below —
 [payments.md](./.claude/rules/payments.md) /
 [coupons.md](./.claude/rules/coupons.md).
+
+## Show data — `session` is the only source
+
+There is exactly one table of screenings: **`session`**. No `film` table, no
+`shows` table, no `session_old`, no per-provider copy — all were dropped by
+`20260904000100-session-sole-show-source.js`. The film title is a column on
+`session` (`Film_strName`), not a join.
+
+```
+POS provider -> adapter -> showSync.service -> session -> QBusto APIs -> apps
+```
+
+**No frontend ever calls ShowBiz, Vista or any other POS.** Provider base URLs
+and credentials exist only on the backend; Consumer, Dashboard and Kitchen read
+`session` through QBusto's own endpoints.
+
+The show a customer is sitting in is chosen **by the server**: the Consumer
+sends the QR's `screenId` and nothing else, and the backend matches it against
+its own clock (`startsAt <= now < endsAt`). A client-supplied time is never
+accepted, and the customer can still change the selection. Detail:
+[client-tables.md](./.claude/rules/client-tables.md).
 
 ## Timezone — IST everywhere, storage included
 
@@ -84,7 +106,7 @@ timezone.storage.test.js` pins both halves and fails if either drifts.
 - `APP_TIMEZONE` (`src/config/env.js`) pins `process.env.TZ` and **refuses to
   boot** if the runtime resolves elsewhere. `useUTC:false` means "parse as
   process-local", so this is load-bearing for reads, not cosmetic.
-- Vista's `film`/`session` columns already stored IST and are untouched.
+- The client's `session` columns already stored IST and are untouched.
   `models/session.js` has **no** `asLocalWallClock` getters — the driver now
   parses them correctly, so a getter would be a *second* conversion.
 - Columns stay **`datetime2(7)`**. Do not convert to `datetime`: Sequelize
@@ -98,7 +120,7 @@ timezone.storage.test.js` pins both halves and fails if either drifts.
 
 ## Database & migrations
 
-SQL Server. 37 migrations in `backend/migrations/`. Sequelize CLI reads
+SQL Server. 43 migrations in `backend/migrations/`. Sequelize CLI reads
 `backend/config/config.js` (via `.sequelizerc`), **not** `src/config/env.js`.
 Seeders load **only** status master data — no user account, create one
 first. Detail: [migrations.md](./.claude/rules/migrations.md).
@@ -142,17 +164,22 @@ key vars: `DB_*`, `JWT_SECRET` (≥32 chars in prod), `CORS_ALLOWED_ORIGINS`,
 ## Image uploads
 
 `POST /api/uploads/{entity}` (dashboard) → disk; read via `GET /uploads/...`.
-Entity allowlist: `banners`, `films`, `categories`, `chains`, `products`.
+Entity allowlist: `banners`, `categories`, `chains`, `cinemas`, `products`.
 Magic-number validated, SVG rejected, random filenames, path stored in the
 same column as external URLs. Detail: [uploads.md](./.claude/rules/uploads.md).
 
-## POS — deferred, do not build
+## POS — one adapter, showtimes only
 
-`backend/src/pos/` holds an adapter contract + registry, **empty** —
-`getAdapter()` throws for every provider. DB accepts `vista`, `showbizz`
-(double-z, matches the CHECK constraint — do not "fix"), `impact`, `qbusto`.
-No route or service uses any POS table; Reports/POS Integrations are
-Dashboard placeholders.
+`backend/src/pos/` holds the adapter contract (`adapter.js`), a registry
+(`providerRegistry.js`), an error taxonomy (`posErrors.js`), the normalized
+show shape (`externalShow.js`) and **one** implementation, `showbizAdapter.js`.
+DB accepts `vista`, `showbizz` (double-z, matches the CHECK constraint — do
+not "fix"), `impact`, `qbusto`; every provider without an adapter still throws
+from `getAdapter()`.
+
+The only thing a POS does today is supply showtimes, which `showSync.service`
+normalizes into `session`. Ordering, payment and fulfilment are entirely
+QBusto's. Reports remain a Dashboard placeholder.
 
 ## Scoped rules (`.claude/rules/`)
 
@@ -163,7 +190,7 @@ enters context — they hold the detail this file used to carry in full:
 | --- | --- |
 | [payments.md](./.claude/rules/payments.md) | Cashfree client/services/webhook, payment routes/controllers, per-cinema credentials, Consumer payment UI |
 | [coupons.md](./.claude/rules/coupons.md) | Coupon/offer service, validators, Dashboard Offers UI, Consumer checkout |
-| [client-tables.md](./.claude/rules/client-tables.md) | `film`/`session`/`screen`/`screen_layout` models, routes, services, Dashboard Films/Sessions/Screens UI |
+| [client-tables.md](./.claude/rules/client-tables.md) | `session`/`screen`/`screen_layout` models, routes, services, show sync, Dashboard Sessions/Screens UI |
 | [migrations.md](./.claude/rules/migrations.md) | Anything under `backend/migrations/`, `backend/config/config.js`, `.sequelizerc` |
 | [tenancy-auth.md](./.claude/rules/tenancy-auth.md) | `authenticate`/`authorize` middleware, all backend services |
 | [uploads.md](./.claude/rules/uploads.md) | Upload service/controller/route/middleware |
@@ -178,9 +205,10 @@ and skills in `.claude/skills/` (`/gen-api`, `/verify`, `/migration`,
 ## Pitfalls
 
 1. Don't hand-edit generated API clients or `openapi.json`.
-2. Don't add a QBusto-owned `films`/`sessions` table — `film`/`session` are the
-   canonical client tables.
-3. Don't rename provider columns inside `film`/`session`.
+2. Don't add a second table of showtimes — no `films`, no `sessions`, no
+   `shows`, no per-provider copy. `session` is the one source, and every
+   duplicate that was tried has been dropped.
+3. Don't rename provider columns inside `session`.
 4. Don't assume one `screens` row = one auditorium (see grain conflict).
 5. Don't let a gateway signal set payment status `failed` — that's staff-only.
 6. Don't route the webhook through `express.json()`; it needs the **raw body**.
@@ -216,7 +244,7 @@ and skills in `.claude/skills/` (`/gen-api`, `/verify`, `/migration`,
 
 ## README drift (verified against code)
 
-- No mention of `film`/`session`/`screen_layout`, session `O`/`C`/`I`, or the
+- No mention of `session`/`screen_layout`, session `O`/`C`/`I`, or the
   `screens` grain conflict — the largest gap.
 - Doesn't mention `db_export/`, or the `create-dev-user.js` /
   `seed-dev-*.js` scripts.

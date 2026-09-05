@@ -49,7 +49,7 @@ bugs get introduced here.
 | Layer | Convention | Type / form |
 | --- | --- | --- |
 | **QBusto-owned DB columns** | **IST wall clock** (no offset stored) | `datetime2(7)` |
-| **Vista / client-owned columns** (`film`, `session`) | IST wall clock, as the source system writes it — **never modified by QBusto** | `datetime` |
+| **Client-owned columns** (`session`) | IST wall clock, as the source system writes it — **never modified by QBusto** | `datetime` |
 | **JS / API** | absolute instant, serialised ISO-8601 (`…Z`) | JS `Date` |
 | **Frontend display** | rendered in `Asia/Kolkata` | — |
 
@@ -81,7 +81,7 @@ classified by how each column is treated.
 
 Active tables:
 
-chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, film, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, shows, payment_webhook_events, offers.
+chains, cinemas, screens, categories, cinema_categories, products, cinema_products, product_availability_hours, product_pricing, order_statuses, payment_statuses, orders, order_items, order_status_logs, payment_status_logs, users, user_permissions, banners, session, screen_layout, pos_integrations, screen_pos_mappings, product_pos_mappings, order_pos_context, pos_transactions, payment_gateway_config, idempotency_keys, payment_webhook_events, offers.
 
 Deferred and not in the active schema:
 
@@ -99,14 +99,14 @@ chains, cinemas, screens, categories, cinema_categories, products, cinema_produc
 
 Tables intentionally not given audit-user fields:
 
-users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions, idempotency_keys, shows, payment_webhook_events.
+users, orders, order_items, order_status_logs, payment_status_logs, order_pos_context, pos_transactions, idempotency_keys, payment_webhook_events.
 
 Reasons:
 
 - `order_status_logs` and `payment_status_logs` already carry `changed_by_user_id`.
 - `order_pos_context` is immutable after creation.
 - `pos_transactions` is an operational audit trail.
-- `shows` rows are machine-written by the POS sync, not authored by a user.
+- `session` rows are machine-written by the POS sync (or by the client's own systems), not authored by a user.
 - `payment_webhook_events` rows are written by the gateway webhook handler, not by a user.
 - `orders` and `order_items` are business/history records where per-row creator/updater FKs add little value.
 - `users` should not be self-referenced with audit fields unless a future requirement explicitly needs it.
@@ -589,68 +589,61 @@ The application retrieves active banner rows ordered by `sequence`.
 
 ---
 
-## film
-
-The client's film catalogue, renamed from `Film` in 20260823001000. **44
-columns**, all supplied by their source system and left exactly as they are;
-only the columns QBusto reads are listed here.
-
-| Column                 | Type         | Constraints |
-| ---------------------- | ------------ | ----------- |
-| Film_strCode           | varchar(20)  | **PK**      |
-| Film_strTitle          | varchar(500) | nullable    |
-| Film_strCensor         | varchar(10)  | nullable    |
-| Film_intDuration       | smallint     | nullable    |
-| Film_strURLforGraphic  | varchar(255) | nullable    |
-| Film_strStatus         | varchar(1)   | nullable    |
-| Film_strNowShowingFlag | varchar(1)   | nullable    |
-| Film_dtmOpeningDate    | datetime     | nullable    |
-
-The primary key is the source system's own film code, not an integer of ours.
-The `Film` model maps these to `code`, `title`, `certification`,
-`durationMinutes`, `imageUrl`, `status`, `nowShowingFlag` and `openingDate`, so
-the provider's prefixes do not leak into services or API responses.
-
-Read-only in QBusto: the catalogue is synced, so a write made here would not
-survive the next sync.
-
-`test_column nchar(1000)` also exists and appears to be debris from the client's
-side; nothing reads it.
-
----
-
 ## session
 
-The client's screening schedule, renamed from `Session` in 20260823001000. **24
-columns**; only those QBusto reads are listed.
+**The single source of showtimes.** The client's screening schedule, reshaped
+to exactly ten columns by `20260904000100-session-sole-show-source.js`. There
+is no `film` table and no `shows` table; both were dropped by that migration,
+and there is no per-provider copy of either.
 
 | Column                | Type         | Constraints                        |
 | --------------------- | ------------ | ---------------------------------- |
 | Code                  | varchar(10)  | **PK (1/2)**, FK -> cinemas.code   |
 | Session_lngSessionId  | int          | **PK (2/2)**                       |
-| Film_strCode          | varchar(20)  | FK -> film.Film_strCode            |
+| Film_strName          | varchar(200) | nullable - the film title          |
+| Film_strCode          | varchar(20)  | NOT NULL. Provider's film code; **not** a FK |
 | Screen_bytNum         | int          | nullable                           |
 | Screen_strName        | varchar(25)  | nullable                           |
-| Session_dtmRealShow   | datetime     | NOT NULL                           |
-| Session_dtmFinishShow | datetime     | NOT NULL                           |
-| Session_intSeatsAvail | int          | NOT NULL                           |
-| Session_intSeatsTotal | int          | nullable                           |
 | Session_strStatus     | varchar(1)   | NOT NULL, `O`=Open `C`=Closed `I`=Inactive |
+| Session_dtmRealShow   | datetime     | NOT NULL - show start              |
+| Session_dtmFinishShow | datetime     | NOT NULL - show end                |
+| Session_dtmStamp      | datetime     | nullable - provider's row stamp    |
+
+Indexes and constraints: `PK_session (Code, Session_lngSessionId)`,
+`FK_session_cinemas (Code -> cinemas.code)`, and
+`IX_session_cinema_screen_start (Code, Screen_strName, Session_dtmRealShow)`
+for the current-show lookup.
 
 The primary key is composite, and the cinema is joined by `code` rather than
 `id`.
 
+**The title is a column, not a join.** It was denormalized from the dropped
+`film` table (223 of 223 null titles resolved before the drop; 0 remained). The
+old shape joined `film` with `required: true`, which silently DROPPED any
+screening whose film row was missing - a denormalized title cannot do that.
+
 **There is no `screens.id` here.** The source system names the auditorium
 (`Screen_strName`) instead, so a session cannot be joined to a screen by key.
-Matching on (cinema, name) against the current `screens` data multiplies 133
-sessions into 1119 rows, because `screens` is not unique per auditorium - which
-is why nothing in the application attempts that resolution.
+Matching on (cinema, name) against the current `screens` data multiplies rows,
+because `screens` is not unique per auditorium - which is why the consumer
+resolves a screen only at order time, on `(cinema_id, name, seat_row)`.
+
+`Session_dtmFinishShow` is what makes "which show is running right now"
+answerable: the consumer picker matches `Session_dtmRealShow <= now <
+Session_dtmFinishShow` against the **server's** clock. Rows where the finish is
+not after the start (a provider data fault; some exist) are excluded from that
+automatic selection but remain hand-selectable.
+
+The live table also holds a small number of rows with an undocumented
+`Session_strStatus = 'Y'`. Nothing interprets it; because it is not `O` it is
+never offered to a customer.
 
 The date columns are `datetime`, not `datetime2`. Comparisons against them go
 through `src/utils/sqlDate.js`, because Sequelize's DATE serializer emits an
 offset-bearing literal that `datetime` rejects.
 
-Read-only in QBusto, for the same reason as `film`.
+Written only by `showSync.service` (POS sync) and by the client's own systems.
+There is no create/update/delete through the API.
 
 ---
 
@@ -747,65 +740,13 @@ ordering endpoint, not authored by a user.
 
 ---
 
-## shows
+## shows - REMOVED
 
-Catalog of scheduled shows mirrored from the POS.
-
-| Column              | Type         | Constraints                         |
-| ------------------- | ------------ | ----------------------------------- |
-| id                  | int          | PK auto                             |
-| cinema_id           | int          | FK -> cinemas.id, NOT NULL          |
-| screen_id           | int          | nullable, FK -> screens.id          |
-| pos_integration_id  | int          | FK -> pos_integrations.id, NOT NULL |
-| external_session_id | varchar(100) | NOT NULL                            |
-| external_screen_id  | varchar(50)  | nullable                            |
-| external_film_id    | varchar(50)  | nullable                            |
-| film_title          | varchar(200) | NOT NULL                            |
-| show_time           | datetime2    | NOT NULL, IST wall clock            |
-| status              | varchar(20)  | NOT NULL, default `scheduled`       |
-| last_synced_at      | datetime2    | NOT NULL                            |
-| created_at          | datetime2    | NOT NULL                            |
-| updated_at          | datetime2    | NOT NULL                            |
-
-Indexes:
-
-```sql
-CREATE UNIQUE INDEX UQ_shows_external_session
-ON shows(pos_integration_id, external_session_id);
-
-CREATE INDEX IX_shows_cinema_show_time
-ON shows(cinema_id, show_time);
-```
-
-`(pos_integration_id, external_session_id)` is the natural key. POS synchronization is an upsert on this pair, so the unique index is the entire duplicate-prevention mechanism. The same pair is already stored per order on `order_pos_context`, which is how an order is linked back to its show without adding a column to `orders`.
-
-`IX_shows_cinema_show_time` matches the shape of the consumer window query (cinema plus a show-time range).
-
-`screen_id` is nullable on purpose. A show can arrive from the POS before its external screen has been mapped in `screen_pos_mappings`; hiding such a show would silently lose it, so the row is kept with an unresolved screen instead. `external_screen_id` holds the raw value in the meantime.
-
-`status` values are `scheduled` and `cancelled`, enforced by `CK_shows_status`. There is deliberately no `is_active` column: the soft-delete convention applies to staff-managed master data, and these rows mirror external state. Lifecycle is carried by `status` plus `last_synced_at`.
-
-`show_time` stores IST wall clock, like every QBusto-owned datetime column
-(see "Datetime storage convention" at the top of this document). The POS
-supplies cinema-local wall clock; turning that into a Date is centralized in
-the synchronization service (Phase B5) rather than in a provider adapter.
-
-`cinema_id` is denormalized from `pos_integrations` so the window query and tenant scoping do not need a join.
-
-### Tenant-consistency invariants (application-enforced)
-
-`shows` participates in the same class of cross-table tenant rule already documented for `cinema_categories` and `cinema_products` under "Legacy and deferred notes". Two relationships must hold on every insert and update:
-
-1. **`shows.cinema_id` MUST equal the cinema of `shows.pos_integration_id`.** A POS integration belongs to exactly one cinema through `pos_integrations.cinema_id`. Because `shows.cinema_id` is a denormalized copy, the two can disagree unless the writer keeps them in step.
-2. **If `shows.screen_id` is non-null, that screen MUST belong to `shows.cinema_id`** (`screens.cinema_id = shows.cinema_id`).
-
-**The database does not enforce either relationship.** The foreign keys only require that the referenced cinema, screen and integration rows exist; nothing constrains them to the same tenant. `screen_pos_mappings` does not constrain its screen to the integration's cinema either, so a mapping row created against the wrong cinema can resolve to a foreign cinema's screen.
-
-**Application code MUST validate both before inserting or updating a show.** This is the responsibility of the show synchronization service — the only component that writes this table.
-
-This validation prevents cross-cinema data leakage into the **public, unauthenticated** Consumer shows API. That endpoint (Phase B6) filters on `cinema_id` alone, so a row whose `cinema_id` disagrees with its integration would surface another cinema's show in this cinema's Show Time dropdown, and an order placed against it would carry a foreign cinema's `screen_id`.
-
-**An unmapped screen is not an inconsistency.** `screen_id = null` is valid and expected when the external screen has no row in `screen_pos_mappings` yet. Such a show MUST remain visible, with an unresolved screen; the raw value stays in `external_screen_id` until the mapping exists. Only a _non-null_ `screen_id` pointing at another cinema's screen is a violation.
+Dropped by `20260904000100-session-sole-show-source.js`. It held 0 rows, had no
+inbound foreign keys, and both of its readers were retargeted at `session`,
+which is now the single source of showtimes. Its former per-order link,
+`order_pos_context`, is unchanged and still records the external identifiers an
+order was placed against.
 
 ---
 
@@ -1047,7 +988,7 @@ transition twice.
 
 There are no `created_by` / `updated_by` columns: these rows are machine-written
 by the webhook handler, following the same convention as `order_pos_context`,
-`pos_transactions` and `shows`.
+`pos_transactions`.
 
 ---
 
@@ -1177,8 +1118,7 @@ Unique constraints and indexes used in the active schema:
 - `orders(payment_status_id)` non-unique index
 - `order_items(order_id)` non-unique index
 - `pos_transactions(order_id)` non-unique index
-- `shows(pos_integration_id, external_session_id)` unique
-- `shows(cinema_id, show_time)` non-unique index
+- `session(Code, Screen_strName, Session_dtmRealShow)` non-unique index (`IX_session_cinema_screen_start`)
 - `payment_webhook_events.event_id` unique
 - `payment_webhook_events(gateway_order_id)` non-unique index
 - filtered unique index on `orders(gateway_order_id)` where `gateway_order_id IS NOT NULL`
@@ -1189,7 +1129,6 @@ Checks:
 - `banners.type IN ('H','I')`
 - `pos_integrations.provider IN ('vista','showbizz','impact','qbusto')`
 - `pos_transactions.status IN ('pending','success','failed','unknown')`
-- `shows.status IN ('scheduled','cancelled')`
 - `users.role IN ('owner','chain_admin','cinema_admin','kitchen_staff','cinema_accountant')`
 - `user_permissions.module_name IN ('Dashboard','Orders','Products','Categories','Pricing','Banners','Users','Reports','POS Integrations','Settings')`
 - `orders.source IN ('qr','seat_qr','kiosk','counter')`
@@ -1231,7 +1170,7 @@ A cinema product is currently available only when:
 
 The database does not enforce that a cinema's `chain_id` matches the `chain_id` of a `category` or `product` referenced through `cinema_categories` or `cinema_products`. Application code (service layer or Sequelize hooks) MUST validate this before insert/update to prevent cross-tenant data leakage.
 
-The same applies to `shows`: `cinema_id` must match the cinema of `pos_integration_id`, and a non-null `screen_id` must belong to that cinema. See "Tenant-consistency invariants" under [shows](#shows).
+`session` needs no such rule: it carries `Code` (the cinema) and nothing else that could point at another tenant.
 
 - `orders.seat_number` already satisfies SeatNo.
 - `pos_integrations.is_active` already satisfies IS_Intigrated.

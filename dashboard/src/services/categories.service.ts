@@ -9,6 +9,7 @@
 import { getCategories } from '@/api/generated/categories/categories';
 import type {
   Category,
+  CategoryOrderEntry,
   GetApiCategoriesParams,
   PostApiCategoriesBody,
   PutApiCategoriesIdBody,
@@ -64,6 +65,35 @@ export async function updateCategory(id: number, body: PutApiCategoriesIdBody): 
  */
 export async function deactivateCategory(id: number): Promise<Category> {
   const { data } = await categoriesApi.deleteApiCategoriesId(id);
+
+  if (!data) throw MALFORMED;
+
+  return data;
+}
+
+/**
+ * A cinema's category display order.
+ *
+ * Per CINEMA, not per chain: two cinemas in one chain can lead with different
+ * sections. `sequence` is 0 for a category nobody has placed, and those sort
+ * after every placed one, alphabetically - which is exactly the alphabetical
+ * list a cinema has always had until someone sets an order.
+ */
+export async function listCategoryOrder(cinemaId: number): Promise<CategoryOrderEntry[]> {
+  const { data } = await categoriesApi.getApiCategoriesOrderCinemaId(cinemaId);
+
+  return data ?? [];
+}
+
+/**
+ * Save the order. The array IS the order - position 1 becomes sequence 1 - so
+ * there is no sequence number to keep consistent on this side.
+ */
+export async function setCategoryOrder(
+  cinemaId: number,
+  categoryIds: number[]
+): Promise<CategoryOrderEntry[]> {
+  const { data } = await categoriesApi.putApiCategoriesOrderCinemaId(cinemaId, { categoryIds });
 
   if (!data) throw MALFORMED;
 

@@ -4,23 +4,37 @@
  * The normalized show shape every POS adapter returns (Phase B2).
  *
  * `ExternalShow` is the entire vocabulary the layers above the adapter get to
- * speak. It carries only what synchronizing the `shows` table needs, and every
- * field maps to a column that already exists:
+ * speak. It carries only what writing a `session` row needs, and every field
+ * maps to a column that already exists:
  *
- *   externalSessionId -> shows.external_session_id  (half the natural key)
- *   externalScreenId  -> shows.external_screen_id   (resolved via screen_pos_mappings)
- *   externalFilmId    -> shows.external_film_id
- *   filmTitle         -> shows.film_title
- *   showTimeLocal     -> shows.show_time            (after B5 converts it)
- *   cancelled         -> shows.status               ('scheduled' | 'cancelled')
+ *   externalSessionId -> session.Session_lngSessionId  (half the primary key)
+ *   externalScreenId  -> session.Screen_bytNum, and the name via screen_pos_mappings
+ *   externalFilmId    -> session.Film_strCode
+ *   filmTitle         -> session.Film_strName
+ *   showTimeLocal     -> session.Session_dtmRealShow   (after the sync converts it)
+ *   showTimeEndLocal  -> session.Session_dtmFinishShow (after the sync converts it)
+ *   cancelled         -> session.Session_strStatus     ('O' open | 'C' closed)
  *
- * Nothing else is here. Seat maps, pricing, ratings, runtime and booking counts
- * are all things a POS could return and none of them have a column, so
- * accepting them would create a field with no meaning downstream.
+ * There is no `shows` table and no `film` table any more: `session` is the
+ * single destination for normalized provider show data.
  *
- * `cancelled` is not speculative: docs/pos-integration.md §6.3 requires a
- * POS-cancelled show to become `status = 'cancelled'` rather than vanish, and
- * that state cannot be derived from absence alone.
+ * Nothing else is here. Seat maps, pricing, ratings and booking counts are all
+ * things a POS could return and none of them have a column, so accepting them
+ * would create a field with no meaning downstream.
+ *
+ * `cancelled` is not speculative: a POS-cancelled show must become a CLOSED
+ * session rather than vanish - an order may already reference it - and that
+ * state cannot be derived from absence alone.
+ *
+ * `showTimeEndLocal` IS OPTIONAL HERE AND REQUIRED DOWNSTREAM
+ *
+ * `session.Session_dtmFinishShow` is NOT NULL, and it is the column the
+ * "which show is running right now" lookup reads. No verified provider
+ * response has ever supplied an end time or a runtime to derive one from, so
+ * this field is accepted as null rather than being invented: an adapter that
+ * genuinely has no end time says so, and the sync service SKIPS the row with a
+ * logged reason instead of storing a fabricated interval. See
+ * docs/pos-integration.md for the pending-fields list.
  *
  * TIMEZONE - the rule this module enforces
  * ----------------------------------------
@@ -47,10 +61,21 @@ const { PosMalformedResponseError } = require('./posErrors');
  * @property {string|null} externalFilmId Provider film id, unmapped.
  * @property {string} filmTitle Display title. Required.
  * @property {string} showTimeLocal Cinema-local wall clock, 'YYYY-MM-DDTHH:mm:ss'.
+ * @property {string|null} showTimeEndLocal End of the screening, same format.
+ *   Null when the provider does not supply one - see the module header.
  * @property {boolean} cancelled True when the POS reports the show cancelled.
  */
 
-/** Column widths from the `shows` table. Truncating silently would corrupt the natural key. */
+/**
+ * Column widths from the `session` table. Truncating silently would corrupt
+ * the key, so an over-long value is rejected instead.
+ *
+ * `externalSessionId` keeps its generous 100 rather than being narrowed to
+ * `Session_lngSessionId`'s integer range: an adapter is allowed to report a
+ * non-numeric provider id, and the sync service is the layer that decides such
+ * a row cannot be stored (and says so in a log line). Rejecting it here would
+ * turn one unusable row into a whole failed schedule.
+ */
 const MAX_LENGTHS = Object.freeze({
   externalSessionId: 100,
   externalScreenId: 50,
@@ -187,6 +212,12 @@ function normalizeExternalShow(raw, context = {}) {
     externalFilmId: optionalString(raw.externalFilmId, 'externalFilmId', context),
     filmTitle: requiredString(raw.filmTitle, 'filmTitle', context),
     showTimeLocal: normalizeShowTimeLocal(raw.showTimeLocal, context),
+    // Held to exactly the same wall-clock rule as the start when present; a
+    // provider that converted one and not the other is a bug worth catching.
+    showTimeEndLocal:
+      raw.showTimeEndLocal === undefined || raw.showTimeEndLocal === null
+        ? null
+        : normalizeShowTimeLocal(raw.showTimeEndLocal, context),
     cancelled: raw.cancelled === true,
   };
 }

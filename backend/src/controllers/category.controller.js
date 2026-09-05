@@ -47,4 +47,30 @@ async function remove(req, res) {
   return success(res, { message: 'Category deactivated', data: category });
 }
 
-module.exports = { list, getById, create, update, remove };
+/**
+ * The cinema's category display order, for the reordering UI.
+ *
+ * Cinema-scoped rather than category-scoped: the answer is a whole ordered
+ * list, and asking each category for its own position would make the UI issue
+ * one request per row.
+ */
+async function getCategoryOrder(req, res) {
+  const categories = await categoryService.listCategoryOrder(
+    req.user,
+    req.validated.params.cinemaId
+  );
+
+  return success(res, { message: 'Category order retrieved', data: categories });
+}
+
+async function setCategoryOrder(req, res) {
+  const categories = await categoryService.setCategoryOrder(
+    req.user,
+    req.validated.params.cinemaId,
+    req.validated.body.categoryIds
+  );
+
+  return success(res, { message: 'Category order updated', data: categories });
+}
+
+module.exports = { list, getById, create, update, remove, getCategoryOrder, setCategoryOrder };

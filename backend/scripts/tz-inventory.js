@@ -13,7 +13,7 @@
 const { sequelize } = require('../src/config/database');
 
 /** Client-owned. Never touched by the IST migration. */
-const VISTA_TABLES = new Set(['film', 'session']);
+const VISTA_TABLES = new Set(['session']);
 
 /**
  * The IST migration's own bookkeeping. Excluded for the same reason the

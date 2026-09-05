@@ -79,16 +79,6 @@ const SESSIONS_PER_SCREEN = 2;
  */
 const SESSION_STATUS_OPEN = 'O';
 
-/**
- * Window for the POS-synced shows API (Phase B6), mirroring §7/§12.11 of
- * docs/pos-integration.md: now - 3h ... now + 3h, inclusive both ends.
- * Deliberately NOT modeled on getSessions's per-screen cap/distance-sorting -
- * shows.status already excludes cancelled rows, so nothing here needs the
- * legacy table's grain-conflict workarounds.
- */
-const SHOW_WINDOW_HOURS = 3;
-const SHOW_WINDOW_MS = SHOW_WINDOW_HOURS * 60 * 60 * 1000;
-
 const pricingService = require('./pricing.service');
 const cache = require('./cache.service');
 const cashfree = require('./cashfree.client');
@@ -245,17 +235,44 @@ async function getCategories(
   // `limit: 1` on page 1 is the whole page: the section fills it and there is
   // no room for a real category. Skipped rather than issued, because
   // `FETCH NEXT 0 ROWS` is a syntax error in SQL Server.
+  /*
+   * ORDERED BY THE CINEMA'S OWN SEQUENCE, NOT ALPHABETICALLY.
+   *
+   * Two cinemas in one chain can want different sections first - one leading
+   * with Desserts, another with Main Course - so the order is a property of
+   * the (cinema, category) pair. It lives on the `cinema_categories` link row
+   * that already exists for exactly that pair; see the "Per-cinema category
+   * display order" section in category.service.js for the full rule.
+   *
+   * LEFT JOIN, NOT INNER. `cinema_categories` is not what makes a category
+   * visible here - having a priced, active product at this cinema is (the
+   * three INNER JOINs below). On the live database the link table is empty
+   * while 23 categories are visible, so an INNER JOIN would empty every
+   * customer's menu.
+   *
+   * `sequence` 0, and a missing link row, both mean UNPLACED and sort after
+   * everything placed, alphabetically among themselves. That is byte-for-byte
+   * today's behaviour for a cinema nobody has ordered yet, so switching this
+   * on cannot reshuffle a cinema that has not opted in.
+   */
+  const CATEGORY_ORDER_SQL = `
+    CASE WHEN ISNULL(cc.sequence, 0) = 0 THEN 1 ELSE 0 END ASC,
+    ISNULL(cc.sequence, 0) ASC,
+    c.name ASC`;
+
   const categoryIds =
     realLimit > 0
       ? await sequelize.query(
           `
-    SELECT DISTINCT c.id, c.name
+    SELECT c.id, c.name, ISNULL(cc.sequence, 0) AS sequence
     FROM categories c
     INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
     INNER JOIN cinema_products cp ON cp.product_id = p.id AND cp.cinema_id = ? AND cp.is_active = 1
     INNER JOIN product_pricing pp ON pp.product_id = p.id AND pp.cinema_id = ?
       AND pp.day_of_week IN (?, ?) AND pp.is_active = 1
-    ORDER BY c.name ASC
+    LEFT JOIN cinema_categories cc ON cc.category_id = c.id AND cc.cinema_id = ? AND cc.is_active = 1
+    GROUP BY c.id, c.name, cc.sequence
+    ORDER BY ${CATEGORY_ORDER_SQL}
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `,
           {
@@ -264,6 +281,7 @@ async function getCategories(
               cinemaId,
               EVERY_DAY,
               isoDayOfWeek(new Date()),
+              cinemaId,
               realOffset,
               realLimit,
             ],
@@ -275,14 +293,26 @@ async function getCategories(
   const ids = categoryIds.map((row) => row.id);
 
   // Fetch full category data
+  /*
+   * The detail rows, put back into the order the query above decided.
+   *
+   * `findAll` with an `IN` list returns whatever order the database finds
+   * convenient, and the previous `order: name ASC` here would have silently
+   * undone the sequence for every cinema that set one. Reordering in memory
+   * keeps the single definition of the order in the SQL above rather than
+   * expressing it twice.
+   */
+  const positionById = new Map(ids.map((id, index) => [id, index]));
+
   const categories =
     ids.length > 0
-      ? await models.Category.findAll({
-          where: { id: { [Op.in]: ids } },
-          attributes: ['id', 'name', 'imageUrl', 'description'],
-          order: [['name', 'ASC']],
-          raw: true,
-        })
+      ? (
+          await models.Category.findAll({
+            where: { id: { [Op.in]: ids } },
+            attributes: ['id', 'name', 'imageUrl', 'description'],
+            raw: true,
+          })
+        ).sort((a, b) => positionById.get(a.id) - positionById.get(b.id))
       : [];
 
   if (!hasFavourites) {
@@ -631,33 +661,61 @@ async function createOrder(payload, idempotencyKey) {
 
     // Validate cinema
     const cinema = await models.Cinema.findByPk(payload.cinemaId, {
-      attributes: ['id', 'chainId', 'isActive'],
+      // `code` is how a session names its cinema - see models/session.js.
+      attributes: ['id', 'code', 'chainId', 'isActive'],
       transaction,
     });
 
     if (!cinema) throw new NotFoundError('Cinema');
     if (!cinema.isActive) throw new ConflictError('Cinema is not active', { cinemaId: cinema.id });
 
-    // The auditorium is never trusted from the client - only resolved here,
-    // either from a POS-synced show (showId, Phase B6/B7 - takes priority
-    // when present) or from the screen name of the show the customer picked
-    // plus the seat row they entered, against `screens` (see resolveScreenId
-    // and client-tables.md "screens grain conflict"). A QR's own screenId is
-    // not used: it is fixed at print time and does not track which show the
-    // customer actually selected.
+    /*
+     * WHICH SHOW, AND WHICH AUDITORIUM.
+     *
+     * `sessionId` is the trustworthy path: the customer picked one screening
+     * from GET .../sessions, and everything about it - the film title, the
+     * start time, the auditorium's name - is then read from the `session` row
+     * on the server rather than taken from the request body. A client cannot
+     * put one film's title on another film's screening.
+     *
+     * `screenName`/`filmTitle`/`showTime` are still accepted without a
+     * `sessionId`, because a kiosk or counter terminal may take an order with
+     * no screening selected at all. They are a fallback, never an override:
+     * when `sessionId` is present the session wins.
+     *
+     * The auditorium is never trusted from the client as an id under either
+     * path. It is resolved from the screen NAME plus the seat row the customer
+     * entered, against `screens` (see resolveScreenId and client-tables.md
+     * "screens grain conflict"). A QR's own screenId is deliberately not used
+     * here: it is fixed at print time and does not track which show the
+     * customer actually selected.
+     */
     let screenId = null;
-    let show = null;
+    let session = null;
 
-    if (payload.showId) {
-      show = await models.Show.findByPk(payload.showId, { transaction });
+    if (payload.sessionId) {
+      session = await models.Session.findOne({
+        where: { cinemaCode: cinema.code, sessionId: payload.sessionId },
+        transaction,
+      });
 
-      if (!show || show.cinemaId !== cinema.id) {
-        throw new NotFoundError('Show');
+      if (!session) throw new NotFoundError('Session');
+
+      // The same rule the picker applies, enforced again at write time: a
+      // screening that is not Open is not selling, so nothing may be ordered
+      // against it. The picker never offers one - but the picker is not what
+      // guards this.
+      if (session.status !== SESSION_STATUS_OPEN) {
+        throw new ConflictError('This show is no longer available', {
+          sessionId: payload.sessionId,
+        });
       }
+    }
 
-      screenId = show.screenId;
-    } else if (payload.screenName) {
-      screenId = await resolveScreenId(cinema.id, payload.screenName, payload.seatRow);
+    const screenName = session ? session.screenName : payload.screenName;
+
+    if (screenName) {
+      screenId = await resolveScreenId(cinema.id, screenName, payload.seatRow);
 
       if (!screenId) {
         throw new ValidationError('Could not match your seat to this show', [
@@ -772,10 +830,12 @@ async function createOrder(payload, idempotencyKey) {
         source: orderSource,
         customerMobile: payload.customerMobile || null,
         customerEmail: payload.customerEmail || null,
-        // A POS-synced show overrides any client-supplied filmTitle/showTime -
-        // those are only a fallback for a cinema with no synced shows yet.
-        filmTitle: show ? show.filmTitle : payload.filmTitle || null,
-        showTime: show ? show.showTime : payload.showTime || null,
+        // The chosen session overrides any client-supplied filmTitle/showTime -
+        // those are only a fallback for an order placed with no screening
+        // selected. Both are snapshots: editing the schedule later must never
+        // rewrite what an order was placed against.
+        filmTitle: session ? session.filmTitle : payload.filmTitle || null,
+        showTime: session ? session.startsAt : payload.showTime || null,
         notes: payload.notes || null,
         subtotal: toDecimalString(subtotalPaise),
         discount: toDecimalString(discountPaise),
@@ -794,19 +854,38 @@ async function createOrder(payload, idempotencyKey) {
       { transaction }
     );
 
-    // POS identifiers, snapshotted at order time - immutable per-order record
-    // of which show this order was placed against (Phase B6/B7).
-    if (show) {
-      await models.OrderPosContext.create(
-        {
-          orderId: order.id,
-          posIntegrationId: show.posIntegrationId,
-          externalSessionId: show.externalSessionId,
-          externalFilmId: show.externalFilmId,
-          externalScreenId: show.externalScreenId,
-        },
-        { transaction }
-      );
+    /*
+     * POS identifiers, snapshotted at order time - an immutable per-order
+     * record of which screening this order was placed against.
+     *
+     * They come off the `session` row, which is what POS sync writes; there is
+     * no separate shows table holding a second copy. Written only when the
+     * cinema actually has an integration to reconcile against:
+     * `pos_integration_id` is NOT NULL, so a cinema with no integration gets
+     * no context row rather than a row pointing nowhere.
+     */
+    if (session) {
+      const integration = await models.PosIntegration.findOne({
+        where: { cinemaId: cinema.id, isActive: true },
+        attributes: ['id'],
+        transaction,
+      });
+
+      if (integration) {
+        await models.OrderPosContext.create(
+          {
+            orderId: order.id,
+            posIntegrationId: integration.id,
+            externalSessionId: String(session.sessionId),
+            externalFilmId: session.filmCode,
+            externalScreenId:
+              session.screenNumber === null || session.screenNumber === undefined
+                ? null
+                : String(session.screenNumber),
+          },
+          { transaction }
+        );
+      }
     }
 
     // Create idempotency key association
@@ -1662,7 +1741,85 @@ async function resolveScreenId(cinemaId, screenName, seatRow) {
   return matches.length === 1 ? matches[0].id : null;
 }
 
-async function getSessions(cinemaId) {
+/**
+ * Which screening is running RIGHT NOW on one auditorium.
+ *
+ * This is the whole of the auto-selection rule, and it lives here rather than
+ * in the Consumer on purpose: the customer's device clock is not evidence. The
+ * only inputs are the cinema, the screen the QR names, and the server's own
+ * clock.
+ *
+ *     cinema + screen + server time + start/end  ->  the ongoing session
+ *
+ * THE BOUNDARY CONVENTION IS [start, end)
+ *
+ * A screening is current from the instant it starts until the instant it ends.
+ * Closed at the start so a customer scanning at exactly 22:00 gets the 22:00
+ * show; open at the end so the 22:00-00:00 show and the 00:00-02:00 show that
+ * follows it on the same screen can never both be current. `Session_dtmRealShow`
+ * and `Session_dtmFinishShow` both exist on every row and are both NOT NULL, so
+ * no end time has to be inferred.
+ *
+ * ROWS WHOSE END PRECEDES THEIR START ARE EXCLUDED, NOT REPAIRED
+ *
+ * 39 Open rows on the live database finish BEFORE they start - the client's
+ * feed carries them that way, and QBusto does not own the data well enough to
+ * correct it. `endsAt > startsAt` filters them out rather than letting an
+ * impossible interval match, or never match, unpredictably. They remain
+ * selectable from the list by hand; they simply cannot be auto-selected.
+ *
+ * @param {string} cinemaCode
+ * @param {string} screenName The auditorium's name, from the QR's screen.
+ * @param {Date} now Server clock. Never client-supplied.
+ * @returns {Promise<object|null>} The session, or null when nothing is running.
+ */
+async function findCurrentSession(cinemaCode, screenName, now) {
+  if (!screenName) return null;
+
+  const literal = sqlDateTimeLiteral(now);
+
+  const candidates = await models.Session.findAll({
+    where: {
+      cinemaCode,
+      status: SESSION_STATUS_OPEN,
+      startsAt: { [Op.lte]: literal },
+      endsAt: { [Op.gt]: literal },
+    },
+    attributes: ['sessionId', 'filmCode', 'filmTitle', 'screenName', 'startsAt', 'endsAt'],
+    order: [
+      ['startsAt', 'DESC'],
+      ['sessionId', 'DESC'],
+    ],
+  });
+
+  // The screen match is done here rather than in SQL because the client's data
+  // spells the same auditorium several ways ("Screen 2" and "SCREEN 2" both
+  // occur), and normaliseScreenName is the one definition of that comparison
+  // the rest of this file already uses.
+  const key = normaliseScreenName(screenName);
+  const onScreen = candidates.filter(
+    (candidate) =>
+      normaliseScreenName(candidate.screenName) === key && candidate.endsAt > candidate.startsAt
+  );
+
+  if (onScreen.length === 0) return null;
+
+  // Overlapping screenings on one auditorium exist in the data (seeded rows
+  // do it routinely). Sorted start-descending above, so the most recently
+  // begun is the one the customer is actually sitting in.
+  return onScreen[0];
+}
+
+/**
+ * The screenings a customer may order against, for one cinema.
+ *
+ * @param {number} cinemaId
+ * @param {object} [options]
+ * @param {number|null} [options.screenId] The QR's screen. When given, the
+ *   session running on that screen right now is marked `isCurrent` and is
+ *   guaranteed to appear in the list, so the Consumer can preselect it.
+ */
+async function getSessions(cinemaId, { screenId = null } = {}) {
   const cinema = await models.Cinema.findByPk(cinemaId, {
     where: { isActive: true },
     attributes: ['id', 'code'],
@@ -1694,19 +1851,35 @@ async function getSessions(cinemaId) {
         [Op.lt]: sqlDateTimeLiteral(windowEnds),
       },
     },
-    attributes: ['sessionId', 'filmCode', 'screenName', 'startsAt', 'endsAt', 'seatsAvailable'],
-    include: [
-      {
-        association: 'film',
-        attributes: ['code', 'title', 'certification', 'durationMinutes'],
-        required: true,
-      },
-    ],
+    attributes: ['sessionId', 'filmCode', 'filmTitle', 'screenName', 'startsAt', 'endsAt'],
     order: [
       ['startsAt', 'ASC'],
       ['sessionId', 'ASC'],
     ],
   });
+
+  /*
+   * THE SCREEN THE QR NAMES.
+   *
+   * Resolved to a name here, once, because that is what a session carries -
+   * `screens.id` appears nowhere in the schedule. A screenId that belongs to
+   * another cinema, or to no screen at all, simply yields no name and the
+   * response carries no current session; it is not an error, because a QR
+   * printed against a screen that has since been deleted should still let
+   * someone order.
+   */
+  let qrScreenName = null;
+
+  if (screenId) {
+    const screen = await models.Screen.findOne({
+      where: { id: screenId, cinemaId: cinema.id, isActive: true },
+      attributes: ['name'],
+    });
+
+    qrScreenName = screen ? screen.name : null;
+  }
+
+  const current = qrScreenName ? await findCurrentSession(cinema.code, qrScreenName, now) : null;
 
   // Capped here rather than in SQL: the window already bounds this to a
   // six-hour span for one cinema, so the set is small, and a per-group limit
@@ -1737,7 +1910,20 @@ async function getSessions(cinemaId) {
 
   // Back into start order for display: the picker reads as a schedule, so the
   // selection is by proximity but the presentation stays chronological.
-  const offered = sessions.filter((session) => kept.has(session));
+  let offered = sessions.filter((session) => kept.has(session));
+
+  /*
+   * THE CURRENT SCREENING IS ALWAYS OFFERED.
+   *
+   * findCurrentSession is not bounded by the picker's window or its
+   * two-per-screen cap, and it must not be: a 3h20m film that began 3h10m ago
+   * is still running, but its start is outside a 3h lookback, and preselecting
+   * a session the list does not contain would leave the dropdown blank. So it
+   * is merged in if the filters above happened to drop it.
+   */
+  if (current && !offered.some((session) => session.sessionId === current.sessionId)) {
+    offered = [...offered, current].sort((a, b) => a.startsAt - b.startsAt);
+  }
 
   const screensByName = await summariseScreensByName(cinemaId);
 
@@ -1764,71 +1950,15 @@ async function getSessions(cinemaId) {
       // to free text in that case.
       seatRows: summary.seatRows,
       filmCode: session.filmCode,
-      filmTitle: session.film ? session.film.title : null,
-      certification: session.film ? session.film.certification : null,
-      durationMinutes: session.film ? session.film.durationMinutes : null,
+      // A column on the session row now, not a join. See models/session.js.
+      filmTitle: session.filmTitle,
       startsAt: session.startsAt,
       endsAt: session.endsAt,
-      seatsAvailable: session.seatsAvailable,
+      // Server-decided, and at most one session in the response carries it.
+      // The Consumer preselects this one; the customer may still pick another.
+      isCurrent: Boolean(current) && session.sessionId === current.sessionId,
     };
   });
-}
-
-/**
- * POS-synced shows (Phase B6) - a distinct data source from getSessions'
- * client-owned `session` table above. Deliberately minimal: no per-screen
- * cap, no distance-sorting, because `shows` rows are already scoped to one
- * cinema and one window, and `status` already excludes anything cancelled -
- * none of getSessions' grain-conflict workarounds apply here.
- */
-async function getShows(cinemaId) {
-  const cinema = await models.Cinema.findByPk(cinemaId, {
-    where: { isActive: true },
-    attributes: ['id'],
-  });
-
-  if (!cinema) throw new NotFoundError('Cinema');
-
-  const now = new Date();
-  const windowStarts = new Date(now.getTime() - SHOW_WINDOW_MS);
-  const windowEnds = new Date(now.getTime() + SHOW_WINDOW_MS);
-
-  const shows = await models.Show.findAll({
-    where: {
-      cinemaId: cinema.id,
-      status: 'scheduled',
-      showTime: {
-        [Op.gte]: windowStarts,
-        [Op.lte]: windowEnds,
-      },
-    },
-    attributes: ['id', 'screenId', 'filmTitle', 'showTime'],
-    include: [
-      {
-        association: 'screen',
-        attributes: ['name'],
-        required: false,
-      },
-    ],
-    order: [['showTime', 'ASC']],
-  });
-
-  return shows
-    .slice()
-    .sort((a, b) => {
-      const timeDiff = a.showTime - b.showTime;
-      if (timeDiff !== 0) return timeDiff;
-      const nameA = (a.screen && a.screen.name) || '';
-      const nameB = (b.screen && b.screen.name) || '';
-      return nameA.localeCompare(nameB);
-    })
-    .map((show) => ({
-      id: show.id,
-      screenId: show.screenId,
-      screenName: show.screen ? show.screen.name : null,
-      filmTitle: show.filmTitle,
-      showTime: show.showTime,
-    }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1917,7 +2047,6 @@ module.exports = {
 
   // Uncached on purpose - see cache.service.js.
   getSessions,
-  getShows,
   createOrder,
   validateCouponPreview,
   paymentInit,

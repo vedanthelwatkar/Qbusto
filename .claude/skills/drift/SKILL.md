@@ -10,9 +10,11 @@ list is still accurate just because it's written down.
 
 Claims to re-check (from memory.md §19):
 
-1. No mention of `film`/`session`/`screen_layout`, the `O`/`C`/`I` session
-   vocabulary, the read-only Film/Session API, or the Dashboard
-   Films/Sessions pages.
+1. No mention of `session` (the single source of showtimes),
+   `screen_layout`, the `O`/`C`/`I` session vocabulary, the read-only
+   Session API, or the Dashboard Sessions page. Any surviving mention of a
+   `film` or `shows` table is drift in the other direction — both were
+   dropped.
 2. No mention of the `screens` grain conflict or the `category`/`seat_row`
    columns.
 3. Whether the architecture diagram/technology table name Cashfree

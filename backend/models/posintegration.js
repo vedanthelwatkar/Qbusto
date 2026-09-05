@@ -23,10 +23,6 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'posIntegrationId',
         as: 'transactions',
       });
-      PosIntegration.hasMany(models.Show, {
-        foreignKey: 'posIntegrationId',
-        as: 'shows',
-      });
 
       PosIntegration.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
       PosIntegration.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });

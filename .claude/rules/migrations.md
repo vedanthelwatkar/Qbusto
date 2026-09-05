@@ -7,13 +7,18 @@ paths:
 
 # Database & migrations
 
-SQL Server. 37 files in `backend/migrations/`, timestamp-ordered. The
+SQL Server. 39 files in `backend/migrations/`, timestamp-ordered. The
 Sequelize CLI reads `backend/config/config.js` (wired via
 `backend/.sequelizerc`) — **not** `src/config/env.js`. `src/config/
 database.js` relates the two. Nothing under `src/` should read DB connection
 settings from `env.js`.
 
-Two recent alignment migrations are the current state of the art:
+> **Historical sections below stay as written.** The two alignment
+> migrations describe what those files did at the time; `film` and `shows`
+> have since been dropped (see `20260904000100` below). Migration history is
+> not rewritten to make a text search clean.
+
+Two alignment migrations laid the client-schema groundwork:
 
 ## `20260823001000-align-client-naming.js`
 
@@ -73,6 +78,32 @@ Film/Session/Screen query would fail with "Invalid object name".
   supplied it empty", and the second case is real.
 - Anything it declines to remove is logged via `console.warn`, not raised.
 
+## `20260904000100-session-sole-show-source.js`
+
+**The destructive one.** Makes `session` the only table of screenings.
+
+- Backfills `Film_strName` on the staging table from `film.Film_strTitle`
+  first, and verifies 0 rows would be left without a title before anything is
+  dropped. (Measured before running: 223 of 223 resolved.)
+- Copies the rows that exist only in `session` into `session_old` (10 dev-range
+  rows), so the swap loses nothing in either direction, then drops `session`,
+  drops the staging table's FKs and `sp_rename`s `session_old` -> `session`.
+- On a database with no `session_old` at all (fresh install, CI, disaster
+  recovery, where `20260824000100` created the old shape) it takes the other
+  branch and reshapes `session` in place, landing on the identical schema.
+- Then `PK_session`, `FK_session_cinemas` (added **only** when there are zero
+  orphan cinema codes, otherwise a `console.warn`), and
+  `IX_session_cinema_screen_start` for the current-show lookup.
+- Finally drops `shows` (0 rows, no inbound FKs, no remaining reader) and
+  `film`.
+
+`down()` recreates an **empty** `film` and warns loudly: the dropped rows and
+`shows` are not recoverable from within a migration. This one is a restore-
+from-backup, not a rollback.
+
+The final ten columns and what each maps to are in
+[client-tables.md](./client-tables.md).
+
 ## Payment-schema rename migrations
 
 `20260825000100-rename-payment-columns-provider-neutral.js` — rename-only,
@@ -109,6 +140,7 @@ No user account — create one before anything can log in
 3. `down()` must refuse to drop anything holding data, and must never
    auto-drop a table that could legitimately have arrived empty from the
    client (see `screen_layout` above).
-4. Never rename a provider column inside `film`/`session`.
-5. Never create a QBusto-owned `films`/`sessions` duplicate table — earlier
-   ones were removed on purpose.
+4. Never rename a provider column inside `session`.
+5. Never create a QBusto-owned `films`/`sessions`/`shows` table. `session` is
+   the single source of showtimes; every duplicate that was tried has been
+   removed on purpose.

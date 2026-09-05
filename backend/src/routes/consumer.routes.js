@@ -273,24 +273,46 @@ router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
  *     tags: [Consumer - Catalog]
  *     summary: Get bookable sessions for a cinema
  *     description: >
- *       Scheduled screenings at this cinema that have not started yet,
- *       earliest first. Each session joins a film to an auditorium at a time.
+ *       Screenings at this cinema a customer may order food against: status
+ *       `O` (open) and starting within three hours either side of now, at most
+ *       two per auditorium, chronological.
+ *
+ *
+ *       `session` is the single source of show data in QBusto. The film title
+ *       is a column on the screening itself, so there is no separate film or
+ *       shows endpoint and no second list to reconcile this one against.
  *
  *
  *       The Consumer offers these as a single picker at checkout, and the
  *       selected session supplies the order's `screenName`, `filmTitle` and
- *       `showTime` together, so the customer does not enter these
- *       separately and they cannot disagree. `screenName` plus the row the
- *       customer enters (or picks from `seatRows`, when non-empty) resolve to
- *       the order's actual screen id server-side.
+ *       `showTime` together, so the customer does not enter these separately
+ *       and they cannot disagree. `screenName` plus the row the customer
+ *       enters (or picks from `seatRows`, when non-empty) resolve to the
+ *       order's actual screen id server-side.
  *
  *
- *       Sessions whose film or auditorium is no longer active are excluded, so
- *       every option offered can actually be ordered against.
+ *       AUTO-SELECTION. Pass the QR's `screenId` and the server decides which
+ *       screening is running on that auditorium right now - cinema, screen and
+ *       the SERVER clock against the screening's start and end - and flags it
+ *       `isCurrent: true`. At most one session in the response carries it, and
+ *       it is always included in the list even when the window or the
+ *       per-screen cap would otherwise have dropped it, so the Consumer can
+ *       preselect it. No time is accepted from the client. The customer can
+ *       still choose any other session in the list.
  *     parameters:
  *       - name: cinemaId
  *         in: path
  *         required: true
+ *         schema: { type: integer }
+ *       - name: screenId
+ *         in: query
+ *         required: false
+ *         description: >
+ *           The screen the QR was printed for. Used only to decide which
+ *           screening is currently running. A screenId belonging to another
+ *           cinema, or to no screen, is ignored rather than rejected - a QR
+ *           printed against a since-deleted screen must still let someone
+ *           order.
  *         schema: { type: integer }
  *     responses:
  *       200:
@@ -309,50 +331,11 @@ router.get('/cinemas/:cinemaId/banners', consumerController.getBanners);
  *       404:
  *         description: Cinema not found
  */
-router.get('/cinemas/:cinemaId/sessions', consumerController.getSessions);
-/**
- * @openapi
- * /api/consumer/cinemas/{cinemaId}/shows:
- *   get:
- *     tags: [Consumer - Catalog]
- *     summary: Get POS-synced shows for a cinema (Phase B6)
- *     description: >
- *       Shows synced from the cinema's POS integration, scheduled and within
- *       now - 3h ... now + 3h (inclusive both ends), earliest first.
- *
- *
- *       A distinct data source from GET .../sessions above - this reads the
- *       shows table populated by POS sync, not the client's own session
- *       table. A cinema with no POS integration, or one whose last sync
- *       found nothing in the window, simply returns an empty list rather
- *       than an error.
- *
- *
- *       Selecting one supplies the order's showId; the order endpoint then
- *       derives filmTitle/showTime/screenId from the show itself.
- *     parameters:
- *       - name: cinemaId
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Shows list (empty array when none are in the window)
- *         content:
- *           application/json:
- *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/SuccessResponse'
- *                 - type: object
- *                   properties:
- *                     data:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/ConsumerShow'
- *       404:
- *         description: Cinema not found
- */
-router.get('/cinemas/:cinemaId/shows', consumerController.getShows);
+router.get(
+  '/cinemas/:cinemaId/sessions',
+  validate(consumerValidators.listSessions),
+  consumerController.getSessions
+);
 
 // Order endpoints
 
@@ -405,12 +388,27 @@ router.get('/cinemas/:cinemaId/shows', consumerController.getShows);
  *               customerEmail:
  *                 type: string
  *                 nullable: true
+ *               sessionId:
+ *                 type: integer
+ *                 nullable: true
+ *                 description: >
+ *                   The screening the customer picked, as returned in
+ *                   `ConsumerSession.id`. When present the server reads the
+ *                   film title, the show time and the auditorium's name off
+ *                   the session row itself and IGNORES filmTitle/showTime/
+ *                   screenName in this body. A session that is not open, or
+ *                   belongs to another cinema, is rejected.
  *               filmTitle:
  *                 type: string
  *                 nullable: true
+ *                 description: >
+ *                   Fallback only, for an order placed with no session
+ *                   selected (a kiosk or counter terminal). Ignored when
+ *                   sessionId is present.
  *               showTime:
  *                 type: string
  *                 nullable: true
+ *                 description: Fallback only. Ignored when sessionId is present.
  *               notes:
  *                 type: string
  *                 nullable: true

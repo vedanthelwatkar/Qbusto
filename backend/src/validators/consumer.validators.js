@@ -48,6 +48,21 @@ const items = Joi.array().items(orderItem).min(1).max(50).required().messages({
   'array.min': 'Add at least one item to the order',
 });
 
+/**
+ * GET /api/consumer/cinemas/{cinemaId}/sessions
+ *
+ * `screenId` is the QR's screen, and it is the ONLY input the client gets to
+ * contribute to which show is current. There is deliberately no `now`
+ * parameter: the current time is read from the server clock inside
+ * consumer.service.findCurrentSession, so a device with a wrong - or edited -
+ * clock cannot steer the selection.
+ */
+const listSessions = {
+  query: Joi.object({
+    screenId: id.optional().allow(null).default(null),
+  }),
+};
+
 const createOrder = {
   body: Joi.object({
     cinemaId: id.required(),
@@ -72,10 +87,16 @@ const createOrder = {
       .default(null),
     filmTitle: optionalText(200).default(null),
     showTime: Joi.date().iso().allow(null).default(null),
-    // POS-synced show (Phase B6/B7). When present, the service derives
-    // filmTitle/showTime/screenId from the show itself and ignores any
-    // client-supplied filmTitle/showTime - see consumer.service.createOrder.
-    showId: id.optional().allow(null).default(null),
+    /*
+     * The screening the customer picked, from GET .../sessions.
+     *
+     * When present the service reads the film title, the show time and the
+     * auditorium's name off the `session` row itself and ignores any
+     * client-supplied filmTitle/showTime - see consumer.service.createOrder.
+     * It is the provider's session id, unique within the cinema, not a global
+     * surrogate key.
+     */
+    sessionId: Joi.number().integer().positive().optional().allow(null).default(null),
     notes: optionalText(500).default(null),
     // Validated for real against `offers` inside the service - this only
     // bounds its shape. `null`/omitted means no coupon was applied.
@@ -105,4 +126,4 @@ const validateCoupon = {
   }),
 };
 
-module.exports = { createOrder, validateCoupon };
+module.exports = { listSessions, createOrder, validateCoupon };

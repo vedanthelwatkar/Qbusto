@@ -12,7 +12,15 @@ const Joi = require('joi');
 const { id, paginationQuery } = require('./common.validators');
 
 /** See chain.validators for why this is a whitelist. */
-const SORTABLE_FIELDS = ['sessionId', 'startsAt', 'endsAt', 'filmCode', 'screenName', 'status'];
+const SORTABLE_FIELDS = [
+  'sessionId',
+  'startsAt',
+  'endsAt',
+  'filmCode',
+  'filmTitle',
+  'screenName',
+  'status',
+];
 
 const list = {
   query: paginationQuery.keys({

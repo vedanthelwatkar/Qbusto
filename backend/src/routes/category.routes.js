@@ -84,6 +84,113 @@ router.get(
 
 /**
  * @openapi
+ * /api/categories/order/{cinemaId}:
+ *   get:
+ *     tags: [Categories]
+ *     summary: Get a cinema's category display order
+ *     description: >
+ *       Every active category in the cinema's chain, in the order a customer
+ *       sees them: placed categories first by `sequence`, then the unplaced
+ *       ones alphabetically. `sequence` is 0 for a category nobody has placed.
+ *
+ *
+ *       The order is per CINEMA, not per chain - two cinemas in one chain can
+ *       lead with different sections. It is stored on the existing
+ *       `cinema_categories` link row; there is no separate ordering table.
+ *     parameters:
+ *       - in: path
+ *         name: cinemaId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: The cinema's category order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/CategoryOrderEntry' }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.get(
+  '/order/:cinemaId',
+  authorize(MODULES.CATEGORIES, ACTIONS.READ),
+  validate(categoryValidators.getCategoryOrder),
+  categoryController.getCategoryOrder
+);
+
+/**
+ * @openapi
+ * /api/categories/order/{cinemaId}:
+ *   put:
+ *     tags: [Categories]
+ *     summary: Set a cinema's category display order
+ *     description: >
+ *       `categoryIds` IS the order: position 1 becomes sequence 1, position 2
+ *       becomes sequence 2, and so on. A positional list cannot express a
+ *       duplicate sequence or a gap, which is why the endpoint takes one
+ *       rather than a map of explicit numbers.
+ *
+ *
+ *       Any category NOT in the list is reset to unplaced (sequence 0) and
+ *       falls to the alphabetical tail - a half-applied order is worse than
+ *       none. An empty array clears the order entirely.
+ *
+ *
+ *       Every category named must belong to the cinema's chain; one that does
+ *       not is a 404, like any other out-of-scope resource.
+ *     parameters:
+ *       - in: path
+ *         name: cinemaId
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [categoryIds]
+ *             properties:
+ *               categoryIds:
+ *                 type: array
+ *                 items: { type: integer }
+ *                 example: [7, 3, 12]
+ *     responses:
+ *       200:
+ *         description: The order as it now stands
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/CategoryOrderEntry' }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.put(
+  '/order/:cinemaId',
+  authorize(MODULES.CATEGORIES, ACTIONS.EDIT),
+  validate(categoryValidators.setCategoryOrder),
+  categoryController.setCategoryOrder
+);
+
+/**
+ * @openapi
  * /api/categories/{id}:
  *   get:
  *     tags: [Categories]

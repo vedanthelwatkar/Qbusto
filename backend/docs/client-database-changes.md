@@ -15,7 +15,17 @@ Only the `qbusto` database is in scope. The instance also hosts
 ---
 
 **Status update, post-review.** This document is the original point-in-time
-audit and is left as written below. Two things it flagged have since moved:
+audit and is left as written below. Three things it flagged have since moved:
+
+- **`film` no longer exists, and neither does `shows`.** Every film title was
+  backfilled onto `session.Film_strName` (223 of 223 resolved, 0 left null) and
+  both tables were dropped by
+  `20260904000100-session-sole-show-source.js`, along with the staging table
+  `session_old` (renamed into place as the new `session`). `session` is now the
+  single source of showtimes, with ten columns. Every reference below to `Film`,
+  `film`, `films` or `shows` describes the database **as audited on
+  2026-08-23**, not as it stands today; see [schema.md](./schema.md#session)
+  for the current shape.
 
 - The naming alignment it recommended (`Film` → `film`, `Session` → `session`,
   `screens.Category` → `category`, `screens.SeatRow` → `seat_row`,

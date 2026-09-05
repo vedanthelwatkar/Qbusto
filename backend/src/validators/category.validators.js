@@ -50,4 +50,37 @@ const update = {
 
 const remove = { params: idParam };
 
-module.exports = { list, getById, create, update, remove, SORTABLE_FIELDS };
+/**
+ * The per-cinema display order.
+ *
+ * The body is the ORDER ITSELF - position 1 in the array becomes sequence 1 -
+ * rather than a map of explicit numbers. A positional list cannot express a
+ * duplicate sequence or a gap, which is the whole reason for the shape; the
+ * service rejects a duplicate CATEGORY separately.
+ *
+ * An empty array is legal and means "no category is placed": it clears the
+ * cinema's order back to alphabetical.
+ */
+const categoryOrderParams = Joi.object({
+  cinemaId: Joi.number().integer().positive().required(),
+});
+
+const getCategoryOrder = { params: categoryOrderParams };
+
+const setCategoryOrder = {
+  params: categoryOrderParams,
+  body: Joi.object({
+    categoryIds: Joi.array().items(id.required()).max(500).required(),
+  }),
+};
+
+module.exports = {
+  list,
+  getById,
+  create,
+  update,
+  remove,
+  getCategoryOrder,
+  setCategoryOrder,
+  SORTABLE_FIELDS,
+};

@@ -26,7 +26,7 @@ export default function ConfirmationPage() {
           icon={<AlertIcon size={28} />}
           tone="error"
           title="Order not found"
-          body="We couldn't display this order confirmation. If you completed a payment, your order is safe — please check with the counter."
+          body="We couldn't display this order confirmation. If you completed a payment, your order is safe. Please check with the counter."
           actions={
             <button
               className="btn btn--primary"

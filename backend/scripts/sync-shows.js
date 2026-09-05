@@ -42,7 +42,8 @@ async function main() {
     } else {
       console.log(
         `✓ integration ${integrationId} (${provider}): ` +
-          `${result.inserted} inserted, ${result.updated} updated, ${result.cancelled} cancelled`
+          `${result.inserted} inserted, ${result.updated} updated, ` +
+            `${result.closed} closed, ${result.skipped} skipped`
       );
     }
   }

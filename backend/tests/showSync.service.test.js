@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Phase B5 - POS show sync, provider-neutral.
+ * POS show sync, provider-neutral, writing into `session`.
  *
  * Drives showSync.service exclusively through a TEST DOUBLE adapter
  * registered under the 'qbusto' provider value (a real, schema-accepted
@@ -10,6 +10,14 @@
  * src/pos/adapter.js's own header on why adapters are test-doubled rather
  * than faked with real-looking provider payloads.
  *
+ * WHAT CHANGED WHEN `shows` WAS REMOVED
+ *
+ * The destination is `session`, the platform's single show table. Two of its
+ * columns cannot be filled from a provider response that carries only a start
+ * time and a string id, and the tests below pin the SKIP behaviour for both -
+ * a row that cannot be represented is logged and passed over, never stored
+ * with an invented end time or a hashed key. See the service's header.
+ *
  * The database layer is mocked, matching the project's convention (see
  * tests/cinema.routes.test.js) - `npm test` opens no real connection.
  */
@@ -17,14 +25,14 @@
 jest.mock('../src/config/database', () => {
   const models = {
     PosIntegration: { findAll: jest.fn() },
-    Show: { findOne: jest.fn(), create: jest.fn(), update: jest.fn() },
+    Session: { findOne: jest.fn(), create: jest.fn(), update: jest.fn() },
     ScreenPosMapping: { findOne: jest.fn() },
     Cinema: {},
   };
 
   return {
     models,
-    sequelize: { transaction: jest.fn((cb) => cb('TX')) },
+    sequelize: { transaction: jest.fn((cb) => cb('TX')), query: jest.fn() },
   };
 });
 
@@ -44,13 +52,48 @@ const showSync = require('../src/services/showSync.service');
 
 const PROVIDER = POS_PROVIDERS.QBUSTO;
 
-/** A well-formed ExternalShow, in the shape normalizeExternalShow produces. */
+/**
+ * The values bound by the Nth session write.
+ *
+ * Sessions are written with RAW SQL, not through the model: the client's
+ * `datetime` columns reject the offset-bearing literal Sequelize binds a JS
+ * Date as, which fails the statement outright (verified against the live
+ * table). So these tests assert on the bound parameters and on whether the
+ * statement was an INSERT or an UPDATE, which is what actually reaches SQL
+ * Server.
+ */
+function writeCall(index = 0) {
+  const call = sequelize.query.mock.calls[index];
+  if (!call) return null;
+
+  return {
+    sql: call[0],
+    isInsert: /INSERT INTO/i.test(call[0]),
+    isUpdate: /^\s*UPDATE/i.test(call[0]),
+    values: call[1].replacements,
+  };
+}
+
+/** Every datetime literal embedded in a write, in order. */
+function datetimeLiterals(index = 0) {
+  const call = sequelize.query.mock.calls[index];
+  return call ? (call[0].match(/'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}'/g) ?? []) : [];
+}
+
+/**
+ * A well-formed ExternalShow, in the shape normalizeExternalShow produces.
+ *
+ * Numeric `externalSessionId` and a present `showTimeEndLocal`, because those
+ * are exactly the two conditions a row must meet to become a session row. The
+ * tests that exercise the failure of each override one of them.
+ */
 const externalShow = (overrides = {}) => ({
-  externalSessionId: 'SESSION-1',
-  externalScreenId: 'SCR-A',
+  externalSessionId: '4242',
+  externalScreenId: '3',
   externalFilmId: 'FILM-1',
   filmTitle: 'A Stub Film',
   showTimeLocal: '2026-09-03T18:30:00',
+  showTimeEndLocal: '2026-09-03T21:00:00',
   cancelled: false,
   ...overrides,
 });
@@ -61,7 +104,7 @@ const integration = (overrides = {}) => ({
   provider: PROVIDER,
   apiUrl: 'http://stub.example/api',
   config: null,
-  cinema: { timezone: 'Asia/Kolkata' },
+  cinema: { code: 'NOIDA', timezone: 'Asia/Kolkata' },
   ...overrides,
 });
 
@@ -71,6 +114,9 @@ describe('showSync.service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sequelize.transaction.mockImplementation((cb) => cb('TX'));
+    sequelize.query.mockResolvedValue([[], {}]);
+    // Reconciliation runs on any sync that represented every row it was given.
+    models.Session.update.mockResolvedValue([0]);
 
     stubFetchShows = jest.fn();
     registerAdapter(PROVIDER, { provider: PROVIDER, fetchShows: stubFetchShows });
@@ -81,83 +127,214 @@ describe('showSync.service', () => {
   });
 
   describe('syncIntegration', () => {
-    test('inserts a new show on the natural key when none exists', async () => {
+    test('inserts a new session on the natural key when none exists', async () => {
       stubFetchShows.mockResolvedValueOnce([externalShow()]);
-      models.Show.findOne.mockResolvedValueOnce(null);
-      models.ScreenPosMapping.findOne.mockResolvedValueOnce({ screenId: 12 });
-      models.Show.update.mockResolvedValueOnce([0]);
+      models.Session.findOne.mockResolvedValueOnce(null);
+      models.ScreenPosMapping.findOne.mockResolvedValueOnce({ screen: { name: 'Screen 3' } });
 
       const result = await showSync.syncIntegration(integration());
 
       expect(result).toEqual(expect.objectContaining({ failed: false, inserted: 1, updated: 0 }));
-      expect(models.Show.create).toHaveBeenCalledTimes(1);
-      const createArgs = models.Show.create.mock.calls[0][0];
-      expect(createArgs.externalSessionId).toBe('SESSION-1');
-      expect(createArgs.screenId).toBe(12);
-      expect(createArgs.status).toBe('scheduled');
-      expect(createArgs.showTime).toBeInstanceOf(Date);
+
+      const write = writeCall();
+      expect(write.isInsert).toBe(true);
+      expect(write.values.cinemaCode).toBe('NOIDA');
+      // The provider's string id becomes the integer half of the primary key.
+      expect(write.values.sessionId).toBe(4242);
+      expect(write.values.filmTitle).toBe('A Stub Film');
+      expect(write.values.filmCode).toBe('FILM-1');
+      expect(write.values.screenName).toBe('Screen 3');
+      expect(write.values.screenNumber).toBe(3);
+      expect(write.values.status).toBe('O');
+
+      // Never through the model - binding a JS Date into these columns fails
+      // the statement outright against SQL Server.
+      expect(models.Session.create).not.toHaveBeenCalled();
     });
 
-    test('updates an existing show on the same natural key instead of duplicating it', async () => {
+    test('binds the three datetimes as offset-less literals, never as JS Dates', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow()]);
+      models.Session.findOne.mockResolvedValueOnce(null);
+      models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
+
+      await showSync.syncIntegration(integration());
+
+      const write = writeCall();
+
+      // start, end and stamp - all three inline, none bound.
+      expect(datetimeLiterals()).toHaveLength(3);
+      expect(Object.values(write.values).every((value) => !(value instanceof Date))).toBe(true);
+      // No offset anywhere: `datetime` rejects one outright.
+      expect(write.sql).not.toMatch(/[+-]\d{2}:\d{2}'/);
+    });
+
+    test('updates an existing session on the same natural key instead of duplicating it', async () => {
       stubFetchShows.mockResolvedValueOnce([externalShow({ filmTitle: 'Updated Title' })]);
       const existing = { update: jest.fn().mockResolvedValueOnce() };
-      models.Show.findOne.mockResolvedValueOnce(existing);
+      models.Session.findOne.mockResolvedValueOnce(existing);
       models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
-      models.Show.update.mockResolvedValueOnce([0]);
 
       const result = await showSync.syncIntegration(integration());
 
       expect(result).toEqual(expect.objectContaining({ inserted: 0, updated: 1 }));
-      expect(models.Show.create).not.toHaveBeenCalled();
-      expect(existing.update).toHaveBeenCalledWith(
-        expect.objectContaining({ filmTitle: 'Updated Title' }),
-        expect.anything()
-      );
+      expect(sequelize.query).toHaveBeenCalledTimes(1);
+
+      const write = writeCall();
+      expect(write.isUpdate).toBe(true);
+      expect(write.isInsert).toBe(false);
+      expect(write.values.filmTitle).toBe('Updated Title');
+      // Addressed by the natural key, so an update cannot become a duplicate.
+      expect(write.values.cinemaCode).toBe('NOIDA');
+      expect(write.values.sessionId).toBe(4242);
+      expect(existing.update).not.toHaveBeenCalled();
     });
 
-    test('an unmapped external screen resolves to a null screenId, never drops the show', async () => {
-      stubFetchShows.mockResolvedValueOnce([externalShow({ externalScreenId: 'UNKNOWN-SCREEN' })]);
-      models.Show.findOne.mockResolvedValueOnce(null);
+    test('an unmapped external screen resolves to a null screenName, never drops the show', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ externalScreenId: '99' })]);
+      models.Session.findOne.mockResolvedValueOnce(null);
       models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
-      models.Show.update.mockResolvedValueOnce([0]);
 
       await showSync.syncIntegration(integration());
 
-      expect(models.Show.create).toHaveBeenCalledWith(
-        expect.objectContaining({ screenId: null }),
-        expect.anything()
+      expect(writeCall().values).toEqual(
+        expect.objectContaining({ screenName: null, screenNumber: 99 })
       );
     });
 
-    test('converts cinema-local wall clock to an instant using the cinema timezone', async () => {
-      stubFetchShows.mockResolvedValueOnce([externalShow({ showTimeLocal: '2026-09-03T18:30:00' })]);
-      models.Show.findOne.mockResolvedValueOnce(null);
+    test('a show with no external screen stores NULL, not auditorium zero', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ externalScreenId: null })]);
+      models.Session.findOne.mockResolvedValueOnce(null);
       models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
-      models.Show.update.mockResolvedValueOnce([0]);
 
-      await showSync.syncIntegration(integration({ cinema: { timezone: 'Asia/Kolkata' } }));
+      await showSync.syncIntegration(integration());
 
-      const createArgs = models.Show.create.mock.calls[0][0];
-      // 18:30 IST (+05:30) is 13:00 UTC.
-      expect(createArgs.showTime.toISOString()).toBe('2026-09-03T13:00:00.000Z');
+      // Number(null) is 0 and passes isSafeInteger. Absent must stay absent.
+      expect(writeCall().values.screenNumber).toBeNull();
     });
 
-    test('a successful sync (including empty) cancels shows this sync did not see', async () => {
-      stubFetchShows.mockResolvedValueOnce([]);
-      models.Show.update.mockResolvedValueOnce([3]);
+    test('a cancelled show becomes a CLOSED session rather than disappearing', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ cancelled: true })]);
+      models.Session.findOne.mockResolvedValueOnce(null);
+      models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
+
+      await showSync.syncIntegration(integration());
+
+      expect(writeCall().values.status).toBe('C');
+    });
+
+    test('converts cinema-local wall clock to an instant using the cinema timezone', async () => {
+      stubFetchShows.mockResolvedValueOnce([
+        externalShow({ showTimeLocal: '2026-09-03T18:30:00', showTimeEndLocal: '2026-09-03T21:00:00' }),
+      ]);
+      models.Session.findOne.mockResolvedValueOnce(null);
+      models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
+
+      await showSync.syncIntegration(
+        integration({ cinema: { code: 'NOIDA', timezone: 'Asia/Kolkata' } })
+      );
+
+      /*
+       * The literals are rendered in PROCESS-LOCAL time, which APP_TIMEZONE
+       * pins to IST - the same convention `utils/sqlDate.js` uses for reads.
+       * 18:30 and 21:00 local go in as exactly that, which is what the
+       * client's offset-less `datetime` column means.
+       */
+      expect(datetimeLiterals().slice(0, 2)).toEqual([
+        "'2026-09-03 18:30:00.000'",
+        "'2026-09-03 21:00:00.000'",
+      ]);
+    });
+
+    /*
+     * The two pending fields. Neither can be filled from a verified provider
+     * response, and neither is invented - see the service header.
+     */
+    test('a show with no end time is skipped, not stored with an invented one', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ showTimeEndLocal: null })]);
 
       const result = await showSync.syncIntegration(integration());
 
-      expect(result).toEqual(expect.objectContaining({ failed: false, cancelled: 3 }));
-      expect(models.Show.update).toHaveBeenCalledWith(
-        { status: 'cancelled' },
+      expect(result).toEqual(expect.objectContaining({ failed: false, skipped: 1, inserted: 0 }));
+      expect(sequelize.query).not.toHaveBeenCalled();
+    });
+
+    test('a non-numeric provider session id is skipped, not hashed into the primary key', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ externalSessionId: 'SESSION-1' })]);
+
+      const result = await showSync.syncIntegration(integration());
+
+      expect(result).toEqual(expect.objectContaining({ failed: false, skipped: 1, inserted: 0 }));
+      expect(sequelize.query).not.toHaveBeenCalled();
+    });
+
+    test('a sync that represented every row closes the ones it did not see', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow()]);
+      models.Session.findOne.mockResolvedValueOnce(null);
+      models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
+      models.Session.update.mockResolvedValue([3]);
+
+      const result = await showSync.syncIntegration(integration());
+
+      expect(result).toEqual(
+        expect.objectContaining({ failed: false, closed: 3, reconciled: true })
+      );
+      expect(models.Session.update).toHaveBeenCalledWith(
+        { status: 'C' },
         expect.objectContaining({
-          where: expect.objectContaining({ posIntegrationId: 7, status: 'scheduled' }),
+          where: expect.objectContaining({ cinemaCode: 'NOIDA', status: 'O' }),
         })
       );
     });
 
-    test('a provider outage leaves existing shows untouched: no upsert, no cancellation', async () => {
+    /*
+     * THE MOST IMPORTANT TESTS IN THIS FILE.
+     *
+     * Reconciliation closes "everything the POS did not report". That is only
+     * safe on a complete view. `session` now also holds rows the client loaded
+     * directly, so reconciling on an incomplete view would close a cinema's
+     * whole open schedule and empty the consumer's picker - on a sync that
+     * reported success.
+     */
+    test('a sync that skipped a row closes NOTHING', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow({ showTimeEndLocal: null })]);
+
+      const result = await showSync.syncIntegration(integration());
+
+      expect(result).toEqual(
+        expect.objectContaining({ failed: false, skipped: 1, closed: 0, reconciled: false })
+      );
+      expect(models.Session.update).not.toHaveBeenCalled();
+    });
+
+    test('a sync that skipped SOME rows still closes nothing', async () => {
+      stubFetchShows.mockResolvedValueOnce([
+        externalShow(),
+        externalShow({ externalSessionId: '4243', showTimeEndLocal: null }),
+      ]);
+      models.Session.findOne.mockResolvedValue(null);
+      models.ScreenPosMapping.findOne.mockResolvedValue(null);
+
+      const result = await showSync.syncIntegration(integration());
+
+      // The representable row is still written. Only the closure is withheld.
+      expect(result).toEqual(
+        expect.objectContaining({ inserted: 1, skipped: 1, closed: 0, reconciled: false })
+      );
+      expect(models.Session.update).not.toHaveBeenCalled();
+    });
+
+    test('an empty provider response closes NOTHING', async () => {
+      stubFetchShows.mockResolvedValueOnce([]);
+
+      const result = await showSync.syncIntegration(integration());
+
+      expect(result).toEqual(
+        expect.objectContaining({ failed: false, closed: 0, reconciled: false })
+      );
+      expect(models.Session.update).not.toHaveBeenCalled();
+    });
+
+    test('a provider outage leaves existing sessions untouched: no upsert, no closure', async () => {
       stubFetchShows.mockRejectedValueOnce(
         new PosProviderUnavailableError('stub outage', { provider: PROVIDER })
       );
@@ -165,8 +342,8 @@ describe('showSync.service', () => {
       const result = await showSync.syncIntegration(integration());
 
       expect(result).toEqual(expect.objectContaining({ failed: true }));
-      expect(models.Show.create).not.toHaveBeenCalled();
-      expect(models.Show.update).not.toHaveBeenCalled();
+      expect(models.Session.create).not.toHaveBeenCalled();
+      expect(models.Session.update).not.toHaveBeenCalled();
       expect(sequelize.transaction).not.toHaveBeenCalled();
     });
 
@@ -177,38 +354,36 @@ describe('showSync.service', () => {
 
       expect(result.failed).toBe(true);
       expect(result.posCode).toBeDefined();
-      expect(models.Show.create).not.toHaveBeenCalled();
+      expect(sequelize.query).not.toHaveBeenCalled();
 
       // Re-register so afterEach's unregister does not throw on a missing key.
       registerAdapter(PROVIDER, { provider: PROVIDER, fetchShows: stubFetchShows });
     });
 
+    test('an integration whose cinema has no code cannot write sessions, and says so', async () => {
+      stubFetchShows.mockResolvedValueOnce([externalShow()]);
+
+      const result = await showSync.syncIntegration(integration({ cinema: { timezone: 'UTC' } }));
+
+      expect(result).toEqual(expect.objectContaining({ failed: true }));
+      expect(sequelize.query).not.toHaveBeenCalled();
+      expect(sequelize.transaction).not.toHaveBeenCalled();
+    });
+
     test('duplicate prevention: the same natural key within one sync updates rather than creating twice', async () => {
-      stubFetchShows.mockResolvedValueOnce([externalShow(), externalShow({ filmTitle: 'Same show again' })]);
-      models.Show.findOne
+      stubFetchShows.mockResolvedValueOnce([
+        externalShow(),
+        externalShow({ filmTitle: 'Same show again' }),
+      ]);
+      models.Session.findOne
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ update: jest.fn().mockResolvedValueOnce() });
-      models.ScreenPosMapping.findOne.mockResolvedValue({ screenId: 12 });
-      models.Show.update.mockResolvedValueOnce([0]);
+      models.ScreenPosMapping.findOne.mockResolvedValue({ screen: { name: 'Screen 3' } });
 
       const result = await showSync.syncIntegration(integration());
 
       expect(result.inserted).toBe(1);
       expect(result.updated).toBe(1);
-    });
-
-    test('sets last_synced_at on every upserted show', async () => {
-      stubFetchShows.mockResolvedValueOnce([externalShow()]);
-      models.Show.findOne.mockResolvedValueOnce(null);
-      models.ScreenPosMapping.findOne.mockResolvedValueOnce(null);
-      models.Show.update.mockResolvedValueOnce([0]);
-
-      await showSync.syncIntegration(integration(), { now: new Date('2026-09-03T10:00:00.000Z') });
-
-      expect(models.Show.create).toHaveBeenCalledWith(
-        expect.objectContaining({ lastSyncedAt: new Date('2026-09-03T10:00:00.000Z') }),
-        expect.anything()
-      );
     });
   });
 
@@ -219,10 +394,8 @@ describe('showSync.service', () => {
         integration({ id: 2 }),
       ]);
 
-      stubFetchShows
-        .mockRejectedValueOnce(new Error('unexpected boom'))
-        .mockResolvedValueOnce([]);
-      models.Show.update.mockResolvedValue([0]);
+      stubFetchShows.mockRejectedValueOnce(new Error('unexpected boom')).mockResolvedValueOnce([]);
+      models.Session.update.mockResolvedValue([0]);
 
       const results = await showSync.syncAllIntegrations();
 
