@@ -75,6 +75,7 @@ interface FormValues {
   activeSince?: Dayjs | null;
   smsEnabled: boolean;
   whatsappEnabled: boolean;
+  offersEnabled: boolean;
   isActive: boolean;
   gatewayId: string;
   secretKey: string;
@@ -198,6 +199,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           activeSince,
           smsEnabled: values.smsEnabled,
           whatsappEnabled: values.whatsappEnabled,
+          offersEnabled: values.offersEnabled,
           isActive: values.isActive,
         };
 
@@ -229,6 +231,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           activeSince,
           smsEnabled: values.smsEnabled,
           whatsappEnabled: values.whatsappEnabled,
+          offersEnabled: values.offersEnabled,
           isActive: values.isActive,
           gatewayId: values.gatewayId,
           secretKey: values.secretKey,
@@ -285,6 +288,7 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
             isActive: true,
             smsEnabled: false,
             whatsappEnabled: false,
+            offersEnabled: true,
             chainId: actor?.chainId,
             environment: 'test',
           }}
@@ -486,6 +490,15 @@ export default function CinemaFormModal({ cinema, onClose, onSaved }: CinemaForm
           </Form.Item>
 
           <Form.Item name="whatsappEnabled" label="WhatsApp notifications" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            name="offersEnabled"
+            label="Offers"
+            valuePropName="checked"
+            extra="Lets customers apply a coupon code at checkout. Existing coupons are kept, not deleted, when this is off."
+          >
             <Switch />
           </Form.Item>
 

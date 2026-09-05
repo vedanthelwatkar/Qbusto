@@ -20,6 +20,8 @@
 
 const request = require('supertest');
 
+const { everyDayDiscount } = require('./helpers/dayDiscount');
+
 jest.mock('../src/config/database', () => {
   const models = {
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
@@ -65,15 +67,21 @@ const CINEMA_ID = 3;
 const NOW = new Date(2026, 7, 13, 15, 0, 0);
 const ISO_THURSDAY = 4;
 
+/*
+ * One pricing row now carries the whole week. The fixture prices every day the
+ * same so that tests about discounts and availability are not accidentally
+ * also tests about which day it is; the day-specific cases set their own.
+ */
 function buildPricing(overrides = {}) {
   return {
-    basePrice: '250.00',
-    discountType: null,
-    discountValue: null,
-    discountOnQr: null,
-    discountOnSeatQr: null,
-    discountOnKiosk: null,
-    discountOnCounter: null,
+    mondayPrice: '250.00',
+    tuesdayPrice: '250.00',
+    wednesdayPrice: '250.00',
+    thursdayPrice: '250.00',
+    fridayPrice: '250.00',
+    saturdayPrice: '250.00',
+    sundayPrice: '250.00',
+    ...everyDayDiscount({}),
     ...overrides,
   };
 }
@@ -354,11 +362,16 @@ describe('POST /api/consumer/orders availability re-check', () => {
   function arrangeOrder(link) {
     sequelize.transaction.mockImplementation((callback) => callback(TX));
     models.IdempotencyKey.findOne.mockResolvedValue(null);
-    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Cinema.findByPk.mockResolvedValue({
+      id: CINEMA_ID,
+      chainId: 1,
+      isActive: true,
+      offersEnabled: true,
+    });
     models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
     models.CinemaProduct.findAll.mockResolvedValue([link]);
     models.ProductPricing.findAll.mockResolvedValue([
-      { productId: 85, dayOfWeek: 0, ...buildPricing() },
+      { productId: 85, ...buildPricing() },
     ]);
   }
 
@@ -427,11 +440,16 @@ describe('POST /api/consumer/orders - non-empty cart is enforced server-side', (
     sequelize.transaction.mockImplementation((callback) => callback(TX));
     models.IdempotencyKey.findOne.mockResolvedValue(null);
     models.IdempotencyKey.create.mockResolvedValue({});
-    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Cinema.findByPk.mockResolvedValue({
+      id: CINEMA_ID,
+      chainId: 1,
+      isActive: true,
+      offersEnabled: true,
+    });
     models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
     models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
     models.ProductPricing.findAll.mockResolvedValue([
-      { productId: 85, dayOfWeek: 0, ...buildPricing() },
+      { productId: 85, ...buildPricing() },
     ]);
     models.OrderStatus.findOne.mockResolvedValue({ id: 21 });
     models.PaymentStatus.findOne.mockResolvedValue({ id: 1 });
@@ -516,14 +534,18 @@ describe('POST /api/consumer/orders - non-empty cart is enforced server-side', (
     sequelize.transaction.mockImplementation((callback) => callback(TX));
     models.IdempotencyKey.findOne.mockResolvedValue(null);
     models.IdempotencyKey.create.mockResolvedValue({});
-    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, chainId: 1, isActive: true });
+    models.Cinema.findByPk.mockResolvedValue({
+      id: CINEMA_ID,
+      chainId: 1,
+      isActive: true,
+      offersEnabled: true,
+    });
     models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
     models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
     models.ProductPricing.findAll.mockResolvedValue([
       {
         productId: 85,
-        dayOfWeek: 0,
-        ...buildPricing({ discountType: 'P', discountOnQr: 100 }),
+        ...buildPricing(everyDayDiscount({ type: 'P', onQr: 100 })),
       },
     ]);
     models.OrderStatus.findOne.mockResolvedValue({ id: 21 });
@@ -678,7 +700,7 @@ describe('order creation with server-resolved screen id', () => {
     models.Product.findAll.mockResolvedValue([{ id: 85, name: 'Cheese Nachos' }]);
     models.CinemaProduct.findAll.mockResolvedValue([buildLink({ productId: 85 })]);
     models.ProductPricing.findAll.mockResolvedValue([
-      { productId: 85, dayOfWeek: 0, ...buildPricing() },
+      { productId: 85, ...buildPricing() },
     ]);
     models.OrderStatus.findOne.mockResolvedValue({ id: 1 });
     models.PaymentStatus.findOne.mockResolvedValue({ id: 1 });
@@ -945,10 +967,10 @@ describe('the fixed section takes a slot in the page it appears on', () => {
       // even if the arithmetic under test were wrong.
       .mockImplementationOnce((sql, options) => {
         // The id window's replacements are, in order: cinemaId (products),
-        // cinemaId (pricing), EVERY_DAY, today, cinemaId (the
-        // cinema_categories LEFT JOIN that carries the display order), offset,
-        // take.
-        const [, , , , , offset, take] = options.replacements;
+        // cinemaId (pricing), cinemaId (the cinema_categories LEFT JOIN that
+        // carries the display order), offset, take. The day is no longer a
+        // replacement: it selects which price COLUMN the SQL tests for NULL.
+        const [, , , offset, take] = options.replacements;
         return Promise.resolve(
           ids.slice(offset, offset + take).map((id) => ({ id, name: `CAT ${id}` }))
         );
@@ -966,7 +988,9 @@ describe('the fixed section takes a slot in the page it appears on', () => {
     const idQuery = sequelize.query.mock.calls[1];
     if (!idQuery) return null;
     const replacements = idQuery[1].replacements;
-    return { offset: replacements[5], limit: replacements[6] };
+    // [cinemaId, cinemaId, cinemaId, offset, limit] - the day filter moved out
+    // of the replacements and into the column name the SQL selects on.
+    return { offset: replacements[3], limit: replacements[4] };
   }
 
   it('never returns more than `limit` entries on page 1', async () => {

@@ -13,10 +13,12 @@
 const express = require('express');
 
 const cinemaController = require('../controllers/cinema.controller');
+const cinemaContentController = require('../controllers/cinemaContent.controller');
 const authenticate = require('../middleware/authenticate');
 const authorize = require('../middleware/authorize');
 const validate = require('../middleware/validate');
 const cinemaValidators = require('../validators/cinema.validators');
+const cinemaContentValidators = require('../validators/cinemaContent.validators');
 const { MODULES, ACTIONS } = require('../constants');
 
 const router = express.Router();
@@ -161,6 +163,7 @@ router.get(
  *               activeSince:     { type: string, format: date-time, nullable: true }
  *               smsEnabled:      { type: boolean, default: false }
  *               whatsappEnabled: { type: boolean, default: false }
+ *               offersEnabled: { type: boolean, default: true }
  *               isActive:        { type: boolean, default: true }
  *               gatewayId:       { type: string, maxLength: 255, description: "Cashfree's APP_ID." }
  *               secretKey:       { type: string, maxLength: 500, description: "Cashfree's SECRET_KEY. Encrypted at rest; never returned." }
@@ -229,6 +232,7 @@ router.post(
  *               activeSince:     { type: string, format: date-time, nullable: true }
  *               smsEnabled:      { type: boolean }
  *               whatsappEnabled: { type: boolean }
+ *               offersEnabled: { type: boolean }
  *               isActive:        { type: boolean }
  *     responses:
  *       200:
@@ -294,6 +298,98 @@ router.delete(
   authorize(MODULES.SETTINGS, ACTIONS.DELETE),
   validate(cinemaValidators.remove),
   cinemaController.remove
+);
+
+/**
+ * @openapi
+ * /api/cinemas/{id}/content:
+ *   get:
+ *     tags: [Cinemas]
+ *     summary: Get a cinema's About/Terms footer content
+ *     description: >
+ *       The Consumer footer's "About Cinema" and "Terms & Conditions" content.
+ *       Returns an empty shape (nulls, an empty `tncPoints`) when nothing has
+ *       been configured yet - that is a normal state, not a 404. Requires the
+ *       Settings module read permission.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: The cinema's content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data: { $ref: '#/components/schemas/CinemaContent' }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.get(
+  '/:id/content',
+  authorize(MODULES.SETTINGS, ACTIONS.READ),
+  validate(cinemaContentValidators.getById),
+  cinemaContentController.getById
+);
+
+/**
+ * @openapi
+ * /api/cinemas/{id}/content:
+ *   put:
+ *     tags: [Cinemas]
+ *     summary: Create or replace a cinema's About/Terms footer content
+ *     description: >
+ *       One row per cinema - created on first save, replaced thereafter.
+ *       `tncPoints` is the whole list in display order; sending a shorter
+ *       list removes the trailing points. Requires the Settings module edit
+ *       permission.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               contactNo: { type: string, maxLength: 20, nullable: true }
+ *               mailId:    { type: string, format: email, maxLength: 255, nullable: true }
+ *               tncPoints:
+ *                 type: array
+ *                 items: { type: string, maxLength: 500 }
+ *                 maxItems: 40
+ *               iconUrl:   { type: string, maxLength: 1024, nullable: true }
+ *     responses:
+ *       200:
+ *         description: Saved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data: { $ref: '#/components/schemas/CinemaContent' }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { $ref: '#/components/responses/Forbidden' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ */
+router.put(
+  '/:id/content',
+  authorize(MODULES.SETTINGS, ACTIONS.EDIT),
+  validate(cinemaContentValidators.upsert),
+  cinemaContentController.upsert
 );
 
 module.exports = router;

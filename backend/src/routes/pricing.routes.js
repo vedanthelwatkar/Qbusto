@@ -43,7 +43,7 @@ router.use(authenticate());
  *         schema:
  *           type: string
  *           default: createdAt
- *           enum: [id, cinemaId, productId, dayOfWeek, basePrice, isActive, createdAt, updatedAt]
+ *           enum: [id, cinemaId, productId, isActive, createdAt, updatedAt]
  *       - in: query
  *         name: order
  *         schema: { type: string, enum: [asc, desc], default: asc }
@@ -53,10 +53,6 @@ router.use(authenticate());
  *       - in: query
  *         name: productId
  *         schema: { type: integer }
- *       - in: query
- *         name: dayOfWeek
- *         description: 0 = every day, 1 = Monday ... 7 = Sunday.
- *         schema: { type: integer, minimum: 0, maximum: 7 }
  *       - in: query
  *         name: isActive
  *         schema: { type: boolean }
@@ -125,9 +121,22 @@ router.get(
  *     tags: [Product Pricing]
  *     summary: Create a price row
  *     description: >
- *       The cinema and the product must belong to the same chain.
- *       (cinemaId, productId, dayOfWeek) is unique. Discount amounts require
- *       `discountType` to be set, and are capped at 100 when it is `P`.
+ *       One row holds the product's whole week at that cinema, so this is the
+ *       only call needed to configure all seven days. The cinema and the
+ *       product must belong to the same chain, and (cinemaId, productId) is
+ *       unique.
+ *
+ *
+ *       At least one day must carry a price. A null day price means the
+ *       product is NOT SOLD that day - it does not mean free. Which day applies
+ *       to a given moment is the QBusto business day, 06:00 to 06:00, so an
+ *       order placed at 01:00 on Monday pays Sunday's price.
+ *
+ *
+ *       Each day has its own discount, independently of every other day - a
+ *       Wednesday discount never applies on Thursday. A day's discount amount
+ *       requires that SAME day's discount type to be set, and is capped at 100
+ *       when that type is `P`.
  *       Requires the Pricing module edit permission.
  *     requestBody:
  *       required: true
@@ -135,27 +144,87 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [cinemaId, productId, basePrice]
+ *             required: [cinemaId, productId]
  *             properties:
  *               cinemaId:  { type: integer }
  *               productId: { type: integer }
- *               dayOfWeek:
- *                 type: integer
- *                 minimum: 0
- *                 maximum: 7
- *                 default: 0
- *                 description: 0 = every day, 1 = Monday ... 7 = Sunday.
- *               basePrice: { type: number, format: double, minimum: 0, example: 250.00 }
- *               discountType:
+ *               mondayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayPrice:   { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayPrice: { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayPrice:  { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayPrice:  { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountType:
  *                 type: string
  *                 enum: [P, F]
  *                 nullable: true
- *                 description: P = percentage, F = flat amount. Governs every discount below.
- *               discountValue:     { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnQr:      { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnKiosk:   { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnSeatQr:  { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnCounter: { type: number, format: double, minimum: 0, nullable: true }
+ *                 description: Monday's discount only - P = percentage, F = flat amount.
+ *               mondayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Tuesday's discount only - P = percentage, F = flat amount.
+ *               tuesdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Wednesday's discount only - P = percentage, F = flat amount.
+ *               wednesdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Thursday's discount only - P = percentage, F = flat amount.
+ *               thursdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Friday's discount only - P = percentage, F = flat amount.
+ *               fridayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Saturday's discount only - P = percentage, F = flat amount.
+ *               saturdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountType:
+ *                 type: string
+ *                 enum: [P, F]
+ *                 nullable: true
+ *                 description: Sunday's discount only - P = percentage, F = flat amount.
+ *               sundayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
  *               isActive:          { type: boolean, default: true }
  *     responses:
  *       201:
@@ -204,9 +273,14 @@ router.post(
  *     tags: [Product Pricing]
  *     summary: Update a price row
  *     description: >
- *       `cinemaId`, `productId` and `dayOfWeek` cannot be changed: together they
- *       are the natural key, so changing one identifies a different row rather
- *       than editing this one.
+ *       Writes the product's whole week at that cinema in one call. A day sent
+ *       as null becomes unpriced, which makes the product unsellable that day;
+ *       a day omitted entirely is left as it was.
+ *
+ *
+ *       `cinemaId` and `productId` cannot be changed: together they are the
+ *       natural key, so changing one identifies a different row rather than
+ *       editing this one.
  *     parameters:
  *       - in: path
  *         name: id
@@ -220,13 +294,55 @@ router.post(
  *             type: object
  *             minProperties: 1
  *             properties:
- *               basePrice:         { type: number, format: double, minimum: 0 }
- *               discountType:      { type: string, enum: [P, F], nullable: true }
- *               discountValue:     { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnQr:      { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnKiosk:   { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnSeatQr:  { type: number, format: double, minimum: 0, nullable: true }
- *               discountOnCounter: { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayPrice:   { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayPrice: { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayPrice:  { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayPrice:  { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayPrice:    { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               mondayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               mondayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               tuesdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               tuesdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               wednesdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               wednesdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               thursdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               thursdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               fridayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               fridayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               saturdayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               saturdayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountType:      { type: string, enum: [P, F], nullable: true }
+ *               sundayDiscountValue:     { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnQr:        { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnKiosk:     { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnSeatQr:    { type: number, format: double, minimum: 0, nullable: true }
+ *               sundayDiscountOnCounter:   { type: number, format: double, minimum: 0, nullable: true }
  *               isActive:          { type: boolean }
  *     responses:
  *       200:

@@ -19,6 +19,40 @@ const env = require('./env');
 const pkg = require('../../package.json');
 
 /**
+ * The 42 per-day discount properties on ProductPricing - type, value and four
+ * channel overrides, for each of the seven days. Generated rather than typed
+ * out, for the same reason the migration and the model generate them: it is
+ * mechanical repetition of one shape, seven times, not a new concept per day.
+ */
+function dayDiscountProperties() {
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const channels = ['Qr', 'Kiosk', 'SeatQr', 'Counter'];
+  const properties = {};
+
+  for (const day of days) {
+    const cap = day.charAt(0).toUpperCase() + day.slice(1);
+
+    properties[`${day}DiscountType`] = {
+      type: 'string',
+      enum: ['P', 'F'],
+      nullable: true,
+      description: `P = percentage, F = flat amount. Governs every ${day}DiscountOn* value - ${cap}'s discount only, independently of every other day.`,
+    };
+    properties[`${day}DiscountValue`] = { type: 'number', format: 'double', nullable: true };
+
+    for (const channel of channels) {
+      properties[`${day}DiscountOn${channel}`] = {
+        type: 'number',
+        format: 'double',
+        nullable: true,
+      };
+    }
+  }
+
+  return properties;
+}
+
+/**
  * Absolute, so the spec builds identically no matter the working directory
  * (npm scripts run from backend/, but the CLI may not). Separators are
  * normalised to forward slashes because glob does not match backslashes on
@@ -219,9 +253,55 @@ const definition = {
           activeSince: { type: 'string', format: 'date-time', nullable: true },
           smsEnabled: { type: 'boolean', example: false },
           whatsappEnabled: { type: 'boolean', example: false },
+          offersEnabled: {
+            type: 'boolean',
+            example: true,
+            description:
+              'Whether this cinema accepts coupon codes. Off hides the Consumer coupon ' +
+              'section AND is enforced server-side in coupon.service - a crafted request ' +
+              'cannot apply a coupon while this is false. Existing offers are untouched.',
+          },
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+          content: {
+            description:
+              'The About Cinema / Terms & Conditions footer content. Only present on ' +
+              'GET /api/consumer/cinemas/{id} - the staff endpoints manage it separately ' +
+              'via GET/PUT /api/cinemas/{id}/content.',
+            allOf: [{ $ref: '#/components/schemas/CinemaContent' }],
+          },
+        },
+      },
+      CinemaContent: {
+        type: 'object',
+        description:
+          "A cinema's About Cinema / Terms & Conditions footer content. One row per " +
+          'cinema; an unconfigured cinema returns nulls and an empty tncPoints rather ' +
+          'than a 404.',
+        properties: {
+          cinemaId: { type: 'integer', nullable: true, example: 8 },
+          contactNo: { type: 'string', nullable: true, maxLength: 20, example: '9999999999' },
+          mailId: {
+            type: 'string',
+            nullable: true,
+            format: 'email',
+            example: 'contactus@1cinema.co',
+          },
+          tncPoints: {
+            type: 'array',
+            items: { type: 'string', maxLength: 500 },
+            example: [
+              'All food items are prepared in a hygienic environment and FSSAI approved kitchen.',
+              'Menu items, prices and offers are subject to change without prior notice.',
+            ],
+          },
+          iconUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional custom icon for the About Cinema section, uploaded by staff.',
+            example: '/uploads/cinemas/icon-12345.jpg',
+          },
         },
       },
       Screen: {
@@ -375,31 +455,26 @@ const definition = {
           'numbers: the SQL Server driver hands Sequelize a JS number and the ' +
           'service passes it through, so 250.00 is serialised as 250. Format for ' +
           'display rather than assuming two decimal places on the wire. ' +
-          'Discount amounts are only meaningful when discountType is set.',
+          'Each day has its own discount, independently of every other day - a ' +
+          "Wednesday discount never applies on Thursday. A day's discount amount " +
+          "is only meaningful when that SAME day's discount type is set. " +
+          'ONE ROW HOLDS THE WHOLE WEEK: each day has its own price, and a ' +
+          'null day price means the product is not sold that day (it does NOT ' +
+          'mean free). Which day applies (for both price and discount) is the ' +
+          'QBusto business day, 06:00 to 06:00 - an order at 01:00 on Monday ' +
+          'pays, and is discounted as, Sunday.',
         properties: {
           id: { type: 'integer', example: 22 },
           cinemaId: { type: 'integer', example: 3 },
           productId: { type: 'integer', example: 17 },
-          dayOfWeek: {
-            type: 'integer',
-            minimum: 0,
-            maximum: 7,
-            example: 0,
-            description: '0 = every day, 1 = Monday ... 7 = Sunday.',
-          },
-          basePrice: { type: 'number', format: 'double', example: 250 },
-          discountType: {
-            type: 'string',
-            enum: ['P', 'F'],
-            nullable: true,
-            example: 'P',
-            description: 'P = percentage, F = flat amount.',
-          },
-          discountValue: { type: 'number', format: 'double', nullable: true, example: 10 },
-          discountOnQr: { type: 'number', format: 'double', nullable: true },
-          discountOnKiosk: { type: 'number', format: 'double', nullable: true },
-          discountOnSeatQr: { type: 'number', format: 'double', nullable: true },
-          discountOnCounter: { type: 'number', format: 'double', nullable: true },
+          mondayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          tuesdayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          wednesdayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          thursdayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          fridayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          saturdayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          sundayPrice: { type: 'number', format: 'double', nullable: true, example: 250 },
+          ...dayDiscountProperties(),
           isActive: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },

@@ -152,6 +152,7 @@ In normal operation this is not exercised: soft deletion (`is_active = 0`) is th
 | active_since     | datetime2    | nullable                                     |
 | sms_enabled      | bit          | NOT NULL, default 0                          |
 | whatsapp_enabled | bit          | NOT NULL, default 0                          |
+| offers_enabled   | bit          | NOT NULL, default 1                          |
 | is_active        | bit          | NOT NULL, default 1                          |
 | created_by       | int          | nullable, FK -> users.id, ON DELETE SET NULL |
 | updated_by       | int          | nullable, FK -> users.id, ON DELETE SET NULL |
@@ -160,7 +161,13 @@ In normal operation this is not exercised: soft deletion (`is_active = 0`) is th
 
 `code` is a QBusto-owned short cinema identifier used in QR URLs and display. It is not the external POS cinema identifier. That external identifier stays on `pos_integrations.external_cinema_id`.
 
-`sms_enabled` and `whatsapp_enabled` define which notification channels the cinema normally uses.
+`sms_enabled` and `whatsapp_enabled` define which notification channels the cinema normally uses. `offers_enabled` gates the coupon/"Apply coupon" feature - default TRUE, so
+every existing cinema keeps today's behaviour. Enforced in
+`coupon.service.validateCoupon`, which refuses ANY coupon at a cinema with it
+off regardless of what the client sends; the Consumer hiding the coupon
+section is cosmetic on top of that. Turning it off never touches `offers`
+rows - existing coupons are neither deleted nor deactivated, and work again
+the moment it is switched back on.
 
 ---
 
@@ -320,6 +327,10 @@ Multiple windows per product and day are allowed. Overlapping windows for the sa
 The API applies both of those application rules, and one the schema does not require:
 
 - overlaps are rejected with a 409, treating `day_of_week = 0` as clashing with every other day
+- an OVERNIGHT window is allowed: `end_time` earlier than `start_time` (e.g.
+  22:00 -> 02:00) spans midnight rather than being rejected. Only
+  `end_time == start_time` (zero width) is rejected. See "Business day" for
+  how such a window is matched against the clock.
 - touching windows (09:00-12:00 and 12:00-15:00) are not overlaps and are accepted
 - **`startTime` must be earlier than `endTime`**, so an overnight window such as 22:00 to 02:00 is currently rejected with a 400 despite the column permitting it
 
@@ -338,6 +349,43 @@ Day convention:
 
 ---
 
+## Business day - 06:00 to 06:00
+
+**A QBusto day starts at 6:00 am and ends at 5:59:59 am the next morning.**
+
+    Sunday business day  =  Sunday 06:00  ->  Monday 05:59:59
+
+A cinema's trading day does not end at midnight: the last show finishes at
+01:30 and the customer ordering at 01:15 is in a Sunday screening. So a
+timestamp at Monday 02:00 belongs to the **Sunday** business day.
+
+This governs **scheduling** - which day's rules apply right now:
+
+| Feature | What the business day decides |
+| --- | --- |
+| `product_pricing` | which of the seven day columns is charged |
+| `product_availability_hours` | which day's windows are offered |
+| `banners` | whether `start_date`/`end_date` include today |
+| Dashboard order date filter | the window a picked day covers |
+
+It does **not** apply to timestamps that record when something happened:
+`created_at`, `updated_at`, order and payment times and every status log are
+instants and are stored and compared unchanged.
+
+One implementation, `backend/src/utils/businessDay.js`
+(`BUSINESS_DAY_START_HOUR`, `businessDate`, `businessDayOfWeek`,
+`isWithinDailyWindow`, `dailyWindowsOverlap`). Everything else calls it -
+notably `pricing.service.isoDayOfWeek`, which is the single name the pricing,
+catalogue and order paths already used. `Date.getDay()` must not be used to
+choose a day's rules anywhere.
+
+Times of day are compared **wrap-aware**, so a window running past midnight
+(22:00 -> 02:00) is an ordinary evening. Note the trap that shape invites: the
+06:00 offset must NOT be applied to both endpoints of a window, because the
+everyday window `00:00:00-23:59:59` would become `18:00:00 -> 17:59:59` and
+110 live rows would go dark from 06:00. The offset cancels; only the weekday
+choice uses it.
+
 ## product_pricing
 
 | Column              | Type          | Constraints                                  |
@@ -345,29 +393,59 @@ Day convention:
 | id                  | int           | PK auto                                      |
 | cinema_id           | int           | FK -> cinemas.id, NOT NULL                   |
 | product_id          | int           | FK -> products.id, NOT NULL                  |
-| day_of_week         | tinyint       | NOT NULL, default 0                          |
-| base_price          | decimal(10,2) | NOT NULL, CHECK >= 0                         |
-| discount_type       | char(1)       | nullable ('P'=Percentage, 'F'=Flat Amount)   |
-| discount_value      | decimal(10,2) | nullable, CHECK >= 0                         |
-| discount_on_qr      | decimal(10,2) | nullable, CHECK >= 0                         |
-| discount_on_kiosk   | decimal(10,2) | nullable, CHECK >= 0                         |
-| discount_on_seat_qr | decimal(10,2) | nullable, CHECK >= 0                         |
-| discount_on_counter | decimal(10,2) | nullable, CHECK >= 0                         |
+| monday_price        | decimal(10,2) | nullable, CHECK >= 0                         |
+| tuesday_price       | decimal(10,2) | nullable, CHECK >= 0                         |
+| wednesday_price     | decimal(10,2) | nullable, CHECK >= 0                         |
+| thursday_price      | decimal(10,2) | nullable, CHECK >= 0                         |
+| friday_price        | decimal(10,2) | nullable, CHECK >= 0                         |
+| saturday_price      | decimal(10,2) | nullable, CHECK >= 0                         |
+| sunday_price        | decimal(10,2) | nullable, CHECK >= 0                         |
+| monday_discount_type ... sunday_discount_type | char(1) | nullable ('P'=Percentage, 'F'=Flat Amount), one set per day |
+| monday_discount_value ... sunday_discount_value | decimal(10,2) | nullable, CHECK >= 0, one per day |
+| {day}_discount_on_qr / _kiosk / _seat_qr / _counter | decimal(10,2) | nullable, CHECK >= 0, one set of four per day (28 columns total) |
 | is_active           | bit           | NOT NULL, default 1                          |
 | created_by          | int           | nullable, FK -> users.id, ON DELETE SET NULL |
 | updated_by          | int           | nullable, FK -> users.id, ON DELETE SET NULL |
 | created_at          | datetime2     | NOT NULL                                     |
 | updated_at          | datetime2     | NOT NULL                                     |
 
-Unique constraint: `(cinema_id, product_id, day_of_week)`.
+Unique constraint: `(cinema_id, product_id)`, named
+`UQ_product_pricing_cinema_product`.
 
-Day-of-week values follow the same convention as `product_availability_hours`.
+**One row holds the whole week.** Until `20260905000100-product-pricing-weekly`
+this was one row per `(cinema, product, day_of_week)`, with `day_of_week` 0
+meaning "every day" and a specific day overriding it. `day_of_week` and
+`base_price` are gone; the seven price columns replaced them.
 
-`discount_type` controls every `discount_on_*` value. `P` means Percentage and `F` means Flat Amount. The channel discount columns should be non-NULL only when `discount_type` is set, and the application layer should validate that relationship.
+**A NULL day price means the product is not sold that day.** It does not mean
+free, and it is not zero: the consumer catalogue joins on "today's column is not
+NULL", so an unpriced day removes the product from the menu entirely. Live data
+relies on this - cinema 8 prices one product on Friday, Saturday and Sunday
+only.
+
+**Which day applies is the QBusto business day, 06:00 to 06:00** (see
+"Business day" below), so an order placed at 01:00 on Monday is charged
+`sunday_price`.
+
+**Each day has its own, independent discount** - `20260906000200-product-
+pricing-day-discounts` gave each of the seven days its own
+`{day}_discount_type`/`{day}_discount_value`/`{day}_discount_on_*` set (42
+columns total), replacing one shared discount that applied to the whole row.
+Live data required this: cinema 1 / product 14 had a Wednesday-only flat
+discount that did NOT apply the other six days, so a shared discount could
+only ever leak it onto every day or lose it. The four rows whose discount was
+already uniform ("every day") were copied onto all seven days unchanged; that
+Wednesday-only conflict was folded into `wednesday_price` instead (see the
+migration header for the exact figures).
+
+`{day}_discount_type` controls every `{day}_discount_on_*` value FOR THAT SAME
+DAY ONLY. `P` means Percentage and `F` means Flat Amount. A day's channel
+columns should be non-NULL only when that same day's `discount_type` is set -
+enforced in the model's `beforeSave` hook, once per day.
 
 Checks:
 
-- `base_price >= 0`
+- `monday_price` ... `sunday_price` are each NULL or `>= 0`
 - `discount_value >= 0`
 - `discount_on_qr >= 0`
 - `discount_on_kiosk >= 0`
@@ -1099,7 +1177,7 @@ Unique constraints and indexes used in the active schema:
 - `cinemas.code` unique
 - `cinema_categories(cinema_id, category_id)` unique
 - `cinema_products(cinema_id, product_id)` unique
-- `product_pricing(cinema_id, product_id, day_of_week)` unique
+- `product_pricing(cinema_id, product_id)` unique, `UQ_product_pricing_cinema_product`
 - `product_availability_hours(cinema_product_id, day_of_week, start_time, end_time)` unique
 - `product_availability_hours(cinema_product_id, day_of_week)` non-unique index, name `IX_product_availability_hours_lookup` - optimizes lookup of a product's availability schedule for a given day of week
 - `order_statuses.code` unique
@@ -1125,14 +1203,14 @@ Unique constraints and indexes used in the active schema:
 
 Checks:
 
-- `product_pricing.discount_type IN ('P','F')`
+- `{day}_discount_type IN ('P','F')` for each of the seven days on `product_pricing`
 - `banners.type IN ('H','I')`
 - `pos_integrations.provider IN ('vista','showbizz','impact','qbusto')`
 - `pos_transactions.status IN ('pending','success','failed','unknown')`
 - `users.role IN ('owner','chain_admin','cinema_admin','kitchen_staff','cinema_accountant')`
 - `user_permissions.module_name IN ('Dashboard','Orders','Products','Categories','Pricing','Banners','Users','Reports','POS Integrations','Settings')`
 - `orders.source IN ('qr','seat_qr','kiosk','counter')`
-- `product_pricing.base_price >= 0`
+- `product_pricing.monday_price` ... `sunday_price`: each NULL or `>= 0`
 - `product_pricing.discount_value >= 0`
 - `product_pricing.discount_on_qr >= 0`
 - `product_pricing.discount_on_kiosk >= 0`

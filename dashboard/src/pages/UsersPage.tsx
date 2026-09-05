@@ -43,6 +43,7 @@ import { useUsersStore } from '@/stores/users.store';
 import { ROLES, type User } from '@/types/auth';
 import { ROLE_LABELS, hasPermission, roleLabel } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { Text } = Typography;
 
@@ -145,11 +146,7 @@ export default function UsersPage() {
       dataIndex: 'username',
       key: 'username',
       sorter: true,
-      render: (_, user) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(user.id)}>
-          {user.username}
-        </Button>
-      ),
+      render: (_, user) => user.username,
     },
     {
       title: 'Name',
@@ -334,6 +331,8 @@ export default function UsersPage() {
         ) : null}
 
         <Table<User>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<User>((user) => setDetailsId(user.id))}
           rowKey={(user) => String(user.id)}
           columns={columns}
           dataSource={users}

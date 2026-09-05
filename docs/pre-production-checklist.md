@@ -400,10 +400,11 @@ is a look at production data, not a code check.
       actually appears.
 
 **Banners**
-- [ ] Active banners have a `start_date`/`end_date` range that includes today.
-      Dates are stored as IST wall clock, and an `end_date` picked without a
-      time defaults to **midnight** — so "ends today" means the banner is
-      already invisible. Check the times, not just the dates.
+- [ ] Active banners have a `start_date`/`end_date` range that includes
+      today's **business day** (6:00 am to 6:00 am, not midnight to midnight -
+      see `utils/businessDay.businessDate`). A banner whose `end_date` is
+      "today" stays visible through 6:00 am tomorrow, covering the tail of
+      tonight's trading, not just until midnight.
 - [ ] Header (`H`) and inner (`I`) banner artwork loads from
       `VITE_API_URL/uploads/...`.
 

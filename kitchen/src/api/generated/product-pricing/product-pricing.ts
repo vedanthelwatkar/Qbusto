@@ -35,7 +35,11 @@ const getApiProductPricing = (
       );
     }
   /**
- * The cinema and the product must belong to the same chain. (cinemaId, productId, dayOfWeek) is unique. Discount amounts require `discountType` to be set, and are capped at 100 when it is `P`. Requires the Pricing module edit permission.
+ * One row holds the product's whole week at that cinema, so this is the only call needed to configure all seven days. The cinema and the product must belong to the same chain, and (cinemaId, productId) is unique.
+ *
+ * At least one day must carry a price. A null day price means the product is NOT SOLD that day - it does not mean free. Which day applies to a given moment is the QBusto business day, 06:00 to 06:00, so an order placed at 01:00 on Monday pays Sunday's price.
+ *
+ * Each day has its own discount, independently of every other day - a Wednesday discount never applies on Thursday. A day's discount amount requires that SAME day's discount type to be set, and is capped at 100 when that type is `P`. Requires the Pricing module edit permission.
  * @summary Create a price row
  */
 const postApiProductPricing = (
@@ -60,7 +64,9 @@ const getApiProductPricingId = (
       );
     }
   /**
- * `cinemaId`, `productId` and `dayOfWeek` cannot be changed: together they are the natural key, so changing one identifies a different row rather than editing this one.
+ * Writes the product's whole week at that cinema in one call. A day sent as null becomes unpriced, which makes the product unsellable that day; a day omitted entirely is left as it was.
+ *
+ * `cinemaId` and `productId` cannot be changed: together they are the natural key, so changing one identifies a different row rather than editing this one.
  * @summary Update a price row
  */
 const putApiProductPricingId = (

@@ -65,6 +65,24 @@ async function validateCoupon({ cinemaId, code, subtotalPaise }) {
     return { valid: false, message: 'Enter a coupon code' };
   }
 
+  /*
+   * THE ACTUAL ENFORCEMENT of cinemas.offers_enabled.
+   *
+   * The Consumer hiding the "Apply coupon" section is cosmetic - this is the
+   * check that matters, because it runs no matter how the request was made.
+   * Checked here rather than by every caller, so createOrder and the preview
+   * endpoint cannot drift: there is exactly one place a coupon is ever
+   * validated (see the module header), and this is that place.
+   *
+   * Existing `offers` rows are never touched by the flag - it only gates
+   * whether this function will look at them.
+   */
+  const cinema = await models.Cinema.findByPk(cinemaId, { attributes: ['id', 'offersEnabled'] });
+
+  if (!cinema || !cinema.offersEnabled) {
+    return { valid: false, message: 'Coupons are not available at this cinema' };
+  }
+
   const offer = await models.Offer.findOne({
     where: { cinemaId, code: trimmedCode },
   });

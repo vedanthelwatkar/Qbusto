@@ -377,6 +377,11 @@
             "type": "boolean",
             "example": false
           },
+          "offersEnabled": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this cinema accepts coupon codes. Off hides the Consumer coupon section AND is enforced server-side in coupon.service - a crafted request cannot apply a coupon while this is false. Existing offers are untouched."
+          },
           "isActive": {
             "type": "boolean",
             "example": true
@@ -388,6 +393,54 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "content": {
+            "description": "The About Cinema / Terms & Conditions footer content. Only present on GET /api/consumer/cinemas/{id} - the staff endpoints manage it separately via GET/PUT /api/cinemas/{id}/content.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CinemaContent"
+              }
+            ]
+          }
+        }
+      },
+      "CinemaContent": {
+        "type": "object",
+        "description": "A cinema's About Cinema / Terms & Conditions footer content. One row per cinema; an unconfigured cinema returns nulls and an empty tncPoints rather than a 404.",
+        "properties": {
+          "cinemaId": {
+            "type": "integer",
+            "nullable": true,
+            "example": 8
+          },
+          "contactNo": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20,
+            "example": "9999999999"
+          },
+          "mailId": {
+            "type": "string",
+            "nullable": true,
+            "format": "email",
+            "example": "contactus@1cinema.co"
+          },
+          "tncPoints": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "example": [
+              "All food items are prepared in a hygienic environment and FSSAI approved kitchen.",
+              "Menu items, prices and offers are subject to change without prior notice."
+            ]
+          },
+          "iconUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional custom icon for the About Cinema section, uploaded by staff.",
+            "example": "/uploads/cinemas/icon-12345.jpg"
           }
         }
       },
@@ -657,7 +710,7 @@
       },
       "ProductPricing": {
         "type": "object",
-        "description": "Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Discount amounts are only meaningful when discountType is set.",
+        "description": "Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Each day has its own discount, independently of every other day - a Wednesday discount never applies on Thursday. A day's discount amount is only meaningful when that SAME day's discount type is set. ONE ROW HOLDS THE WHOLE WEEK: each day has its own price, and a null day price means the product is not sold that day (it does NOT mean free). Which day applies (for both price and discount) is the QBusto business day, 06:00 to 06:00 - an order at 01:00 on Monday pays, and is discounted as, Sunday.",
         "properties": {
           "id": {
             "type": "integer",
@@ -671,50 +724,282 @@
             "type": "integer",
             "example": 17
           },
-          "dayOfWeek": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 7,
-            "example": 0,
-            "description": "0 = every day, 1 = Monday ... 7 = Sunday."
-          },
-          "basePrice": {
+          "mondayPrice": {
             "type": "number",
             "format": "double",
+            "nullable": true,
             "example": 250
           },
-          "discountType": {
+          "tuesdayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "wednesdayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "thursdayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "fridayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "saturdayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "sundayPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "example": 250
+          },
+          "mondayDiscountType": {
             "type": "string",
             "enum": [
               "P",
               "F"
             ],
             "nullable": true,
-            "example": "P",
-            "description": "P = percentage, F = flat amount."
+            "description": "P = percentage, F = flat amount. Governs every mondayDiscountOn* value - Monday's discount only, independently of every other day."
           },
-          "discountValue": {
+          "mondayDiscountValue": {
             "type": "number",
             "format": "double",
+            "nullable": true
+          },
+          "mondayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "mondayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "mondayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "mondayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "tuesdayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
             "nullable": true,
-            "example": 10
+            "description": "P = percentage, F = flat amount. Governs every tuesdayDiscountOn* value - Tuesday's discount only, independently of every other day."
           },
-          "discountOnQr": {
+          "tuesdayDiscountValue": {
             "type": "number",
             "format": "double",
             "nullable": true
           },
-          "discountOnKiosk": {
+          "tuesdayDiscountOnQr": {
             "type": "number",
             "format": "double",
             "nullable": true
           },
-          "discountOnSeatQr": {
+          "tuesdayDiscountOnKiosk": {
             "type": "number",
             "format": "double",
             "nullable": true
           },
-          "discountOnCounter": {
+          "tuesdayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "tuesdayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "wednesdayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
+            "nullable": true,
+            "description": "P = percentage, F = flat amount. Governs every wednesdayDiscountOn* value - Wednesday's discount only, independently of every other day."
+          },
+          "wednesdayDiscountValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "wednesdayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "wednesdayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "wednesdayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "wednesdayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "thursdayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
+            "nullable": true,
+            "description": "P = percentage, F = flat amount. Governs every thursdayDiscountOn* value - Thursday's discount only, independently of every other day."
+          },
+          "thursdayDiscountValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "thursdayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "thursdayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "thursdayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "thursdayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fridayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
+            "nullable": true,
+            "description": "P = percentage, F = flat amount. Governs every fridayDiscountOn* value - Friday's discount only, independently of every other day."
+          },
+          "fridayDiscountValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fridayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fridayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fridayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "fridayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "saturdayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
+            "nullable": true,
+            "description": "P = percentage, F = flat amount. Governs every saturdayDiscountOn* value - Saturday's discount only, independently of every other day."
+          },
+          "saturdayDiscountValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "saturdayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "saturdayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "saturdayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "saturdayDiscountOnCounter": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sundayDiscountType": {
+            "type": "string",
+            "enum": [
+              "P",
+              "F"
+            ],
+            "nullable": true,
+            "description": "P = percentage, F = flat amount. Governs every sundayDiscountOn* value - Sunday's discount only, independently of every other day."
+          },
+          "sundayDiscountValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sundayDiscountOnQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sundayDiscountOnKiosk": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sundayDiscountOnSeatQr": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sundayDiscountOnCounter": {
             "type": "number",
             "format": "double",
             "nullable": true
@@ -3295,8 +3580,6 @@
                 "id",
                 "cinemaId",
                 "productId",
-                "dayOfWeek",
-                "basePrice",
                 "isActive",
                 "createdAt",
                 "updatedAt"
@@ -3327,16 +3610,6 @@
             "name": "productId",
             "schema": {
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "dayOfWeek",
-            "description": "0 = every day, 1 = Monday ... 7 = Sunday.",
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 7
             }
           },
           {
@@ -3389,7 +3662,7 @@
           "Product Pricing"
         ],
         "summary": "Create a price row",
-        "description": "The cinema and the product must belong to the same chain. (cinemaId, productId, dayOfWeek) is unique. Discount amounts require `discountType` to be set, and are capped at 100 when it is `P`. Requires the Pricing module edit permission.\n",
+        "description": "One row holds the product's whole week at that cinema, so this is the only call needed to configure all seven days. The cinema and the product must belong to the same chain, and (cinemaId, productId) is unique.\n\nAt least one day must carry a price. A null day price means the product is NOT SOLD that day - it does not mean free. Which day applies to a given moment is the QBusto business day, 06:00 to 06:00, so an order placed at 01:00 on Monday pays Sunday's price.\n\nEach day has its own discount, independently of every other day - a Wednesday discount never applies on Thursday. A day's discount amount requires that SAME day's discount type to be set, and is capped at 100 when that type is `P`. Requires the Pricing module edit permission.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -3398,8 +3671,7 @@
                 "type": "object",
                 "required": [
                   "cinemaId",
-                  "productId",
-                  "basePrice"
+                  "productId"
                 ],
                 "properties": {
                   "cinemaId": {
@@ -3408,53 +3680,316 @@
                   "productId": {
                     "type": "integer"
                   },
-                  "dayOfWeek": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 7,
-                    "default": 0,
-                    "description": "0 = every day, 1 = Monday ... 7 = Sunday."
-                  },
-                  "basePrice": {
+                  "mondayPrice": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
-                    "example": 250
+                    "nullable": true
                   },
-                  "discountType": {
+                  "tuesdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "mondayDiscountType": {
                     "type": "string",
                     "enum": [
                       "P",
                       "F"
                     ],
                     "nullable": true,
-                    "description": "P = percentage, F = flat amount. Governs every discount below."
+                    "description": "Monday's discount only - P = percentage, F = flat amount."
                   },
-                  "discountValue": {
+                  "mondayDiscountValue": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnQr": {
+                  "mondayDiscountOnQr": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnKiosk": {
+                  "mondayDiscountOnKiosk": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnSeatQr": {
+                  "mondayDiscountOnSeatQr": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnCounter": {
+                  "mondayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Tuesday's discount only - P = percentage, F = flat amount."
+                  },
+                  "tuesdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Wednesday's discount only - P = percentage, F = flat amount."
+                  },
+                  "wednesdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Thursday's discount only - P = percentage, F = flat amount."
+                  },
+                  "thursdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Friday's discount only - P = percentage, F = flat amount."
+                  },
+                  "fridayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Saturday's discount only - P = percentage, F = flat amount."
+                  },
+                  "saturdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true,
+                    "description": "Sunday's discount only - P = percentage, F = flat amount."
+                  },
+                  "sundayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnCounter": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
@@ -3589,7 +4124,7 @@
           "Product Pricing"
         ],
         "summary": "Update a price row",
-        "description": "`cinemaId`, `productId` and `dayOfWeek` cannot be changed: together they are the natural key, so changing one identifies a different row rather than editing this one.\n",
+        "description": "Writes the product's whole week at that cinema in one call. A day sent as null becomes unpriced, which makes the product unsellable that day; a day omitted entirely is left as it was.\n\n`cinemaId` and `productId` cannot be changed: together they are the natural key, so changing one identifies a different row rather than editing this one.\n",
         "parameters": [
           {
             "in": "path",
@@ -3608,12 +4143,49 @@
                 "type": "object",
                 "minProperties": 1,
                 "properties": {
-                  "basePrice": {
+                  "mondayPrice": {
                     "type": "number",
                     "format": "double",
-                    "minimum": 0
+                    "minimum": 0,
+                    "nullable": true
                   },
-                  "discountType": {
+                  "tuesdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayPrice": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "mondayDiscountType": {
                     "type": "string",
                     "enum": [
                       "P",
@@ -3621,31 +4193,259 @@
                     ],
                     "nullable": true
                   },
-                  "discountValue": {
+                  "mondayDiscountValue": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnQr": {
+                  "mondayDiscountOnQr": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnKiosk": {
+                  "mondayDiscountOnKiosk": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnSeatQr": {
+                  "mondayDiscountOnSeatQr": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
                     "nullable": true
                   },
-                  "discountOnCounter": {
+                  "mondayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "tuesdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "tuesdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "wednesdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "wednesdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "thursdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "thursdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "fridayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "fridayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "saturdayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "saturdayDiscountOnCounter": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountType": {
+                    "type": "string",
+                    "enum": [
+                      "P",
+                      "F"
+                    ],
+                    "nullable": true
+                  },
+                  "sundayDiscountValue": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnKiosk": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnSeatQr": {
+                    "type": "number",
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "sundayDiscountOnCounter": {
                     "type": "number",
                     "format": "double",
                     "minimum": 0,
@@ -7194,6 +7994,10 @@
                     "type": "boolean",
                     "default": false
                   },
+                  "offersEnabled": {
+                    "type": "boolean",
+                    "default": true
+                  },
                   "isActive": {
                     "type": "boolean",
                     "default": true
@@ -7403,6 +8207,9 @@
                   "whatsappEnabled": {
                     "type": "boolean"
                   },
+                  "offersEnabled": {
+                    "type": "boolean"
+                  },
                   "isActive": {
                     "type": "boolean"
                   }
@@ -7489,6 +8296,150 @@
                       "properties": {
                         "data": {
                           "$ref": "#/components/schemas/Cinema"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/cinemas/{id}/content": {
+      "get": {
+        "tags": [
+          "Cinemas"
+        ],
+        "summary": "Get a cinema's About/Terms footer content",
+        "description": "The Consumer footer's \"About Cinema\" and \"Terms & Conditions\" content. Returns an empty shape (nulls, an empty `tncPoints`) when nothing has been configured yet - that is a normal state, not a 404. Requires the Settings module read permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cinema's content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CinemaContent"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Cinemas"
+        ],
+        "summary": "Create or replace a cinema's About/Terms footer content",
+        "description": "One row per cinema - created on first save, replaced thereafter. `tncPoints` is the whole list in display order; sending a shorter list removes the trailing points. Requires the Settings module edit permission.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "contactNo": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  },
+                  "mailId": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 255,
+                    "nullable": true
+                  },
+                  "tncPoints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "maxItems": 40
+                  },
+                  "iconUrl": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CinemaContent"
                         }
                       }
                     }

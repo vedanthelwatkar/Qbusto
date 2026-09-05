@@ -26,6 +26,7 @@ module.exports = (sequelize, DataTypes) => {
         as: 'paymentGatewayConfigs',
       });
       Cinema.hasMany(models.Offer, { foreignKey: 'cinemaId', as: 'offers' });
+      Cinema.hasOne(models.CinemaContent, { foreignKey: 'cinemaId', as: 'content' });
 
       Cinema.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
       Cinema.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });
@@ -93,6 +94,24 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+      },
+      /**
+       * Whether this cinema's "Apply coupon" feature is available.
+       *
+       * Enforced in TWO places, and both matter: the Consumer hides the
+       * coupon section when this is off (cosmetic), and
+       * coupon.service.validateCoupon refuses a code regardless of what the
+       * client sends (the actual guard) - so a hand-crafted request cannot
+       * apply a coupon at a cinema that switched offers off.
+       *
+       * Defaults true: existing cinemas keep today's behaviour, coupons stay
+       * available, and this is an OFF switch layered on top, not an opt-in.
+       * Turning it off never touches `offers` rows - see coupon.service.
+       */
+      offersEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
       },
       isActive: {
         type: DataTypes.BOOLEAN,

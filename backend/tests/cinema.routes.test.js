@@ -80,6 +80,7 @@ function buildCinema(overrides = {}) {
     activeSince: null,
     smsEnabled: false,
     whatsappEnabled: false,
+    offersEnabled: true,
     isActive: true,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-02T00:00:00Z'),
@@ -458,6 +459,32 @@ describe('PUT /api/cinemas/:id', () => {
     expect(response.status).toBe(200);
     expect(cinema.update).toHaveBeenCalledWith(
       expect.objectContaining({ city: 'Mysuru', updatedBy: 7 })
+    );
+  });
+
+  it('toggles offersEnabled off and back on', async () => {
+    const token = authenticateAs(buildActor({ id: 7 }));
+    const cinema = buildCinema({ offersEnabled: true });
+    models.Cinema.findOne.mockResolvedValue(cinema);
+
+    const off = await request(app)
+      .put('/api/cinemas/3')
+      .set('Authorization', token)
+      .send({ offersEnabled: false });
+
+    expect(off.status).toBe(200);
+    expect(cinema.update).toHaveBeenCalledWith(
+      expect.objectContaining({ offersEnabled: false, updatedBy: 7 })
+    );
+
+    const on = await request(app)
+      .put('/api/cinemas/3')
+      .set('Authorization', token)
+      .send({ offersEnabled: true });
+
+    expect(on.status).toBe(200);
+    expect(cinema.update).toHaveBeenCalledWith(
+      expect.objectContaining({ offersEnabled: true, updatedBy: 7 })
     );
   });
 

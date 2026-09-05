@@ -2,6 +2,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useCartStore } from '@/stores/cart.store';
 import { useContextStore } from '@/stores/context.store';
 import { clearCheckoutSession } from '@/utils/checkoutSession';
+import { confirmationCtaLabel, sessionEndPath } from '@/utils/sessionEnd';
 import { formatMoney } from '@/utils/formatMoney';
 import StatePanel from '@/components/StatePanel';
 import { AlertIcon, CheckIcon } from '@/components/icons';
@@ -17,6 +18,9 @@ export default function ConfirmationPage() {
   // Joined for display only; the store keeps row and seat apart.
   const seatNumber = useContextStore((state) => state.seatLabel());
   const clearCustomerData = useContextStore((state) => state.clearCustomerData);
+  // Decides where "done" goes and what it is called: a kiosk hands itself back
+  // to the next customer, a phone goes back to the menu. See utils/sessionEnd.
+  const source = useContextStore((state) => state.source);
 
   // Safety: orderId must be a strictly positive integer (digits only, no leading zero)
   if (!orderId || !/^[1-9]\d*$/.test(orderId)) {
@@ -57,8 +61,15 @@ export default function ConfirmationPage() {
     // is read back on this very screen, so clearing it before the customer
     // acknowledges would blank their own confirmation.
     clearCustomerData();
-    // Return to screensaver
-    navigate('/', { replace: true });
+
+    /*
+     * A KIOSK returns to the screensaver, because the machine is about to be
+     * someone else's. A PHONE goes back to the menu instead: there is no next
+     * customer to attract, and an attract screen on the customer's own device
+     * just looks like the app lost their place. Ordering again mid-film is the
+     * thing phone customers actually do, so that is what the button offers.
+     */
+    navigate(sessionEndPath(source), { replace: true });
   };
 
   return (
@@ -97,7 +108,7 @@ export default function ConfirmationPage() {
         </p>
 
         <button className="btn btn--primary btn--lg btn--block" onClick={handleDone}>
-          Done
+          {confirmationCtaLabel(source)}
         </button>
       </div>
     </div>

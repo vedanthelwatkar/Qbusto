@@ -44,6 +44,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useChainsStore } from '@/stores/chains.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { Text } = Typography;
 
@@ -127,11 +128,7 @@ export default function ChainsPage() {
       dataIndex: 'name',
       key: 'name',
       sorter: true,
-      render: (_, chain) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(chain.id)}>
-          {chain.name}
-        </Button>
-      ),
+      render: (_, chain) => chain.name,
     },
     {
       title: 'Logo',
@@ -280,6 +277,8 @@ export default function ChainsPage() {
         ) : null}
 
         <Table<Chain>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Chain>((chain) => setDetailsId(chain.id))}
           rowKey={(chain) => String(chain.id)}
           columns={columns}
           dataSource={chains}

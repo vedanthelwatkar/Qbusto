@@ -172,10 +172,13 @@ populate, so it is the one that survived.
 - `active_since`
 - `sms_enabled`
 - `whatsapp_enabled`
+- `offers_enabled`
 
 The GST and FSSAI values are strings, not numeric values, because they are identifiers, not quantities.
 
 The SMS and WhatsApp flags are cinema-level preferences. A cinema may enable either channel, both, or neither.
+
+`offers_enabled` gates the coupon feature (default TRUE). It is enforced in `coupon.service.validateCoupon`, which refuses ANY coupon code at a cinema with it off - a hand-crafted API request cannot get around this by skipping the Consumer UI, which merely hides the "Apply coupon" section when the flag is off. Switching it off never deletes or deactivates `offers` rows; switching it back on restores coupon behaviour exactly.
 
 ### Banners
 
@@ -190,17 +193,42 @@ Banner rows are ordered by `sequence` and may optionally be bounded by `start_da
 
 ### Channel-specific product discounts
 
-`product_pricing.discount_type` is the shared interpretation flag:
+### Weekly pricing, and the business day
+
+A `product_pricing` row holds `monday_price` through `sunday_price`. Setting a weekend price is one edit, not a second row, and reading a product's week back does not require assembling several rows and applying a precedence rule.
+
+A NULL day price means **the product is not sold that day**. It is not free and it is not zero: the customer's menu joins on "today's column is not NULL", so an unpriced day removes the product entirely. Cinema 8 uses this - one product is priced Friday, Saturday and Sunday only.
+
+Which day applies is the **QBusto business day, 6:00 am to 6:00 am**, not the calendar day. An order placed at 01:00 on Monday pays `sunday_price`, because at a cinema that moment belongs to Sunday's late show. The same boundary picks the availability windows on offer and decides whether a banner's date range includes today. It is never applied to `created_at` or to any other recorded instant.
+
+**Each day has its own discount, independently of the other six.** A shared,
+whole-row discount was tried first and abandoned once the live data was
+checked: cinema 1 / product 14 had a Wednesday-only flat discount that did NOT
+apply the other six days, so one discount for the whole row could only ever
+leak it onto every day or lose it. `20260906000200-product-pricing-day-
+discounts` gave each day its own `{day}_discount_type` /
+`{day}_discount_value` / `{day}_discount_on_*` set - 42 columns, mechanical
+repetition of one shape seven times, the same way the seven price columns
+already work. The migration header records the exact live-data mapping: four
+rows whose discount was already uniform were copied onto all seven days
+unchanged; the one genuine Wednesday-only conflict had already been folded
+into `wednesday_price` by the earlier weekly-pricing migration.
+
+`{day}_discount_type` is the interpretation flag for THAT DAY ONLY:
 
 - `P` means Percentage
 - `F` means Flat Amount
 
-The client-requested channel columns now live directly on `product_pricing` as:
+Each day's own channel columns:
 
-- `discount_on_qr`
-- `discount_on_kiosk`
-- `discount_on_seat_qr`
-- `discount_on_counter`
+- `{day}_discount_on_qr`
+- `{day}_discount_on_kiosk`
+- `{day}_discount_on_seat_qr`
+- `{day}_discount_on_counter`
+
+`pricing.service.discountForDay(pricing, day)` is the one place that reads
+these; `unitDiscountPaise` takes the business day explicitly so a Wednesday
+discount can never be applied while pricing a Thursday order.
 
 ### Cinema products
 
@@ -209,7 +237,7 @@ The client-requested channel columns now live directly on `product_pricing` as:
 The legacy system kept this link and its pricing together in `DAE_ItemCinemaPrice`. QBusto splits the two:
 
 - the link, its display order and its date-range availability live in `cinema_products`
-- per-day prices are normalized into `product_pricing`
+- the week's prices live in `product_pricing`, one row per (cinema, product) with seven day columns
 
 That is why a `cinema_products` row carries no price columns.
 
@@ -255,9 +283,24 @@ The day convention is:
 - 6 = Saturday
 - 7 = Sunday
 
-Overnight windows are allowed conceptually. The schema does not block them with a `start_time < end_time` check, because that would prevent cases like 22:00 to 01:00. Any overlap validation is handled by application logic.
+**Resolved: overnight windows are now accepted directly, not split.** The API
+used to require `startTime < endTime`, forcing an overnight window into two
+rows (22:00-23:59:59 plus 00:00-01:00 the "next" day). Once the 6:00 am
+business day shipped, that split became actively WRONG: the first half's
+all-day-shaped sibling often already covered the small hours on its own
+business day, making the second half either dead weight or, worse,
+unreachable at the clock time it was meant to describe (a clock time before
+6:00 am always resolves to the PREVIOUS day's business day, never to the
+"next" calendar day the split assumed). Five live rows at cinemas 5 and 9 had
+exactly this shape; `20260906000300-fix-overnight-availability` consolidated
+them, verified behaviour-preserving before and after.
 
-**The API is stricter than the schema here.** `/api/product-availability-hours` requires `startTime` to be earlier than `endTime`, so a 22:00 to 01:00 window is currently rejected with a 400 even though the table could store it. Representing one would mean splitting it into 22:00-23:59:59 and 00:00-01:00, or relaxing the validator. Do not describe overnight windows as supported until that is decided.
+The validator now only rejects `endTime === startTime` (a zero-width window,
+not a 24-hour one). `endTime` earlier than `startTime` is a first-class
+overnight window (22:00 -> 02:00), matched with a wrap-aware comparison
+(`utils/businessDay.isWithinDailyWindow`) and checked for overlaps the same
+way (`dailyWindowsOverlap`) - both treat the day as a 24-hour circle rather
+than a line, so two overlapping late-night windows can no longer both save.
 
 ### How availability is evaluated
 

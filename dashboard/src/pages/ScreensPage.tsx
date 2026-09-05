@@ -32,6 +32,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useScreensStore } from '@/stores/screens.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiScreensParams['order']> = {
@@ -145,11 +146,7 @@ export default function ScreensPage() {
       dataIndex: 'name',
       key: 'name',
       sorter: true,
-      render: (_, screen) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(screen.id)}>
-          {screen.name}
-        </Button>
-      ),
+      render: (_, screen) => screen.name,
     },
     {
       title: 'Cinema',
@@ -307,6 +304,8 @@ export default function ScreensPage() {
         ) : null}
 
         <Table<Screen>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Screen>((screen) => setDetailsId(screen.id))}
           rowKey={(screen) => String(screen.id)}
           columns={columns}
           dataSource={screens}

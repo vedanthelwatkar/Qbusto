@@ -12,9 +12,11 @@
 
 import type {
   Cinema,
+  CinemaContent,
   GetApiCinemasParams,
   PostApiCinemasBody,
   PutApiCinemasIdBody,
+  PutApiCinemasIdContentBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import { getCinemas } from '@/api/generated/cinemas/cinemas';
 import { ERROR_CODES, type ApiError, type Pagination } from '@/types/api';
@@ -68,6 +70,30 @@ export async function updateCinema(id: number, body: PutApiCinemasIdBody): Promi
  */
 export async function deactivateCinema(id: number): Promise<Cinema> {
   const { data } = await cinemasApi.deleteApiCinemasId(id);
+
+  if (!data) throw MALFORMED;
+
+  return data;
+}
+
+/**
+ * The Consumer footer's About Cinema / Terms & Conditions content. An
+ * unconfigured cinema returns nulls and an empty `tncPoints`, not a 404.
+ */
+export async function getCinemaContent(id: number): Promise<CinemaContent> {
+  const { data } = await cinemasApi.getApiCinemasIdContent(id);
+
+  if (!data) throw MALFORMED;
+
+  return data;
+}
+
+/** One row per cinema - created on first save, replaced thereafter. */
+export async function saveCinemaContent(
+  id: number,
+  body: PutApiCinemasIdContentBody
+): Promise<CinemaContent> {
+  const { data } = await cinemasApi.putApiCinemasIdContent(id, body);
 
   if (!data) throw MALFORMED;
 

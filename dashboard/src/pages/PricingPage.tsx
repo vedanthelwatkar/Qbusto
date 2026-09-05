@@ -30,8 +30,8 @@ import PageHeader from '@/components/PageHeader';
 import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import PricingDetailsDrawer from '@/components/pricing/PricingDetailsDrawer';
 import PricingFormModal from '@/components/pricing/PricingFormModal';
-import { DAY_OF_WEEK_OPTIONS, dayOfWeekLabel } from '@/components/pricing/days';
-import { formatDiscount, formatMoney } from '@/components/pricing/money';
+import { WEEKDAY_PRICE_FIELDS } from '@/components/pricing/days';
+import { formatMoney } from '@/components/pricing/money';
 import ProductSelect from '@/components/products/ProductSelect';
 import { toApiError } from '@/services/api';
 import { getCinema } from '@/services/cinemas.service';
@@ -40,6 +40,7 @@ import { getProduct } from '@/services/products.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { usePricingStore } from '@/stores/pricing.store';
 import { hasPermission } from '@/utils/permissions';
+import { detailRowProps } from '@/utils/rowClick';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiProductPricingParams['order']> = {
@@ -169,7 +170,7 @@ export default function PricingPage() {
         ? 'this price'
         : (productNames.get(pricing.productId) ?? `#${pricing.productId}`);
 
-    return `${product} (${dayOfWeekLabel(pricing.dayOfWeek).toLowerCase()})`;
+    return product;
   };
 
   const confirmDeactivate = (pricing: ProductPricing) => {
@@ -202,13 +203,10 @@ export default function PricingPage() {
       dataIndex: 'productId',
       key: 'productId',
       sorter: true,
-      render: (_, pricing) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(pricing.id)}>
-          {pricing.productId === undefined
-            ? '-'
-            : (productNames.get(pricing.productId) ?? `#${pricing.productId}`)}
-        </Button>
-      ),
+      render: (_, pricing) =>
+        pricing.productId === undefined
+          ? '-'
+          : (productNames.get(pricing.productId) ?? `#${pricing.productId}`),
     },
     {
       title: 'Cinema',
@@ -221,35 +219,66 @@ export default function PricingPage() {
           : (cinemaNames.get(pricing.cinemaId) ?? `#${pricing.cinemaId}`),
     },
     {
-      title: 'Day',
-      dataIndex: 'dayOfWeek',
-      key: 'dayOfWeek',
-      sorter: true,
-      render: (_, pricing) => dayOfWeekLabel(pricing.dayOfWeek),
+      /*
+       * THE WHOLE WEEK IN ONE COLUMN.
+       *
+       * Almost every product is one price all week, and seven identical
+       * columns would be seven times the width to say so. This shows the
+       * single price when the week is uniform, and only breaks it out per day
+       * when it is not - which is exactly when the reader needs the detail.
+       */
+      title: 'Price',
+      key: 'week',
+      render: (_, pricing) => {
+        const week = WEEKDAY_PRICE_FIELDS.map(({ short, field }) => ({
+          short,
+          value: pricing[field] ?? null,
+        }));
+
+        const priced = week.filter((day) => day.value !== null);
+
+        if (priced.length === 0) return <Tag>No prices</Tag>;
+
+        const uniform =
+          priced.length === week.length && priced.every((day) => day.value === priced[0].value);
+
+        if (uniform) return formatMoney(priced[0].value);
+
+        return (
+          <Space size={4} wrap>
+            {week.map((day) => (
+              <Tag key={day.short} color={day.value === null ? undefined : 'blue'}>
+                {day.short} {day.value === null ? '-' : formatMoney(day.value)}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
     },
     {
-      title: 'Base price',
-      dataIndex: 'basePrice',
-      key: 'basePrice',
-      sorter: true,
-      align: 'right',
-      render: (_, pricing) => formatMoney(pricing.basePrice),
-    },
-    {
+      /*
+       * Discounts are per-day now (a Wednesday-only discount must not read as
+       * a whole-week one), so the table names which days carry one rather
+       * than showing one shared amount. The exact figures are one click away
+       * in the weekly editor.
+       */
       title: 'Discount',
       key: 'discount',
       render: (_, pricing) => {
-        if (!pricing.discountType) return <Tag>None</Tag>;
+        const daysWithDiscount = WEEKDAY_PRICE_FIELDS.filter(({ field }) => {
+          const type = (pricing as Record<string, unknown>)[
+            `${field.replace(/Price$/, '')}DiscountType`
+          ];
+          return Boolean(type);
+        });
 
-        // A type with no default amount still discounts - the channel columns
-        // carry their own values - so the type is named rather than shown as
-        // nothing at all.
-        const shown = formatDiscount(pricing.discountValue, pricing.discountType);
+        if (daysWithDiscount.length === 0) return <Tag>None</Tag>;
+        if (daysWithDiscount.length === WEEKDAY_PRICE_FIELDS.length) {
+          return <Tag color="processing">Every day</Tag>;
+        }
 
         return (
-          <Tag color="processing">
-            {shown === '-' ? (pricing.discountType === 'P' ? 'Percentage' : 'Flat') : shown}
-          </Tag>
+          <Tag color="processing">{daysWithDiscount.map(({ short }) => short).join(', ')}</Tag>
         );
       },
     },
@@ -324,16 +353,13 @@ export default function PricingPage() {
   };
 
   const filtered =
-    query.cinemaId !== undefined ||
-    query.productId !== undefined ||
-    query.dayOfWeek !== undefined ||
-    query.isActive !== undefined;
+    query.cinemaId !== undefined || query.productId !== undefined || query.isActive !== undefined;
 
   return (
     <Space orientation="vertical" size="large" className="stack">
       <PageHeader
         title="Pricing"
-        description="What each product costs, per cinema and per day"
+        description="What each product costs, per cinema, for each day of the week"
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void fetch()} loading={loading}>
@@ -370,15 +396,6 @@ export default function PricingPage() {
 
           <Select
             allowClear
-            placeholder="Any day"
-            value={query.dayOfWeek}
-            onChange={(dayOfWeek) => setQuery({ dayOfWeek })}
-            options={DAY_OF_WEEK_OPTIONS}
-            style={{ width: 160 }}
-          />
-
-          <Select
-            allowClear
             placeholder="Any status"
             value={query.isActive}
             onChange={(isActive) => setQuery({ isActive })}
@@ -405,6 +422,8 @@ export default function PricingPage() {
         ) : null}
 
         <Table<ProductPricing>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<ProductPricing>((pricing) => setDetailsId(pricing.id))}
           rowKey={(pricing) => String(pricing.id)}
           columns={columns}
           dataSource={pricings}

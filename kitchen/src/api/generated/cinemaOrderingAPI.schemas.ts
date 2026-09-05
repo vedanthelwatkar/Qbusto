@@ -112,6 +112,28 @@ export interface Chain {
   updatedAt?: string;
 }
 
+/**
+ * A cinema's About Cinema / Terms & Conditions footer content. One row per cinema; an unconfigured cinema returns nulls and an empty tncPoints rather than a 404.
+ */
+export interface CinemaContent {
+  /** @nullable */
+  cinemaId?: number | null;
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  contactNo?: string | null;
+  /** @nullable */
+  mailId?: string | null;
+  /** @items.maxLength 500 */
+  tncPoints?: string[];
+  /**
+     * Optional custom icon for the About Cinema section, uploaded by staff.
+     * @nullable
+     */
+  iconUrl?: string | null;
+}
+
 export interface Cinema {
   id?: number;
   chainId?: number;
@@ -136,9 +158,13 @@ export interface Cinema {
   activeSince?: string | null;
   smsEnabled?: boolean;
   whatsappEnabled?: boolean;
+  /** Whether this cinema accepts coupon codes. Off hides the Consumer coupon section AND is enforced server-side in coupon.service - a crafted request cannot apply a coupon while this is false. Existing offers are untouched. */
+  offersEnabled?: boolean;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** The About Cinema / Terms & Conditions footer content. Only present on GET /api/consumer/cinemas/{id} - the staff endpoints manage it separately via GET/PUT /api/cinemas/{id}/content. */
+  content?: CinemaContent;
 }
 
 export interface Screen {
@@ -250,46 +276,215 @@ export interface ProductAvailabilityHour {
 }
 
 /**
- * P = percentage, F = flat amount.
+ * P = percentage, F = flat amount. Governs every mondayDiscountOn* value - Monday's discount only, independently of every other day.
  * @nullable
  */
-export type ProductPricingDiscountType = typeof ProductPricingDiscountType[keyof typeof ProductPricingDiscountType] | null;
+export type ProductPricingMondayDiscountType = typeof ProductPricingMondayDiscountType[keyof typeof ProductPricingMondayDiscountType] | null;
 
 
-export const ProductPricingDiscountType = {
+export const ProductPricingMondayDiscountType = {
   P: 'P',
   F: 'F',
 } as const;
 
 /**
- * Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Discount amounts are only meaningful when discountType is set.
+ * P = percentage, F = flat amount. Governs every tuesdayDiscountOn* value - Tuesday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingTuesdayDiscountType = typeof ProductPricingTuesdayDiscountType[keyof typeof ProductPricingTuesdayDiscountType] | null;
+
+
+export const ProductPricingTuesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * P = percentage, F = flat amount. Governs every wednesdayDiscountOn* value - Wednesday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingWednesdayDiscountType = typeof ProductPricingWednesdayDiscountType[keyof typeof ProductPricingWednesdayDiscountType] | null;
+
+
+export const ProductPricingWednesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * P = percentage, F = flat amount. Governs every thursdayDiscountOn* value - Thursday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingThursdayDiscountType = typeof ProductPricingThursdayDiscountType[keyof typeof ProductPricingThursdayDiscountType] | null;
+
+
+export const ProductPricingThursdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * P = percentage, F = flat amount. Governs every fridayDiscountOn* value - Friday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingFridayDiscountType = typeof ProductPricingFridayDiscountType[keyof typeof ProductPricingFridayDiscountType] | null;
+
+
+export const ProductPricingFridayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * P = percentage, F = flat amount. Governs every saturdayDiscountOn* value - Saturday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingSaturdayDiscountType = typeof ProductPricingSaturdayDiscountType[keyof typeof ProductPricingSaturdayDiscountType] | null;
+
+
+export const ProductPricingSaturdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * P = percentage, F = flat amount. Governs every sundayDiscountOn* value - Sunday's discount only, independently of every other day.
+ * @nullable
+ */
+export type ProductPricingSundayDiscountType = typeof ProductPricingSundayDiscountType[keyof typeof ProductPricingSundayDiscountType] | null;
+
+
+export const ProductPricingSundayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Monetary columns are DECIMAL(10,2) in the database and arrive as JSON numbers: the SQL Server driver hands Sequelize a JS number and the service passes it through, so 250.00 is serialised as 250. Format for display rather than assuming two decimal places on the wire. Each day has its own discount, independently of every other day - a Wednesday discount never applies on Thursday. A day's discount amount is only meaningful when that SAME day's discount type is set. ONE ROW HOLDS THE WHOLE WEEK: each day has its own price, and a null day price means the product is not sold that day (it does NOT mean free). Which day applies (for both price and discount) is the QBusto business day, 06:00 to 06:00 - an order at 01:00 on Monday pays, and is discounted as, Sunday.
  */
 export interface ProductPricing {
   id?: number;
   cinemaId?: number;
   productId?: number;
+  /** @nullable */
+  mondayPrice?: number | null;
+  /** @nullable */
+  tuesdayPrice?: number | null;
+  /** @nullable */
+  wednesdayPrice?: number | null;
+  /** @nullable */
+  thursdayPrice?: number | null;
+  /** @nullable */
+  fridayPrice?: number | null;
+  /** @nullable */
+  saturdayPrice?: number | null;
+  /** @nullable */
+  sundayPrice?: number | null;
   /**
-     * 0 = every day, 1 = Monday ... 7 = Sunday.
-     * @minimum 0
-     * @maximum 7
-     */
-  dayOfWeek?: number;
-  basePrice?: number;
-  /**
-     * P = percentage, F = flat amount.
+     * P = percentage, F = flat amount. Governs every mondayDiscountOn* value - Monday's discount only, independently of every other day.
      * @nullable
      */
-  discountType?: ProductPricingDiscountType;
+  mondayDiscountType?: ProductPricingMondayDiscountType;
   /** @nullable */
-  discountValue?: number | null;
+  mondayDiscountValue?: number | null;
   /** @nullable */
-  discountOnQr?: number | null;
+  mondayDiscountOnQr?: number | null;
   /** @nullable */
-  discountOnKiosk?: number | null;
+  mondayDiscountOnKiosk?: number | null;
   /** @nullable */
-  discountOnSeatQr?: number | null;
+  mondayDiscountOnSeatQr?: number | null;
   /** @nullable */
-  discountOnCounter?: number | null;
+  mondayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every tuesdayDiscountOn* value - Tuesday's discount only, independently of every other day.
+     * @nullable
+     */
+  tuesdayDiscountType?: ProductPricingTuesdayDiscountType;
+  /** @nullable */
+  tuesdayDiscountValue?: number | null;
+  /** @nullable */
+  tuesdayDiscountOnQr?: number | null;
+  /** @nullable */
+  tuesdayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  tuesdayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  tuesdayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every wednesdayDiscountOn* value - Wednesday's discount only, independently of every other day.
+     * @nullable
+     */
+  wednesdayDiscountType?: ProductPricingWednesdayDiscountType;
+  /** @nullable */
+  wednesdayDiscountValue?: number | null;
+  /** @nullable */
+  wednesdayDiscountOnQr?: number | null;
+  /** @nullable */
+  wednesdayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  wednesdayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  wednesdayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every thursdayDiscountOn* value - Thursday's discount only, independently of every other day.
+     * @nullable
+     */
+  thursdayDiscountType?: ProductPricingThursdayDiscountType;
+  /** @nullable */
+  thursdayDiscountValue?: number | null;
+  /** @nullable */
+  thursdayDiscountOnQr?: number | null;
+  /** @nullable */
+  thursdayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  thursdayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  thursdayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every fridayDiscountOn* value - Friday's discount only, independently of every other day.
+     * @nullable
+     */
+  fridayDiscountType?: ProductPricingFridayDiscountType;
+  /** @nullable */
+  fridayDiscountValue?: number | null;
+  /** @nullable */
+  fridayDiscountOnQr?: number | null;
+  /** @nullable */
+  fridayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  fridayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  fridayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every saturdayDiscountOn* value - Saturday's discount only, independently of every other day.
+     * @nullable
+     */
+  saturdayDiscountType?: ProductPricingSaturdayDiscountType;
+  /** @nullable */
+  saturdayDiscountValue?: number | null;
+  /** @nullable */
+  saturdayDiscountOnQr?: number | null;
+  /** @nullable */
+  saturdayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  saturdayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  saturdayDiscountOnCounter?: number | null;
+  /**
+     * P = percentage, F = flat amount. Governs every sundayDiscountOn* value - Sunday's discount only, independently of every other day.
+     * @nullable
+     */
+  sundayDiscountType?: ProductPricingSundayDiscountType;
+  /** @nullable */
+  sundayDiscountValue?: number | null;
+  /** @nullable */
+  sundayDiscountOnQr?: number | null;
+  /** @nullable */
+  sundayDiscountOnKiosk?: number | null;
+  /** @nullable */
+  sundayDiscountOnSeatQr?: number | null;
+  /** @nullable */
+  sundayDiscountOnCounter?: number | null;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -1241,12 +1436,6 @@ sort?: GetApiProductPricingSort;
 order?: GetApiProductPricingOrder;
 cinemaId?: number;
 productId?: number;
-/**
- * 0 = every day, 1 = Monday ... 7 = Sunday.
- * @minimum 0
- * @maximum 7
- */
-dayOfWeek?: number;
 isActive?: boolean;
 };
 
@@ -1257,8 +1446,6 @@ export const GetApiProductPricingSort = {
   id: 'id',
   cinemaId: 'cinemaId',
   productId: 'productId',
-  dayOfWeek: 'dayOfWeek',
-  basePrice: 'basePrice',
   isActive: 'isActive',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
@@ -1277,13 +1464,85 @@ export type GetApiProductPricing200 = SuccessResponse & {
 };
 
 /**
- * P = percentage, F = flat amount. Governs every discount below.
+ * Monday's discount only - P = percentage, F = flat amount.
  * @nullable
  */
-export type PostApiProductPricingBodyDiscountType = typeof PostApiProductPricingBodyDiscountType[keyof typeof PostApiProductPricingBodyDiscountType] | null;
+export type PostApiProductPricingBodyMondayDiscountType = typeof PostApiProductPricingBodyMondayDiscountType[keyof typeof PostApiProductPricingBodyMondayDiscountType] | null;
 
 
-export const PostApiProductPricingBodyDiscountType = {
+export const PostApiProductPricingBodyMondayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Tuesday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodyTuesdayDiscountType = typeof PostApiProductPricingBodyTuesdayDiscountType[keyof typeof PostApiProductPricingBodyTuesdayDiscountType] | null;
+
+
+export const PostApiProductPricingBodyTuesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Wednesday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodyWednesdayDiscountType = typeof PostApiProductPricingBodyWednesdayDiscountType[keyof typeof PostApiProductPricingBodyWednesdayDiscountType] | null;
+
+
+export const PostApiProductPricingBodyWednesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Thursday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodyThursdayDiscountType = typeof PostApiProductPricingBodyThursdayDiscountType[keyof typeof PostApiProductPricingBodyThursdayDiscountType] | null;
+
+
+export const PostApiProductPricingBodyThursdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Friday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodyFridayDiscountType = typeof PostApiProductPricingBodyFridayDiscountType[keyof typeof PostApiProductPricingBodyFridayDiscountType] | null;
+
+
+export const PostApiProductPricingBodyFridayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Saturday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodySaturdayDiscountType = typeof PostApiProductPricingBodySaturdayDiscountType[keyof typeof PostApiProductPricingBodySaturdayDiscountType] | null;
+
+
+export const PostApiProductPricingBodySaturdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * Sunday's discount only - P = percentage, F = flat amount.
+ * @nullable
+ */
+export type PostApiProductPricingBodySundayDiscountType = typeof PostApiProductPricingBodySundayDiscountType[keyof typeof PostApiProductPricingBodySundayDiscountType] | null;
+
+
+export const PostApiProductPricingBodySundayDiscountType = {
   P: 'P',
   F: 'F',
 } as const;
@@ -1292,43 +1551,250 @@ export type PostApiProductPricingBody = {
   cinemaId: number;
   productId: number;
   /**
-     * 0 = every day, 1 = Monday ... 7 = Sunday.
      * @minimum 0
-     * @maximum 7
-     */
-  dayOfWeek?: number;
-  /** @minimum 0 */
-  basePrice: number;
-  /**
-     * P = percentage, F = flat amount. Governs every discount below.
      * @nullable
      */
-  discountType?: PostApiProductPricingBodyDiscountType;
+  mondayPrice?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountValue?: number | null;
+  tuesdayPrice?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnQr?: number | null;
+  wednesdayPrice?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnKiosk?: number | null;
+  thursdayPrice?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnSeatQr?: number | null;
+  fridayPrice?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnCounter?: number | null;
+  saturdayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayPrice?: number | null;
+  /**
+     * Monday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  mondayDiscountType?: PostApiProductPricingBodyMondayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayDiscountOnCounter?: number | null;
+  /**
+     * Tuesday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  tuesdayDiscountType?: PostApiProductPricingBodyTuesdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnCounter?: number | null;
+  /**
+     * Wednesday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  wednesdayDiscountType?: PostApiProductPricingBodyWednesdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnCounter?: number | null;
+  /**
+     * Thursday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  thursdayDiscountType?: PostApiProductPricingBodyThursdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnCounter?: number | null;
+  /**
+     * Friday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  fridayDiscountType?: PostApiProductPricingBodyFridayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnCounter?: number | null;
+  /**
+     * Saturday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  saturdayDiscountType?: PostApiProductPricingBodySaturdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnCounter?: number | null;
+  /**
+     * Sunday's discount only - P = percentage, F = flat amount.
+     * @nullable
+     */
+  sundayDiscountType?: PostApiProductPricingBodySundayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnCounter?: number | null;
   isActive?: boolean;
 };
 
@@ -1343,44 +1809,305 @@ export type GetApiProductPricingId200 = SuccessResponse & {
 /**
  * @nullable
  */
-export type PutApiProductPricingIdBodyDiscountType = typeof PutApiProductPricingIdBodyDiscountType[keyof typeof PutApiProductPricingIdBodyDiscountType] | null;
+export type PutApiProductPricingIdBodyMondayDiscountType = typeof PutApiProductPricingIdBodyMondayDiscountType[keyof typeof PutApiProductPricingIdBodyMondayDiscountType] | null;
 
 
-export const PutApiProductPricingIdBodyDiscountType = {
+export const PutApiProductPricingIdBodyMondayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodyTuesdayDiscountType = typeof PutApiProductPricingIdBodyTuesdayDiscountType[keyof typeof PutApiProductPricingIdBodyTuesdayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodyTuesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodyWednesdayDiscountType = typeof PutApiProductPricingIdBodyWednesdayDiscountType[keyof typeof PutApiProductPricingIdBodyWednesdayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodyWednesdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodyThursdayDiscountType = typeof PutApiProductPricingIdBodyThursdayDiscountType[keyof typeof PutApiProductPricingIdBodyThursdayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodyThursdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodyFridayDiscountType = typeof PutApiProductPricingIdBodyFridayDiscountType[keyof typeof PutApiProductPricingIdBodyFridayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodyFridayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodySaturdayDiscountType = typeof PutApiProductPricingIdBodySaturdayDiscountType[keyof typeof PutApiProductPricingIdBodySaturdayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodySaturdayDiscountType = {
+  P: 'P',
+  F: 'F',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PutApiProductPricingIdBodySundayDiscountType = typeof PutApiProductPricingIdBodySundayDiscountType[keyof typeof PutApiProductPricingIdBodySundayDiscountType] | null;
+
+
+export const PutApiProductPricingIdBodySundayDiscountType = {
   P: 'P',
   F: 'F',
 } as const;
 
 export type PutApiProductPricingIdBody = {
-  /** @minimum 0 */
-  basePrice?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  mondayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayPrice?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayPrice?: number | null;
   /** @nullable */
-  discountType?: PutApiProductPricingIdBodyDiscountType;
+  mondayDiscountType?: PutApiProductPricingIdBodyMondayDiscountType;
   /**
      * @minimum 0
      * @nullable
      */
-  discountValue?: number | null;
+  mondayDiscountValue?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnQr?: number | null;
+  mondayDiscountOnQr?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnKiosk?: number | null;
+  mondayDiscountOnKiosk?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnSeatQr?: number | null;
+  mondayDiscountOnSeatQr?: number | null;
   /**
      * @minimum 0
      * @nullable
      */
-  discountOnCounter?: number | null;
+  mondayDiscountOnCounter?: number | null;
+  /** @nullable */
+  tuesdayDiscountType?: PutApiProductPricingIdBodyTuesdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  tuesdayDiscountOnCounter?: number | null;
+  /** @nullable */
+  wednesdayDiscountType?: PutApiProductPricingIdBodyWednesdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  wednesdayDiscountOnCounter?: number | null;
+  /** @nullable */
+  thursdayDiscountType?: PutApiProductPricingIdBodyThursdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  thursdayDiscountOnCounter?: number | null;
+  /** @nullable */
+  fridayDiscountType?: PutApiProductPricingIdBodyFridayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fridayDiscountOnCounter?: number | null;
+  /** @nullable */
+  saturdayDiscountType?: PutApiProductPricingIdBodySaturdayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  saturdayDiscountOnCounter?: number | null;
+  /** @nullable */
+  sundayDiscountType?: PutApiProductPricingIdBodySundayDiscountType;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountValue?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnKiosk?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnSeatQr?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  sundayDiscountOnCounter?: number | null;
   isActive?: boolean;
 };
 
@@ -2478,6 +3205,7 @@ export type PostApiCinemasBody = {
   activeSince?: string | null;
   smsEnabled?: boolean;
   whatsappEnabled?: boolean;
+  offersEnabled?: boolean;
   isActive?: boolean;
   /**
      * Cashfree's APP_ID.
@@ -2542,6 +3270,7 @@ export type PutApiCinemasIdBody = {
   activeSince?: string | null;
   smsEnabled?: boolean;
   whatsappEnabled?: boolean;
+  offersEnabled?: boolean;
   isActive?: boolean;
 };
 
@@ -2551,6 +3280,32 @@ export type PutApiCinemasId200 = SuccessResponse & {
 
 export type DeleteApiCinemasId200 = SuccessResponse & {
   data?: Cinema;
+};
+
+export type GetApiCinemasIdContent200 = SuccessResponse & {
+  data?: CinemaContent;
+};
+
+export type PutApiCinemasIdContentBody = {
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  contactNo?: string | null;
+  /**
+     * @maxLength 255
+     * @nullable
+     */
+  mailId?: string | null;
+  /**
+     * @maxItems 40
+     * @items.maxLength 500
+     */
+  tncPoints?: string[];
+};
+
+export type PutApiCinemasIdContent200 = SuccessResponse & {
+  data?: CinemaContent;
 };
 
 export type GetApiChainsParams = {

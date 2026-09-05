@@ -39,6 +39,7 @@ const PUBLIC_ATTRIBUTES = [
   'activeSince',
   'smsEnabled',
   'whatsappEnabled',
+  'offersEnabled',
   'isActive',
   'createdAt',
   'updatedAt',

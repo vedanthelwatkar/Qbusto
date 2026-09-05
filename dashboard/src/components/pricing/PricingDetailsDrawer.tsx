@@ -9,16 +9,18 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, Descriptions, Drawer, Tag } from 'antd';
+import { Alert, Descriptions, Drawer, Tag, Typography } from 'antd';
 
 import DetailsSkeleton from '@/components/DetailsSkeleton';
 
 import type { ProductPricing } from '@/api/generated/cinemaOrderingAPI.schemas';
-import { dayOfWeekLabel } from '@/components/pricing/days';
+import { WEEKDAY_PRICE_FIELDS, dayDiscountFields } from '@/components/pricing/days';
 import { formatDiscount, formatMoney } from '@/components/pricing/money';
 import { toApiError } from '@/services/api';
 import * as pricingService from '@/services/pricing.service';
 import { formatDateTime } from '@/utils/datetime';
+
+const { Text } = Typography;
 
 interface PricingDetailsDrawerProps {
   pricingId: number;
@@ -72,8 +74,27 @@ export default function PricingDetailsDrawer({
       ? '-'
       : (productNames?.get(pricing.productId) ?? `#${pricing.productId}`);
 
-  const amount = (value: number | null | undefined) =>
-    formatDiscount(value, pricing?.discountType ?? null);
+  /** One day's discount, as {type, value, onQr, onKiosk, onSeatQr, onCounter} - or null. */
+  const dayDiscount = (field: (typeof WEEKDAY_PRICE_FIELDS)[number]['field']) => {
+    if (!pricing) return null;
+
+    const fields = dayDiscountFields(field);
+    const type = (pricing as Record<string, unknown>)[fields.type] as 'P' | 'F' | null;
+
+    if (!type) return null;
+
+    const amount = (key: keyof typeof fields) =>
+      formatDiscount((pricing as Record<string, unknown>)[fields[key]] as number | null, type);
+
+    return {
+      type,
+      value: amount('value'),
+      onQr: amount('onQr'),
+      onKiosk: amount('onKiosk'),
+      onSeatQr: amount('onSeatQr'),
+      onCounter: amount('onCounter'),
+    };
+  };
 
   return (
     <Drawer
@@ -93,34 +114,33 @@ export default function PricingDetailsDrawer({
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="Cinema">{cinemaLabel}</Descriptions.Item>
           <Descriptions.Item label="Product">{productLabel}</Descriptions.Item>
-          <Descriptions.Item label="Day">{dayOfWeekLabel(pricing.dayOfWeek)}</Descriptions.Item>
-          <Descriptions.Item label="Base price">{formatMoney(pricing.basePrice)}</Descriptions.Item>
+          {WEEKDAY_PRICE_FIELDS.map(({ field, label }) => {
+            const discount = dayDiscount(field);
 
-          <Descriptions.Item label="Discount type">
-            {pricing.discountType === 'P'
-              ? 'Percentage'
-              : pricing.discountType === 'F'
-                ? 'Flat amount'
-                : 'None'}
-          </Descriptions.Item>
-
-          {pricing.discountType ? (
-            <>
-              <Descriptions.Item label="Default discount">
-                {amount(pricing.discountValue)}
+            return (
+              <Descriptions.Item label={label} key={field}>
+                {/* Blank is not zero: it means the product is not sold that
+                    day. Saying so beats showing a dash the reader has to
+                    interpret. */}
+                {pricing[field] === null || pricing[field] === undefined ? (
+                  <Text type="secondary">Not sold</Text>
+                ) : (
+                  <>
+                    {formatMoney(pricing[field])}
+                    {discount ? (
+                      <Tag color="processing" style={{ marginLeft: 8 }}>
+                        {discount.type === 'P' ? 'Percentage' : 'Flat'} off: {discount.value}
+                        {discount.onQr !== '-' ? ` | QR ${discount.onQr}` : ''}
+                        {discount.onKiosk !== '-' ? ` | Kiosk ${discount.onKiosk}` : ''}
+                        {discount.onSeatQr !== '-' ? ` | Seat QR ${discount.onSeatQr}` : ''}
+                        {discount.onCounter !== '-' ? ` | Counter ${discount.onCounter}` : ''}
+                      </Tag>
+                    ) : null}
+                  </>
+                )}
               </Descriptions.Item>
-              <Descriptions.Item label="On QR">{amount(pricing.discountOnQr)}</Descriptions.Item>
-              <Descriptions.Item label="On kiosk">
-                {amount(pricing.discountOnKiosk)}
-              </Descriptions.Item>
-              <Descriptions.Item label="On seat QR">
-                {amount(pricing.discountOnSeatQr)}
-              </Descriptions.Item>
-              <Descriptions.Item label="On counter">
-                {amount(pricing.discountOnCounter)}
-              </Descriptions.Item>
-            </>
-          ) : null}
+            );
+          })}
 
           <Descriptions.Item label="Status">
             {pricing.isActive === false ? <Tag>Inactive</Tag> : <Tag color="success">Active</Tag>}

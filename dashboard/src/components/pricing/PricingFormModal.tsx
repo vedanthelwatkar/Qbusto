@@ -1,32 +1,49 @@
 /**
- * Create and edit a price row.
+ * The weekly pricing editor: ONE product at ONE cinema, all seven days.
  *
- * One modal for both. Creating asks for the cinema, the product and the day;
- * editing does not offer any of the three, because together they are the
- * natural key (UQ_product_pricing) - changing one names a different row rather
- * than editing this one. The spec leaves them off the update body, and they are
- * shown as read-only text instead so the form still says what is being priced.
+ * WHAT THIS REPLACED
  *
- * The discount amounts are only asked for once a discount type is chosen. That
- * is not decoration: the frozen ProductPricing beforeSave hook rejects an
- * amount with no type as a 400, so clearing the type clears the amounts on the
- * way out rather than sending a payload that contradicts itself.
+ * Pricing used to be one row per day. Giving a product a weekend price meant
+ * opening this form again, choosing Saturday, typing the price, saving, then
+ * doing the whole thing once more for Sunday - and reading a product's week
+ * back meant finding up to eight rows in the table and holding the
+ * "specific day beats every day" rule in your head. The week is now seven
+ * columns on one row, so it is one form, opened once.
+ *
+ * One modal for create and edit. Creating asks for the cinema and the product;
+ * editing offers neither, because together they are the natural key
+ * (UQ_product_pricing_cinema_product) - changing one names a different row
+ * rather than editing this one. The spec leaves them off the update body, and
+ * they are shown as read-only text instead so the form still says what is being
+ * priced.
+ *
+ * DISCOUNTS ARE PER DAY, not shared by the week. A Wednesday-only discount
+ * (cinema 1's live data before the day-discount migration) must never apply on
+ * Thursday, so each day's discount fields live in that day's own Popover in
+ * WeeklyPriceFields - this file only has to load and submit all 42 of them
+ * without inventing any cross-day sharing.
+ *
+ * A day's discount amount is only asked for once that SAME day's discount type
+ * is chosen. That is not decoration: the frozen ProductPricing beforeSave hook
+ * rejects an amount with no type, for that day, as a 400 - so clearing a day's
+ * type clears that day's amounts on the way out rather than sending a payload
+ * that contradicts itself.
  *
  * Mounted only while it is open, so each open starts from a clean form and a
  * correct initial loading state instead of an effect resetting the last one.
  */
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Form, InputNumber, Modal, Select, Spin, Switch, Typography } from 'antd';
+import { Alert, App, Divider, Form, Modal, Spin, Switch, Typography } from 'antd';
 
 import type {
   PostApiProductPricingBody,
-  PostApiProductPricingBodyDiscountType,
   ProductPricing,
   PutApiProductPricingIdBody,
 } from '@/api/generated/cinemaOrderingAPI.schemas';
 import CinemaSelect from '@/components/cinemas/CinemaSelect';
-import { DAY_OF_WEEK_OPTIONS, dayOfWeekLabel } from '@/components/pricing/days';
+import { WEEKDAY_PRICE_FIELDS, dayDiscountFields } from '@/components/pricing/days';
+import WeeklyPriceFields from '@/components/pricing/WeeklyPriceFields';
 import ProductSelect from '@/components/products/ProductSelect';
 import { toApiError } from '@/services/api';
 import * as pricingService from '@/services/pricing.service';
@@ -34,19 +51,16 @@ import { fieldErrorsFrom } from '@/utils/validation';
 
 const { Text } = Typography;
 
-interface FormValues {
+/** Every per-day discount field name, flattened - for load/submit only. */
+const ALL_DISCOUNT_FIELDS = WEEKDAY_PRICE_FIELDS.flatMap((day) =>
+  Object.values(dayDiscountFields(day.field))
+);
+
+type FormValues = Record<string, unknown> & {
   cinemaId?: number;
   productId?: number;
-  dayOfWeek: number;
-  basePrice: number;
-  discountType?: PostApiProductPricingBodyDiscountType;
-  discountValue?: number | null;
-  discountOnQr?: number | null;
-  discountOnKiosk?: number | null;
-  discountOnSeatQr?: number | null;
-  discountOnCounter?: number | null;
   isActive: boolean;
-}
+};
 
 interface PricingFormModalProps {
   /** Omitted for a new price row. Only `id` is read - the rest is refetched. */
@@ -82,16 +96,13 @@ export default function PricingFormModal({
   const [error, setError] = useState<string | null>(null);
 
   /** What is being priced. Shown but not editable while editing. */
-  const [key, setKey] = useState<Pick<ProductPricing, 'cinemaId' | 'productId' | 'dayOfWeek'>>({
+  const [key, setKey] = useState<Pick<ProductPricing, 'cinemaId' | 'productId'>>({
     cinemaId: pricing?.cinemaId,
     productId: pricing?.productId,
-    dayOfWeek: pricing?.dayOfWeek,
   });
 
   /** Closes itself, then tells the parent from `afterClose`, so the animation runs. */
   const [visible, setVisible] = useState(true);
-
-  const discountType = Form.useWatch('discountType', form);
 
   useEffect(() => {
     if (pricingId === undefined) return;
@@ -104,23 +115,30 @@ export default function PricingFormModal({
         if (!active) return;
 
         form.setFieldsValue({
-          // The decimal columns arrive as numbers, which is what the form
-          // works in, so they are set straight through.
-          basePrice: full.basePrice ?? 0,
-          discountType: full.discountType,
-          discountValue: full.discountValue ?? null,
-          discountOnQr: full.discountOnQr ?? null,
-          discountOnKiosk: full.discountOnKiosk ?? null,
-          discountOnSeatQr: full.discountOnSeatQr ?? null,
-          discountOnCounter: full.discountOnCounter ?? null,
+          /*
+           * The decimal columns arrive as numbers, which is what the form works
+           * in, so they are set straight through - INCLUDING null, which has to
+           * survive the round trip as null rather than becoming 0. A day the
+           * cinema does not sell on must come back blank, not free; a day with
+           * no discount must come back with no type, not a leftover from
+           * another day.
+           */
+          ...Object.fromEntries(
+            WEEKDAY_PRICE_FIELDS.map(({ field }) => [
+              field,
+              (full as Record<string, unknown>)[field] ?? null,
+            ])
+          ),
+          ...Object.fromEntries(
+            ALL_DISCOUNT_FIELDS.map((field) => [
+              field,
+              (full as Record<string, unknown>)[field] ?? null,
+            ])
+          ),
           isActive: full.isActive !== false,
         });
 
-        setKey({
-          cinemaId: full.cinemaId,
-          productId: full.productId,
-          dayOfWeek: full.dayOfWeek,
-        });
+        setKey({ cinemaId: full.cinemaId, productId: full.productId });
         setLoading(false);
       })
       .catch((caught: unknown) => {
@@ -142,30 +160,34 @@ export default function PricingFormModal({
     setSubmitting(true);
     setError(null);
 
-    // An amount without a type is rejected by the model hook, so dropping the
-    // type drops every amount with it rather than leaving one behind.
-    const discounts = values.discountType
-      ? {
-          discountType: values.discountType,
-          discountValue: values.discountValue ?? null,
-          discountOnQr: values.discountOnQr ?? null,
-          discountOnKiosk: values.discountOnKiosk ?? null,
-          discountOnSeatQr: values.discountOnSeatQr ?? null,
-          discountOnCounter: values.discountOnCounter ?? null,
-        }
-      : {
-          discountType: null,
-          discountValue: null,
-          discountOnQr: null,
-          discountOnKiosk: null,
-          discountOnSeatQr: null,
-          discountOnCounter: null,
-        };
+    /*
+     * Every day's price AND every day's discount fields are sent explicitly,
+     * null included. Omitting a key means "leave it as it was", which is not
+     * what an emptied field means - the user cleared it, and that has to reach
+     * the server. A day with no discount type sends null for its own amount
+     * fields too, so a discount left behind under a cleared type cannot slip
+     * through - the model hook would reject it anyway, but there is no reason
+     * to round-trip a 400 for something the form already knows.
+     */
+    const week = Object.fromEntries(
+      WEEKDAY_PRICE_FIELDS.map(({ field }) => [field, values[field] ?? null])
+    );
+    const discounts = Object.fromEntries(
+      WEEKDAY_PRICE_FIELDS.flatMap((day) => {
+        const fields = dayDiscountFields(day.field);
+        const hasType = Boolean(values[fields.type]);
+
+        return Object.values(fields).map((field) => [
+          field,
+          hasType ? (values[field] ?? null) : null,
+        ]);
+      })
+    );
 
     try {
       if (pricingId !== undefined) {
         const body: PutApiProductPricingIdBody = {
-          basePrice: values.basePrice,
+          ...week,
           ...discounts,
           isActive: values.isActive,
         };
@@ -177,8 +199,7 @@ export default function PricingFormModal({
           // Both are required by the spec, and by the required rules below.
           cinemaId: values.cinemaId as number,
           productId: values.productId as number,
-          dayOfWeek: values.dayOfWeek,
-          basePrice: values.basePrice,
+          ...week,
           ...discounts,
           isActive: values.isActive,
         };
@@ -203,18 +224,18 @@ export default function PricingFormModal({
         form.setFields([{ name: field, errors: [apiError.message] }]);
       }
 
-      // Two different 409s share this status and neither names a field: the
-      // duplicate (cinema, product, day) arrives from UQ_product_pricing as "A
-      // record with these values already exists", and the cross-tenant case as
-      // "The cinema and product belong to different chains". The day is the
-      // part of the key most likely to be the one that is wrong, so a duplicate
-      // is pinned there.
+      /*
+       * Two different 409s share this status and neither names a field. Both
+       * are now about the (cinema, product) pair: a duplicate arrives from
+       * UQ_product_pricing_cinema_product as "A record with these values
+       * already exists", and the cross-tenant case as "The cinema and product
+       * belong to different chains". Either way the product is the half the
+       * user is most likely to want to change, so both pin there - and a
+       * duplicate now means "this product already has a week at this cinema;
+       * edit that instead of creating a second one".
+       */
       if (!isEdit && apiError.status === 409) {
-        const field = apiError.message.toLowerCase().includes('different chains')
-          ? 'productId'
-          : 'dayOfWeek';
-
-        form.setFields([{ name: field, errors: [apiError.message] }]);
+        form.setFields([{ name: 'productId', errors: [apiError.message] }]);
       }
 
       setError(apiError.message);
@@ -227,21 +248,17 @@ export default function PricingFormModal({
   const productLabel =
     key.productId === undefined ? '-' : (productNames?.get(key.productId) ?? `#${key.productId}`);
 
-  /** A percentage cannot exceed 100; a flat amount is capped by the column. */
-  const amountMax = discountType === 'P' ? 100 : 99999999.99;
-  const amountSuffix = discountType === 'P' ? '%' : '';
-
   return (
     <Modal
       open={visible}
-      title={isEdit ? 'Edit price' : 'New price'}
-      okText={isEdit ? 'Save changes' : 'Create price'}
+      title={isEdit ? 'Weekly pricing' : 'New weekly pricing'}
+      okText={isEdit ? 'Save changes' : 'Create pricing'}
       onOk={() => form.submit()}
       onCancel={() => setVisible(false)}
       afterClose={onClose}
       confirmLoading={submitting}
       okButtonProps={{ disabled: loading || loadFailed }}
-      width={720}
+      width={760}
       centered
       styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
     >
@@ -255,7 +272,6 @@ export default function PricingFormModal({
           disabled={submitting || loading || loadFailed}
           initialValues={{
             isActive: true,
-            dayOfWeek: 0,
             cinemaId: defaultCinemaId,
             productId: defaultProductId,
           }}
@@ -264,17 +280,13 @@ export default function PricingFormModal({
             <>
               <Form.Item
                 label="Cinema"
-                extra="The cinema, product and day cannot be changed after the price is created."
+                extra="The cinema and product cannot be changed after the pricing is created."
               >
                 <Text>{cinemaLabel}</Text>
               </Form.Item>
 
               <Form.Item label="Product">
                 <Text>{productLabel}</Text>
-              </Form.Item>
-
-              <Form.Item label="Day">
-                <Text>{dayOfWeekLabel(key.dayOfWeek)}</Text>
               </Form.Item>
             </>
           ) : (
@@ -291,102 +303,19 @@ export default function PricingFormModal({
               <Form.Item
                 name="productId"
                 label="Product"
+                extra="One weekly pricing per cinema and product. Cannot be changed afterwards."
                 rules={[{ required: true, message: 'Choose a product' }]}
               >
                 <ProductSelect />
               </Form.Item>
-
-              <Form.Item
-                name="dayOfWeek"
-                label="Day"
-                extra="One price per cinema, product and day. Cannot be changed afterwards."
-                rules={[{ required: true, message: 'Choose a day' }]}
-              >
-                <Select options={DAY_OF_WEEK_OPTIONS} />
-              </Form.Item>
             </>
           )}
 
-          <Form.Item
-            name="basePrice"
-            label="Base price"
-            rules={[{ required: true, message: 'Enter a base price' }]}
-          >
-            <InputNumber min={0} max={99999999.99} precision={2} style={{ width: '100%' }} />
-          </Form.Item>
+          <Divider titlePlacement="start" plain>
+            Prices &amp; discounts
+          </Divider>
 
-          <Form.Item
-            name="discountType"
-            label="Discount type"
-            extra="Governs every discount amount below. Clearing it clears them all."
-          >
-            <Select
-              allowClear
-              placeholder="No discount"
-              options={[
-                { value: 'P', label: 'Percentage' },
-                { value: 'F', label: 'Flat amount' },
-              ]}
-            />
-          </Form.Item>
-
-          {discountType ? (
-            <>
-              <Form.Item
-                name="discountValue"
-                label="Default discount"
-                extra="Applied where no channel-specific amount is set."
-              >
-                <InputNumber
-                  min={0}
-                  max={amountMax}
-                  precision={2}
-                  suffix={amountSuffix}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-
-              <Form.Item name="discountOnQr" label="Discount on QR orders">
-                <InputNumber
-                  min={0}
-                  max={amountMax}
-                  precision={2}
-                  suffix={amountSuffix}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-
-              <Form.Item name="discountOnKiosk" label="Discount on kiosk orders">
-                <InputNumber
-                  min={0}
-                  max={amountMax}
-                  precision={2}
-                  suffix={amountSuffix}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-
-              <Form.Item name="discountOnSeatQr" label="Discount on seat QR orders">
-                <InputNumber
-                  min={0}
-                  max={amountMax}
-                  precision={2}
-                  suffix={amountSuffix}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-
-              <Form.Item name="discountOnCounter" label="Discount on counter orders">
-                <InputNumber
-                  min={0}
-                  max={amountMax}
-                  precision={2}
-                  suffix={amountSuffix}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </>
-          ) : null}
+          <WeeklyPriceFields form={form} disabled={submitting || loading || loadFailed} />
 
           <Form.Item name="isActive" label="Active" valuePropName="checked">
             <Switch />

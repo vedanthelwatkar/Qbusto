@@ -182,7 +182,7 @@ export default function AvailabilityFormModal({
         <Form.Item
           name="dayOfWeek"
           label="Day"
-          extra="Every day covers all seven, and cannot overlap a window on any single day."
+          extra="Every day covers all seven, and cannot overlap a window on any single day. A day runs 6:00 am to 6:00 am, so Sunday means Sunday 6:00 am through Monday 6:00 am."
           rules={[{ required: true, message: 'Choose a day' }]}
         >
           <Select options={DAY_OF_WEEK_OPTIONS} />

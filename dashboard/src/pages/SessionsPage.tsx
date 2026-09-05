@@ -26,6 +26,7 @@ import CinemaSelect from '@/components/cinemas/CinemaSelect';
 import SessionDetailsDrawer from '@/components/sessions/SessionDetailsDrawer';
 import { useSessionsStore } from '@/stores/sessions.store';
 import { formatDate, formatTime } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { RangePicker } = DatePicker;
 
@@ -112,11 +113,7 @@ export default function SessionsPage() {
       dataIndex: 'filmTitle',
       key: 'filmCode',
       sorter: true,
-      render: (_, session) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(session.sessionId)}>
-          {session.filmTitle ?? session.filmCode ?? '-'}
-        </Button>
-      ),
+      render: (_, session) => session.filmTitle ?? session.filmCode ?? '-',
     },
     {
       title: 'Cinema',
@@ -245,6 +242,8 @@ export default function SessionsPage() {
         ) : null}
 
         <Table<Session>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Session>((session) => setDetailsId(session.sessionId))}
           rowKey={(session) => `${session.cinemaCode}-${session.sessionId}`}
           columns={columns}
           dataSource={sessions}

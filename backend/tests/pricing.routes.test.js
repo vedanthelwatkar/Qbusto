@@ -40,15 +40,35 @@ const app = createApp();
 const FULL = [{ moduleName: 'Pricing', canRead: true, canEdit: true, canDelete: true }];
 const READ_ONLY = [{ moduleName: 'Pricing', canRead: true, canEdit: false, canDelete: false }];
 
-const VALID_PRICE = { cinemaId: 3, productId: 17, basePrice: 250 };
+/*
+ * A weekly price. One row now carries all seven days, so a create sends the
+ * days it wants priced rather than one row per day. `mondayPrice` alone is a
+ * legitimate configuration: the product is then sold on Mondays only.
+ */
+const EVERY_DAY_250 = {
+  mondayPrice: 250,
+  tuesdayPrice: 250,
+  wednesdayPrice: 250,
+  thursdayPrice: 250,
+  fridayPrice: 250,
+  saturdayPrice: 250,
+  sundayPrice: 250,
+};
+
+const VALID_PRICE = { cinemaId: 3, productId: 17, ...EVERY_DAY_250 };
 
 function buildPricing(overrides = {}) {
   return {
     id: 22,
     cinemaId: 3,
     productId: 17,
-    dayOfWeek: 0,
-    basePrice: '250.00',
+    mondayPrice: '250.00',
+    tuesdayPrice: '250.00',
+    wednesdayPrice: '250.00',
+    thursdayPrice: '250.00',
+    fridayPrice: '250.00',
+    saturdayPrice: '250.00',
+    sundayPrice: '250.00',
     discountType: null,
     discountValue: null,
     discountOnQr: null,
@@ -135,7 +155,7 @@ describe('GET /api/product-pricing', () => {
     const response = await request(app).get('/api/product-pricing').set('Authorization', token);
 
     expect(response.status).toBe(200);
-    expect(response.body.data[0]).toMatchObject({ id: 22, basePrice: '250.00' });
+    expect(response.body.data[0]).toMatchObject({ id: 22, mondayPrice: '250.00' });
     expect(response.body.meta.pagination).toMatchObject({ page: 1, total: 1 });
   });
 
@@ -210,7 +230,7 @@ describe('POST /api/product-pricing', () => {
     expect(models.ProductPricing.create).not.toHaveBeenCalled();
   });
 
-  it('creates the price row and defaults dayOfWeek to every day', async () => {
+  it('creates one row carrying the whole week', async () => {
     const token = authenticateAs(buildActor({ id: 7, chainId: 1 }));
     parentsIn(1);
     models.ProductPricing.create.mockResolvedValue(buildPricing());
@@ -225,8 +245,8 @@ describe('POST /api/product-pricing', () => {
       expect.objectContaining({
         cinemaId: 3,
         productId: 17,
-        dayOfWeek: 0,
-        basePrice: 250,
+        mondayPrice: 250,
+        sundayPrice: 250,
         createdBy: 7,
         updatedBy: 7,
       })
@@ -277,25 +297,68 @@ describe('POST /api/product-pricing', () => {
     expect(response.status).toBe(404);
   });
 
-  it('rejects a negative base price with 400', async () => {
+  it('rejects a negative day price with 400', async () => {
     const token = authenticateAs(buildActor());
 
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, basePrice: -1 });
+      .send({ ...VALID_PRICE, fridayPrice: -1 });
 
     expect(response.status).toBe(400);
     expect(models.ProductPricing.create).not.toHaveBeenCalled();
   });
 
-  it('rejects a discountType outside P and F with 400', async () => {
+  /*
+   * NULL IS A REAL VALUE HERE, and the reason the columns are nullable: it
+   * means "not sold that day", which is live data (cinema 8 sells product 151
+   * on Friday, Saturday and Sunday only). It must not be confused with zero.
+   */
+  it('accepts a week with days left unpriced', async () => {
+    const token = authenticateAs(buildActor({ id: 7, chainId: 1 }));
+    parentsIn(1);
+    models.ProductPricing.create.mockResolvedValue(buildPricing());
+
+    const response = await request(app)
+      .post('/api/product-pricing')
+      .set('Authorization', token)
+      .send({
+        cinemaId: 3,
+        productId: 17,
+        fridayPrice: 100,
+        saturdayPrice: 500,
+        sundayPrice: 700,
+        mondayPrice: null,
+      });
+
+    expect(response.status).toBe(201);
+    expect(models.ProductPricing.create).toHaveBeenCalledWith(
+      expect.objectContaining({ fridayPrice: 100, mondayPrice: null })
+    );
+  });
+
+  it('rejects a week with no priced day at all', async () => {
+    const token = authenticateAs(buildActor({ id: 7, chainId: 1 }));
+    parentsIn(1);
+
+    const response = await request(app)
+      .post('/api/product-pricing')
+      .set('Authorization', token)
+      .send({ cinemaId: 3, productId: 17 });
+
+    // Seven NULLs would save a configuration that makes the product
+    // unsellable every day, which nobody means to do.
+    expect(response.status).toBe(400);
+    expect(models.ProductPricing.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a discountType outside P and F with 400", async () => {
     const token = authenticateAs(buildActor());
 
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, discountType: 'X', discountValue: 10 });
+      .send({ ...VALID_PRICE, mondayDiscountType: 'X', mondayDiscountValue: 10 });
 
     expect(response.status).toBe(400);
   });
@@ -306,10 +369,10 @@ describe('POST /api/product-pricing', () => {
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, discountType: 'P', discountValue: 150 });
+      .send({ ...VALID_PRICE, mondayDiscountType: 'P', mondayDiscountValue: 150 });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.details[0].field).toBe('discountValue');
+    expect(response.body.error.details[0].field).toBe('mondayDiscountValue');
     expect(models.ProductPricing.create).not.toHaveBeenCalled();
   });
 
@@ -319,48 +382,67 @@ describe('POST /api/product-pricing', () => {
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, discountType: 'P', discountOnQr: 120 });
+      .send({ ...VALID_PRICE, mondayDiscountType: 'P', mondayDiscountOnQr: 120 });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.details[0].field).toBe('discountOnQr');
+    expect(response.body.error.details[0].field).toBe('mondayDiscountOnQr');
   });
 
   it('allows a flat discount above 100', async () => {
     const token = authenticateAs(buildActor());
     parentsIn(1);
-    models.ProductPricing.create.mockResolvedValue(buildPricing({ discountType: 'F' }));
+    models.ProductPricing.create.mockResolvedValue(buildPricing({ mondayDiscountType: 'F' }));
 
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, discountType: 'F', discountValue: 150 });
+      .send({ ...VALID_PRICE, mondayDiscountType: 'F', mondayDiscountValue: 150 });
 
     expect(response.status).toBe(201);
   });
 
-  it('accepts every source-specific discount together', async () => {
+  it('accepts every source-specific discount together, on one day', async () => {
     const token = authenticateAs(buildActor());
     parentsIn(1);
-    models.ProductPricing.create.mockResolvedValue(buildPricing({ discountType: 'P' }));
+    models.ProductPricing.create.mockResolvedValue(buildPricing({ mondayDiscountType: 'P' }));
 
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
       .send({
         ...VALID_PRICE,
-        discountType: 'P',
-        discountOnQr: 10,
-        discountOnKiosk: 5,
-        discountOnSeatQr: 7.5,
-        discountOnCounter: 0,
+        mondayDiscountType: 'P',
+        mondayDiscountOnQr: 10,
+        mondayDiscountOnKiosk: 5,
+        mondayDiscountOnSeatQr: 7.5,
+        mondayDiscountOnCounter: 0,
       });
 
     expect(response.status).toBe(201);
     expect(models.ProductPricing.create.mock.calls[0][0]).toMatchObject({
-      discountOnQr: 10,
-      discountOnSeatQr: 7.5,
-      discountOnCounter: 0,
+      mondayDiscountOnQr: 10,
+      mondayDiscountOnSeatQr: 7.5,
+      mondayDiscountOnCounter: 0,
     });
+  });
+
+  it("a discount on one day does not leak onto another", async () => {
+    const token = authenticateAs(buildActor());
+    parentsIn(1);
+    models.ProductPricing.create.mockResolvedValue(buildPricing({ wednesdayDiscountType: 'F' }));
+
+    const response = await request(app)
+      .post('/api/product-pricing')
+      .set('Authorization', token)
+      .send({ ...VALID_PRICE, wednesdayDiscountType: 'F', wednesdayDiscountValue: 75 });
+
+    expect(response.status).toBe(201);
+    const created = models.ProductPricing.create.mock.calls[0][0];
+    expect(created.wednesdayDiscountType).toBe('F');
+    expect(created.wednesdayDiscountValue).toBe(75);
+    // Nothing about Wednesday's discount was written onto any other day.
+    expect(created.mondayDiscountType).toBeUndefined();
+    expect(created.thursdayDiscountType).toBeUndefined();
   });
 
   it('surfaces the model hook as a 400 when a discount has no discountType', async () => {
@@ -379,7 +461,7 @@ describe('POST /api/product-pricing', () => {
     const response = await request(app)
       .post('/api/product-pricing')
       .set('Authorization', token)
-      .send({ ...VALID_PRICE, discountOnQr: 10 });
+      .send({ ...VALID_PRICE, mondayDiscountOnQr: 10 });
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
@@ -403,7 +485,7 @@ describe('POST /api/product-pricing', () => {
     expect(response.body.error.code).toBe(ERROR_CODES.CONFLICT);
   });
 
-  it('rejects a missing cinemaId, productId and basePrice with 400', async () => {
+  it('rejects a missing cinemaId and productId with 400', async () => {
     const token = authenticateAs(buildActor());
 
     const response = await request(app)
@@ -416,7 +498,6 @@ describe('POST /api/product-pricing', () => {
       expect.arrayContaining([
         expect.objectContaining({ field: 'cinemaId' }),
         expect.objectContaining({ field: 'productId' }),
-        expect.objectContaining({ field: 'basePrice' }),
       ])
     );
   });
@@ -431,29 +512,28 @@ describe('PUT /api/product-pricing/:id', () => {
     const response = await request(app)
       .put('/api/product-pricing/22')
       .set('Authorization', token)
-      .send({ basePrice: 300 });
+      .send({ mondayPrice: 300 });
 
     expect(response.status).toBe(200);
     expect(pricing.update).toHaveBeenCalledWith(
-      expect.objectContaining({ basePrice: 300, updatedBy: 7 })
+      expect.objectContaining({ mondayPrice: 300, updatedBy: 7 })
     );
   });
 
   it('ignores an attempt to change the natural key', async () => {
     const token = authenticateAs(buildActor());
-    const pricing = buildPricing({ cinemaId: 3, productId: 17, dayOfWeek: 0 });
+    const pricing = buildPricing({ cinemaId: 3, productId: 17 });
     models.ProductPricing.findOne.mockResolvedValue(pricing);
 
     const response = await request(app)
       .put('/api/product-pricing/22')
       .set('Authorization', token)
-      .send({ basePrice: 300, cinemaId: 99, productId: 99, dayOfWeek: 5 });
+      .send({ mondayPrice: 300, cinemaId: 99, productId: 99 });
 
     expect(response.status).toBe(200);
     const [values] = pricing.update.mock.calls[0];
     expect(values).not.toHaveProperty('cinemaId');
     expect(values).not.toHaveProperty('productId');
-    expect(values).not.toHaveProperty('dayOfWeek');
   });
 
   it('rejects a percentage above 100 on update', async () => {
@@ -475,7 +555,7 @@ describe('PUT /api/product-pricing/:id', () => {
     const response = await request(app)
       .put('/api/product-pricing/99')
       .set('Authorization', token)
-      .send({ basePrice: 300 });
+      .send({ mondayPrice: 300 });
 
     expect(response.status).toBe(404);
   });

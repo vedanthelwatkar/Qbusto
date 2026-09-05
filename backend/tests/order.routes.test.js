@@ -12,6 +12,9 @@
 
 const request = require('supertest');
 
+const { DAY_PRICE_COLUMN } = require('../src/services/pricing.service');
+const { everyDayDiscount } = require('./helpers/dayDiscount');
+
 jest.mock('../src/config/database', () => {
   const models = {
     User: { findByPk: jest.fn() },
@@ -150,17 +153,21 @@ function buildLink(overrides = {}) {
 
 function buildPricing(overrides = {}) {
   return {
+    mondayPrice: '250.00',
+    tuesdayPrice: '250.00',
+    wednesdayPrice: '250.00',
+    thursdayPrice: '250.00',
+    fridayPrice: '250.00',
+    saturdayPrice: '250.00',
+    sundayPrice: '250.00',
     id: 22,
     cinemaId: 3,
     productId: 17,
-    dayOfWeek: 0,
-    basePrice: 250,
-    discountType: null,
-    discountValue: null,
-    discountOnQr: null,
-    discountOnKiosk: null,
-    discountOnSeatQr: null,
-    discountOnCounter: null,
+    // No discount on any day by default. Tests that need one spread
+    // everyDayDiscount(...) so it applies whichever day the order resolves
+    // to when the suite runs - these tests are about discount arithmetic,
+    // not about which day it is.
+    ...everyDayDiscount({}),
     ...overrides,
   };
 }
@@ -584,7 +591,7 @@ describe('POST /api/orders', () => {
   it('applies a percentage discount per unit', async () => {
     const token = authenticateAs(buildActor());
     creatableOrder({
-      pricing: buildPricing({ discountType: 'P', discountValue: 10 }),
+      pricing: buildPricing(everyDayDiscount({ type: 'P', value: 10 })),
     });
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);
@@ -604,7 +611,7 @@ describe('POST /api/orders', () => {
   it('applies a flat discount per unit', async () => {
     const token = authenticateAs(buildActor());
     creatableOrder({
-      pricing: buildPricing({ discountType: 'F', discountValue: 30 }),
+      pricing: buildPricing(everyDayDiscount({ type: 'F', value: 30 })),
     });
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);
@@ -618,11 +625,7 @@ describe('POST /api/orders', () => {
   it('prefers the channel discount matching the order source', async () => {
     const token = authenticateAs(buildActor());
     creatableOrder({
-      pricing: buildPricing({
-        discountType: 'P',
-        discountValue: 10,
-        discountOnKiosk: 20,
-      }),
+      pricing: buildPricing(everyDayDiscount({ type: 'P', value: 10, onKiosk: 20 })),
     });
 
     await request(app)
@@ -637,7 +640,7 @@ describe('POST /api/orders', () => {
   it('falls back to the general discount when the channel column is null', async () => {
     const token = authenticateAs(buildActor());
     creatableOrder({
-      pricing: buildPricing({ discountType: 'P', discountValue: 10 }),
+      pricing: buildPricing(everyDayDiscount({ type: 'P', value: 10 })),
     });
 
     await request(app)
@@ -650,7 +653,7 @@ describe('POST /api/orders', () => {
 
   it('ignores a discount amount left behind with no discount type', async () => {
     const token = authenticateAs(buildActor());
-    creatableOrder({ pricing: buildPricing({ discountType: null, discountValue: 10 }) });
+    creatableOrder({ pricing: buildPricing(everyDayDiscount({ type: null, value: 10 })) });
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);
 
@@ -659,7 +662,7 @@ describe('POST /api/orders', () => {
 
   it('never lets a discount drive a line total below zero', async () => {
     const token = authenticateAs(buildActor());
-    creatableOrder({ pricing: buildPricing({ discountType: 'F', discountValue: 9999 }) });
+    creatableOrder({ pricing: buildPricing(everyDayDiscount({ type: 'F', value: 9999 })) });
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);
 
@@ -675,7 +678,10 @@ describe('POST /api/orders', () => {
       // Sequelize can be configured to return DECIMAL as a string, and some
       // drivers do it by default. Pricing must not silently change shape with
       // it, so the arithmetic is proven against both forms.
-      pricing: buildPricing({ basePrice: '250.00', discountType: 'P', discountValue: '10.00' }),
+      pricing: buildPricing({
+        mondayPrice: '250.00',
+        ...everyDayDiscount({ type: 'P', value: '10.00' }),
+      }),
     });
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);
@@ -692,9 +698,13 @@ describe('POST /api/orders', () => {
     const today = new Date().getDay() === 0 ? 7 : new Date().getDay();
 
     creatableOrder();
+    /*
+     * The week is one row, so "today costs more than the other days" is now a
+     * column on that row rather than a second row that outranks the first.
+     */
+    const column = DAY_PRICE_COLUMN[today];
     models.ProductPricing.findAll.mockResolvedValue([
-      buildPricing({ dayOfWeek: 0, basePrice: 250 }),
-      buildPricing({ id: 23, dayOfWeek: today, basePrice: 300 }),
+      buildPricing({ [column]: 300 }),
     ]);
 
     await request(app).post('/api/orders').set('Authorization', token).send(VALID_ORDER);

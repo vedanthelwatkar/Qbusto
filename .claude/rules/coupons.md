@@ -10,6 +10,8 @@ paths:
   - dashboard/src/pages/OffersPage.tsx
   - dashboard/src/components/offers/OfferFormModal.tsx
   - consumer/src/components/CheckoutDrawer.tsx
+  - backend/models/cinema.js
+  - dashboard/src/components/cinemas/CinemaFormModal.tsx
 ---
 
 # Coupons — pure QBusto, no Cashfree involvement
@@ -24,6 +26,16 @@ computed from `product_pricing` — never a client-supplied figure — and the
 discount is subtracted into `orders.total` **before `payment-init` is ever
 called**. Cashfree is handed only the final, already-discounted amount and
 has no discount/offer concept in this flow at all.
+
+**`cinemas.offers_enabled` gates the whole feature per cinema** (default
+`true`). `validateCoupon` checks it FIRST, before even looking up the offer
+by code, and refuses with "Coupons are not available at this cinema" when
+it's off — this is the real enforcement, not the Consumer's cosmetic hiding
+of the "Apply coupon" section (`CheckoutDrawer` fetches the cinema and hides
+the section when `offersEnabled` is false, but a hand-crafted request to
+`payment`-adjacent endpoints hits `validateCoupon` regardless). Turning the
+flag off never deletes or deactivates `offers` rows; turning it back on
+restores coupon behaviour exactly as it was.
 
 An EARLIER version of this tried mirroring QBusto coupons into Cashfree's own
 offer system (`order_meta.offer_filters` as an ALLOW list at `payment-init`,

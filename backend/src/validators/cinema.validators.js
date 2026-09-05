@@ -59,6 +59,7 @@ const create = {
     activeSince: Joi.date().iso().allow(null),
     smsEnabled: Joi.boolean().default(false),
     whatsappEnabled: Joi.boolean().default(false),
+    offersEnabled: Joi.boolean().default(true),
     isActive: Joi.boolean().default(true),
     // Mandatory on creation: without a Cashfree credential, payment-init for
     // this cinema falls through to the deployment-wide env fallback (or, if
@@ -90,6 +91,7 @@ const update = {
     activeSince: Joi.date().iso().allow(null),
     smsEnabled: Joi.boolean(),
     whatsappEnabled: Joi.boolean(),
+    offersEnabled: Joi.boolean(),
     isActive: Joi.boolean(),
   })
     .min(1)

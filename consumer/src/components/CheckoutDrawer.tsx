@@ -1,20 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
 
-import { useCartStore } from '@/stores/cart.store';
-import { useContextStore } from '@/stores/context.store';
-import { useUIStore } from '@/stores/ui.store';
-import StatePanel from '@/components/StatePanel';
-import Thumbnail from '@/components/Thumbnail';
-import { formatMoney } from '@/utils/formatMoney';
-import { mapCheckoutError } from '@/utils/checkoutErrors';
-import { fetchSessions } from '@/services/catalog.service';
-import { placeOrder, previewCoupon } from '@/services/orders.service';
-import type { ConsumerSession } from '@/api/generated/cinemaOrderingAPI.schemas';
+import { useCartStore } from "@/stores/cart.store";
+import { useContextStore } from "@/stores/context.store";
+import { useUIStore } from "@/stores/ui.store";
+import StatePanel from "@/components/StatePanel";
+import Thumbnail from "@/components/Thumbnail";
+import { formatMoney } from "@/utils/formatMoney";
+import { mapCheckoutError } from "@/utils/checkoutErrors";
+import { fetchCinema, fetchSessions } from "@/services/catalog.service";
+import { placeOrder, previewCoupon } from "@/services/orders.service";
+import type { ConsumerSession } from "@/api/generated/cinemaOrderingAPI.schemas";
 import {
   AlertIcon,
   BagIcon,
@@ -24,9 +24,9 @@ import {
   PlusIcon,
   TagIcon,
   TrashIcon,
-} from '@/components/icons';
-import '../styles/components/cart-drawer.scss';
-import { formatTime } from '@/utils/datetime';
+} from "@/components/icons";
+import "../styles/components/cart-drawer.scss";
+import { formatTime } from "@/utils/datetime";
 
 /** Everything inside the sheet that can hold focus. */
 const FOCUSABLE =
@@ -52,30 +52,35 @@ const MOBILE_PATTERN = /^\d{10}$/;
  * drift apart.
  */
 const checkoutSchema = z.object({
-  sessionId: z.string().min(1, 'Please choose your show'),
+  sessionId: z.string().min(1, "Please choose your show"),
   rowNumber: z
     .string()
-    .min(1, 'Row is required')
-    .refine((val) => ROW_PATTERN.test(val), 'Enter a valid row, for example A'),
+    .min(1, "Row is required")
+    .refine((val) => ROW_PATTERN.test(val), "Enter a valid row, for example A"),
   seatNumber: z
     .string()
-    .min(1, 'Seat is required')
-    .refine((val) => SEAT_PATTERN.test(val), 'Enter a valid seat number, for example 5'),
+    .min(1, "Seat is required")
+    .refine(
+      (val) => SEAT_PATTERN.test(val),
+      "Enter a valid seat number, for example 5",
+    ),
   customerMobile: z
     .string()
-    .min(1, 'WhatsApp number is required')
-    .refine((val) => MOBILE_PATTERN.test(val), 'Enter a valid 10-digit WhatsApp number'),
+    .min(1, "WhatsApp number is required")
+    .refine(
+      (val) => MOBILE_PATTERN.test(val),
+      "Enter a valid 10-digit WhatsApp number",
+    ),
   customerEmail: z
     .string()
     .optional()
     .refine(
       (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
-      'Invalid email format'
+      "Invalid email format",
     ),
 });
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
-
 
 /**
  * One option's label, e.g. "IMAX - Interstellar - 07:30 PM".
@@ -96,7 +101,9 @@ function sessionLabel(session: ConsumerSession): string {
 
   // Joined on the parts that are present: a missing screen name or title must
   // not leave a stray separator, or produce an option labelled " - - 07:30 PM".
-  return [session.screenName, session.filmTitle, time].filter(Boolean).join(' - ');
+  return [session.screenName, session.filmTitle, time]
+    .filter(Boolean)
+    .join(" - ");
 }
 
 /**
@@ -109,7 +116,7 @@ function sessionLabel(session: ConsumerSession): string {
  * longer one of these - an unresolved screen now surfaces as a `seatRow`
  * error, which `mapCheckoutError` already routes to the row input.
  */
-const SESSION_FIELDS = new Set(['filmTitle', 'showTime']);
+const SESSION_FIELDS = new Set(["filmTitle", "showTime"]);
 
 /**
  * Cart and checkout in one sheet over the catalogue.
@@ -167,12 +174,38 @@ export default function CheckoutDrawer() {
   // `appliedCoupon` here can never actually apply a discount that is no
   // longer valid; it can only, at worst, show a discount on screen for a
   // moment before the cart is corrected.
-  const [couponInput, setCouponInput] = useState('');
+  /*
+   * Whether this cinema accepts coupon codes at all - `cinemas.offers_enabled`.
+   * Defaults true (fail open): hiding the section is cosmetic, and
+   * coupon.service.validateCoupon is the actual enforcement, so a stale or
+   * failed fetch here cannot let a coupon through at a cinema with offers off.
+   */
+  const [offersEnabled, setOffersEnabled] = useState(true);
+  const offersRequestedFor = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!cartOpen || offersRequestedFor.current === cinemaId) return;
+
+    offersRequestedFor.current = cinemaId;
+    fetchCinema(cinemaId).then(
+      (cinema) => {
+        if (offersRequestedFor.current !== cinemaId) return;
+        setOffersEnabled(cinema.offersEnabled !== false);
+      },
+      () => {
+        // Leave it at the fail-open default; retry next time the sheet opens.
+        offersRequestedFor.current = null;
+      },
+    );
+  }, [cartOpen, cinemaId]);
+
+  const [couponInput, setCouponInput] = useState("");
   const [couponChecking, setCouponChecking] = useState(false);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(
-    null
-  );
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discount: number;
+  } | null>(null);
 
   const panelRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -182,7 +215,7 @@ export default function CheckoutDrawer() {
   const subtotal = estimatedSubtotal();
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
   // Row and seat arrive already separated, so there is nothing to split.
-  const prefilledSeat = { row: contextRow ?? '', seat: contextSeat ?? '' };
+  const prefilledSeat = { row: contextRow ?? "", seat: contextSeat ?? "" };
 
   const couponDiscount = appliedCoupon?.discount ?? 0;
   // Display only - the backend recomputes this independently at order
@@ -200,7 +233,9 @@ export default function CheckoutDrawer() {
    * code again regardless, so this is a display correctness concern, not a
    * security one.
    */
-  const itemsFingerprint = items.map((item) => `${item.productId}:${item.quantity}`).join(',');
+  const itemsFingerprint = items
+    .map((item) => `${item.productId}:${item.quantity}`)
+    .join(",");
   const appliedCouponFingerprintRef = useRef<string | null>(null);
 
   const {
@@ -214,14 +249,14 @@ export default function CheckoutDrawer() {
   } = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
-      sessionId: '',
+      sessionId: "",
       // Starts empty: the row is a dropdown of the CHOSEN show's rows, so
       // there is nothing to select until a show is picked (see the effect
       // below, which fills it in - from the URL context when possible).
-      rowNumber: '',
+      rowNumber: "",
       seatNumber: prefilledSeat.seat,
-      customerMobile: '',
-      customerEmail: '',
+      customerMobile: "",
+      customerEmail: "",
     },
   });
 
@@ -281,8 +316,8 @@ export default function CheckoutDrawer() {
          */
         const current = loaded.find((candidate) => candidate.isCurrent);
 
-        if (current?.id !== undefined && !getValues('sessionId')) {
-          setValue('sessionId', String(current.id), { shouldValidate: false });
+        if (current?.id !== undefined && !getValues("sessionId")) {
+          setValue("sessionId", String(current.id), { shouldValidate: false });
         }
       },
       () => {
@@ -292,7 +327,7 @@ export default function CheckoutDrawer() {
         // Clear the marker so reopening the sheet retries rather than sitting
         // on a failure the customer cannot get past.
         sessionsRequestedFor.current = null;
-      }
+      },
     );
   }, [cartOpen, cinemaId, screenId, getValues, setValue]);
 
@@ -328,7 +363,7 @@ export default function CheckoutDrawer() {
     closeRef.current?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         // Never while the order is being placed: the request is already in
         // flight, and closing here would hide the outcome of it.
         if (busyRef.current) return;
@@ -337,9 +372,11 @@ export default function CheckoutDrawer() {
         return;
       }
 
-      if (event.key !== 'Tab' || !panelRef.current) return;
+      if (event.key !== "Tab" || !panelRef.current) return;
 
-      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+      );
       if (focusable.length === 0) return;
 
       const first = focusable[0];
@@ -362,8 +399,8 @@ export default function CheckoutDrawer() {
       }
     };
 
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [cartOpen, toggleCart]);
 
   // Hand focus back to whatever opened the sheet. Split from the effect above
@@ -377,7 +414,7 @@ export default function CheckoutDrawer() {
   }, [cartOpen]);
 
   const selectedSession = sessions.find(
-    (session) => String(session.id) === watch('sessionId')
+    (session) => String(session.id) === watch("sessionId"),
   );
 
   /**
@@ -394,17 +431,17 @@ export default function CheckoutDrawer() {
    */
   useEffect(() => {
     const rows = selectedSession?.seatRows ?? [];
-    const current = getValues('rowNumber');
+    const current = getValues("rowNumber");
 
     if (rows.length === 0) {
-      if (current) setValue('rowNumber', '');
+      if (current) setValue("rowNumber", "");
       return;
     }
 
     if (current && rows.includes(current)) return;
 
     const fromContext = prefilledSeat.row.toUpperCase();
-    setValue('rowNumber', rows.includes(fromContext) ? fromContext : '');
+    setValue("rowNumber", rows.includes(fromContext) ? fromContext : "");
   }, [selectedSession, getValues, setValue, prefilledSeat.row]);
 
   // See the fingerprint comment above `itemsFingerprint`: a coupon applied
@@ -415,7 +452,7 @@ export default function CheckoutDrawer() {
     if (appliedCouponFingerprintRef.current === itemsFingerprint) return;
 
     setAppliedCoupon(null);
-    setCouponMessage('Your cart changed, so please re-apply your coupon.');
+    setCouponMessage("Your cart changed, so please re-apply your coupon.");
     // Reacting to external state (the cart store) changing, not to a plain
     // render. This previously carried an eslint-disable for
     // react-hooks/set-state-in-effect; the rule no longer reports here, and
@@ -442,29 +479,35 @@ export default function CheckoutDrawer() {
        * are charged. Partial input yields no seat, exactly as submit's join
        * of an incomplete pair would.
        */
-      const previewRow = getValues('rowNumber')?.trim().toUpperCase();
-      const previewSeat = getValues('seatNumber')?.trim();
-      const previewSeatLabel = previewRow && previewSeat ? `${previewRow}${previewSeat}` : null;
+      const previewRow = getValues("rowNumber")?.trim().toUpperCase();
+      const previewSeat = getValues("seatNumber")?.trim();
+      const previewSeatLabel =
+        previewRow && previewSeat ? `${previewRow}${previewSeat}` : null;
 
       const result = await previewCoupon(
         cinemaId,
         code,
-        items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        })),
         source,
-        previewSeatLabel
+        previewSeatLabel,
       );
 
       if (result.valid && result.discount != null) {
         appliedCouponFingerprintRef.current = itemsFingerprint;
         setAppliedCoupon({ code, discount: result.discount });
-        setCouponInput('');
+        setCouponInput("");
       } else {
         setAppliedCoupon(null);
-        setCouponMessage(result.message || 'This coupon is not valid');
+        setCouponMessage(result.message || "This coupon is not valid");
       }
     } catch {
       setAppliedCoupon(null);
-      setCouponMessage('Could not check this coupon right now. Please try again.');
+      setCouponMessage(
+        "Could not check this coupon right now. Please try again.",
+      );
     } finally {
       setCouponChecking(false);
     }
@@ -477,16 +520,18 @@ export default function CheckoutDrawer() {
   };
 
   const onSubmit = async (data: CheckoutFormData) => {
-    const session = sessions.find((candidate) => String(candidate.id) === data.sessionId);
+    const session = sessions.find(
+      (candidate) => String(candidate.id) === data.sessionId,
+    );
 
     // The picker is populated from the same list this reads, so this is a
     // guard rather than an expected path - but submitting without it would
     // send an order with no film or time and no error to explain why.
     if (!session || !session.filmTitle || !session.startsAt) {
       setError(
-        'sessionId',
-        { type: 'manual', message: 'Please choose your show' },
-        { shouldFocus: true }
+        "sessionId",
+        { type: "manual", message: "Please choose your show" },
+        { shouldFocus: true },
       );
       return;
     }
@@ -530,13 +575,13 @@ export default function CheckoutDrawer() {
           source,
           couponCode: appliedCoupon?.code ?? null,
         },
-        uuidv4
+        uuidv4,
       );
 
       // A 2xx with no order body would otherwise leave the sheet locked
       // forever, since `placed` is what releases it.
       if (!order?.orderId) {
-        setFormError('We could not confirm your order. Please try again.');
+        setFormError("We could not confirm your order. Please try again.");
         setSubmitting(false);
         return;
       }
@@ -548,17 +593,18 @@ export default function CheckoutDrawer() {
       const contextChanges: Parameters<typeof setContext>[0] = {};
       if (submittedRow !== contextRow) contextChanges.row = submittedRow;
       if (submittedSeat !== contextSeat) contextChanges.seat = submittedSeat;
-      if (session.filmTitle !== filmTitle) contextChanges.filmTitle = session.filmTitle;
+      if (session.filmTitle !== filmTitle)
+        contextChanges.filmTitle = session.filmTitle;
       contextChanges.showTime = new Date(session.startsAt).toISOString();
 
       setContext(contextChanges);
 
       // The handoff to payment, unchanged from the checkout page: the order id
       // goes to sessionStorage and /payment owns everything after this point.
-      sessionStorage.setItem('qbusto_order_id', order.orderId.toString());
+      sessionStorage.setItem("qbusto_order_id", order.orderId.toString());
       setPlaced(true);
       toggleCart();
-      navigate('/payment', { replace: true });
+      navigate("/payment", { replace: true });
     } catch (caught) {
       const mapped = mapCheckoutError(caught);
 
@@ -567,16 +613,16 @@ export default function CheckoutDrawer() {
         // that supplied them does.
         setFormError(null);
         setError(
-          'sessionId',
-          { type: 'server', message: mapped.message },
-          { shouldFocus: true }
+          "sessionId",
+          { type: "server", message: mapped.message },
+          { shouldFocus: true },
         );
       } else if (mapped.field) {
         setFormError(null);
         setError(
           mapped.field as keyof CheckoutFormData,
-          { type: 'server', message: mapped.message },
-          { shouldFocus: true }
+          { type: "server", message: mapped.message },
+          { shouldFocus: true },
         );
       } else {
         setFormError(mapped.message);
@@ -590,13 +636,19 @@ export default function CheckoutDrawer() {
 
   return (
     <>
-      {cartOpen && <div className="cart-overlay" onClick={busy ? undefined : toggleCart} aria-hidden="true" />}
+      {cartOpen && (
+        <div
+          className="cart-overlay"
+          onClick={busy ? undefined : toggleCart}
+          aria-hidden="true"
+        />
+      )}
 
       {/* The panel stays mounted so it can animate, so it must be hidden from
           assistive tech and the tab order while closed. */}
       <aside
         ref={panelRef}
-        className={`cart-drawer${cartOpen ? ' is-open' : ''}`}
+        className={`cart-drawer${cartOpen ? " is-open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-hidden={!cartOpen}
@@ -611,7 +663,7 @@ export default function CheckoutDrawer() {
             </h2>
             {itemCount > 0 && (
               <span className="cart-drawer__count">
-                {itemCount === 1 ? '1 item' : `${itemCount} items`}
+                {itemCount === 1 ? "1 item" : `${itemCount} items`}
               </span>
             )}
           </div>
@@ -654,7 +706,9 @@ export default function CheckoutDrawer() {
 
                     <div className="cart-drawer__item-body">
                       <div className="cart-drawer__item-top">
-                        <h3 className="cart-drawer__item-name">{item.productName}</h3>
+                        <h3 className="cart-drawer__item-name">
+                          {item.productName}
+                        </h3>
                         <span className="cart-drawer__item-total">
                           {formatMoney(item.unitPrice * item.quantity)}
                         </span>
@@ -670,7 +724,9 @@ export default function CheckoutDrawer() {
                             type="button"
                             className="cart-drawer__step"
                             disabled={busy}
-                            onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                            onClick={() =>
+                              updateQuantity(item.productId, item.quantity - 1)
+                            }
                             aria-label={
                               item.quantity === 1
                                 ? `Remove ${item.productName} from cart`
@@ -680,14 +736,18 @@ export default function CheckoutDrawer() {
                             <MinusIcon size={18} />
                           </button>
                           <span className="cart-drawer__qty" aria-live="polite">
-                            <span className="sr-only">{item.productName} quantity: </span>
+                            <span className="sr-only">
+                              {item.productName} quantity:{" "}
+                            </span>
                             {item.quantity}
                           </span>
                           <button
                             type="button"
                             className="cart-drawer__step"
                             disabled={busy}
-                            onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                            onClick={() =>
+                              updateQuantity(item.productId, item.quantity + 1)
+                            }
                             aria-label={`Increase quantity of ${item.productName}`}
                           >
                             <PlusIcon size={18} />
@@ -720,18 +780,25 @@ export default function CheckoutDrawer() {
 
                   <div className="field">
                     <label className="field__label" htmlFor="checkout-session">
-                      Show <span className="field__required" aria-hidden="true">*</span>
+                      Show{" "}
+                      <span className="field__required" aria-hidden="true">
+                        *
+                      </span>
                     </label>
                     <select
                       id="checkout-session"
                       className="field__select"
                       aria-required="true"
-                      aria-invalid={errors.sessionId ? 'true' : undefined}
-                      aria-describedby={errors.sessionId ? 'checkout-session-error' : undefined}
-                      {...register('sessionId')}
+                      aria-invalid={errors.sessionId ? "true" : undefined}
+                      aria-describedby={
+                        errors.sessionId ? "checkout-session-error" : undefined
+                      }
+                      {...register("sessionId")}
                     >
                       <option value="">
-                        {sessionsLoading ? 'Loading shows…' : 'Select your show'}
+                        {sessionsLoading
+                          ? "Loading shows…"
+                          : "Select your show"}
                       </option>
                       {sessions.map((session) => (
                         <option key={session.id} value={String(session.id)}>
@@ -740,19 +807,25 @@ export default function CheckoutDrawer() {
                       ))}
                     </select>
                     {errors.sessionId && (
-                      <span className="field__error" id="checkout-session-error">
+                      <span
+                        className="field__error"
+                        id="checkout-session-error"
+                      >
                         {errors.sessionId.message}
                       </span>
                     )}
-                    {!sessionsLoading && !sessionsFailed && sessions.length === 0 && (
-                      <span className="field__error">
-                        No shows are scheduled at this cinema right now. Please ask
-                        a member of staff.
-                      </span>
-                    )}
+                    {!sessionsLoading &&
+                      !sessionsFailed &&
+                      sessions.length === 0 && (
+                        <span className="field__error">
+                          No shows are scheduled at this cinema right now.
+                          Please ask a member of staff.
+                        </span>
+                      )}
                     {sessionsFailed && (
                       <span className="field__error">
-                        We could not load the show times. Close this and try again.
+                        We could not load the show times. Close this and try
+                        again.
                       </span>
                     )}
                   </div>
@@ -760,7 +833,10 @@ export default function CheckoutDrawer() {
                   <div className="cart-drawer__fields-row">
                     <div className="field">
                       <label className="field__label" htmlFor="checkout-row">
-                        Row <span className="field__required" aria-hidden="true">*</span>
+                        Row{" "}
+                        <span className="field__required" aria-hidden="true">
+                          *
+                        </span>
                       </label>
                       {/* Always a dropdown, driven by the CHOSEN show's own
                           rows (ConsumerSession.seatRows) - the row can then
@@ -771,17 +847,22 @@ export default function CheckoutDrawer() {
                         id="checkout-row"
                         className="field__select"
                         aria-required="true"
-                        disabled={!selectedSession || selectedSession.seatRows?.length === 0}
-                        aria-invalid={errors.rowNumber ? 'true' : undefined}
-                        aria-describedby={errors.rowNumber ? 'checkout-row-error' : undefined}
-                        {...register('rowNumber')}
+                        disabled={
+                          !selectedSession ||
+                          selectedSession.seatRows?.length === 0
+                        }
+                        aria-invalid={errors.rowNumber ? "true" : undefined}
+                        aria-describedby={
+                          errors.rowNumber ? "checkout-row-error" : undefined
+                        }
+                        {...register("rowNumber")}
                       >
                         <option value="">
                           {!selectedSession
-                            ? 'Select a show first'
+                            ? "Select a show first"
                             : selectedSession.seatRows?.length
-                              ? 'Select row'
-                              : 'No rows available'}
+                              ? "Select row"
+                              : "No rows available"}
                         </option>
                         {(selectedSession?.seatRows ?? []).map((row) => (
                           <option key={row} value={row}>
@@ -798,7 +879,10 @@ export default function CheckoutDrawer() {
 
                     <div className="field">
                       <label className="field__label" htmlFor="checkout-seat">
-                        Seat <span className="field__required" aria-hidden="true">*</span>
+                        Seat{" "}
+                        <span className="field__required" aria-hidden="true">
+                          *
+                        </span>
                       </label>
                       <input
                         id="checkout-seat"
@@ -807,9 +891,11 @@ export default function CheckoutDrawer() {
                         maxLength={3}
                         placeholder="5"
                         aria-required="true"
-                        aria-invalid={errors.seatNumber ? 'true' : undefined}
-                        aria-describedby={errors.seatNumber ? 'checkout-seat-error' : undefined}
-                        {...register('seatNumber')}
+                        aria-invalid={errors.seatNumber ? "true" : undefined}
+                        aria-describedby={
+                          errors.seatNumber ? "checkout-seat-error" : undefined
+                        }
+                        {...register("seatNumber")}
                       />
                       {errors.seatNumber && (
                         <span className="field__error" id="checkout-seat-error">
@@ -821,7 +907,10 @@ export default function CheckoutDrawer() {
 
                   <div className="field">
                     <label className="field__label" htmlFor="checkout-mobile">
-                      WhatsApp No. <span className="field__required" aria-hidden="true">*</span>
+                      WhatsApp No.{" "}
+                      <span className="field__required" aria-hidden="true">
+                        *
+                      </span>
                     </label>
                     <input
                       id="checkout-mobile"
@@ -830,11 +919,13 @@ export default function CheckoutDrawer() {
                       autoComplete="tel"
                       placeholder="10-digit number"
                       aria-required="true"
-                      aria-invalid={errors.customerMobile ? 'true' : undefined}
+                      aria-invalid={errors.customerMobile ? "true" : undefined}
                       aria-describedby={
-                        errors.customerMobile ? 'checkout-mobile-error' : undefined
+                        errors.customerMobile
+                          ? "checkout-mobile-error"
+                          : undefined
                       }
-                      {...register('customerMobile')}
+                      {...register("customerMobile")}
                     />
                     {errors.customerMobile && (
                       <span className="field__error" id="checkout-mobile-error">
@@ -852,9 +943,13 @@ export default function CheckoutDrawer() {
                       type="email"
                       autoComplete="email"
                       placeholder="you@example.com"
-                      aria-invalid={errors.customerEmail ? 'true' : undefined}
-                      aria-describedby={errors.customerEmail ? 'checkout-email-error' : undefined}
-                      {...register('customerEmail')}
+                      aria-invalid={errors.customerEmail ? "true" : undefined}
+                      aria-describedby={
+                        errors.customerEmail
+                          ? "checkout-email-error"
+                          : undefined
+                      }
+                      {...register("customerEmail")}
                     />
                     {errors.customerEmail && (
                       <span className="field__error" id="checkout-email-error">
@@ -879,63 +974,70 @@ export default function CheckoutDrawer() {
                 before, so its Enter key is still handled manually and the Apply
                 button still cannot submit the checkout.
               */}
-              <div className="cart-drawer__coupon">
-                {appliedCoupon ? (
-                  <div className="cart-drawer__coupon-applied">
-                    <span className="cart-drawer__coupon-applied-text">
-                      <TagIcon size={16} />
-                      <strong>{appliedCoupon.code}</strong> applied · −{formatMoney(couponDiscount)}
-                    </span>
-                    <button
-                      type="button"
-                      className="cart-drawer__coupon-remove"
-                      onClick={handleRemoveCoupon}
-                      disabled={busy}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <div className="cart-drawer__coupon-input">
-                    <div className="field cart-drawer__coupon-field">
-                      <label className="sr-only" htmlFor="checkout-coupon">
-                        Coupon code
-                      </label>
-                      <input
-                        id="checkout-coupon"
-                        type="text"
-                        placeholder="Have a coupon code?"
-                        autoCapitalize="characters"
-                        value={couponInput}
-                        disabled={busy || couponChecking}
-                        onChange={(event) => {
-                          setCouponInput(event.target.value);
-                          if (couponMessage) setCouponMessage(null);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault();
-                            void handleApplyCoupon();
-                          }
-                        }}
-                      />
+              {offersEnabled && (
+                <div className="cart-drawer__coupon">
+                  {appliedCoupon ? (
+                    <div className="cart-drawer__coupon-applied">
+                      <span className="cart-drawer__coupon-applied-text">
+                        <TagIcon size={16} />
+                        <strong>{appliedCoupon.code}</strong> applied · −
+                        {formatMoney(couponDiscount)}
+                      </span>
+                      <button
+                        type="button"
+                        className="cart-drawer__coupon-remove"
+                        onClick={handleRemoveCoupon}
+                        disabled={busy}
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn--secondary cart-drawer__coupon-apply"
-                      disabled={busy || couponChecking || !couponInput.trim()}
-                      onClick={() => void handleApplyCoupon()}
-                    >
-                      {couponChecking ? <span className="spinner spinner--sm" /> : 'Apply'}
-                    </button>
-                  </div>
-                )}
-                {couponMessage && (
-                  <span className="cart-drawer__coupon-message" role="alert">
-                    {couponMessage}
-                  </span>
-                )}
-              </div>
+                  ) : (
+                    <div className="cart-drawer__coupon-input">
+                      <div className="field cart-drawer__coupon-field">
+                        <label className="sr-only" htmlFor="checkout-coupon">
+                          Coupon code
+                        </label>
+                        <input
+                          id="checkout-coupon"
+                          type="text"
+                          placeholder="Have a coupon code?"
+                          autoCapitalize="characters"
+                          value={couponInput}
+                          disabled={busy || couponChecking}
+                          onChange={(event) => {
+                            setCouponInput(event.target.value);
+                            if (couponMessage) setCouponMessage(null);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleApplyCoupon();
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--secondary cart-drawer__coupon-apply"
+                        disabled={busy || couponChecking || !couponInput.trim()}
+                        onClick={() => void handleApplyCoupon()}
+                      >
+                        {couponChecking ? (
+                          <span className="spinner spinner--sm" />
+                        ) : (
+                          "Apply"
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {couponMessage && (
+                    <span className="cart-drawer__coupon-message" role="alert">
+                      {couponMessage}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <footer className="cart-drawer__footer">
@@ -947,15 +1049,22 @@ export default function CheckoutDrawer() {
               )}
               {appliedCoupon && (
                 <div className="cart-drawer__summary cart-drawer__summary--muted">
-                  <span className="cart-drawer__summary-label">Coupon ({appliedCoupon.code})</span>
+                  <span className="cart-drawer__summary-label">
+                    Coupon ({appliedCoupon.code})
+                  </span>
                   <span>−{formatMoney(couponDiscount)}</span>
                 </div>
               )}
               <div className="cart-drawer__summary">
                 <span className="cart-drawer__summary-label">
-                  Total <span className="cart-drawer__summary-count">· {itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+                  Total{" "}
+                  <span className="cart-drawer__summary-count">
+                    · {itemCount} {itemCount === 1 ? "item" : "items"}
+                  </span>
                 </span>
-                <span className="cart-drawer__summary-value">{formatMoney(estimatedTotal)}</span>
+                <span className="cart-drawer__summary-value">
+                  {formatMoney(estimatedTotal)}
+                </span>
               </div>
               {/*
                 One line, not two: the show and the tax disclaimer used to be
@@ -979,10 +1088,10 @@ export default function CheckoutDrawer() {
                 {busy ? (
                   <>
                     <span className="spinner spinner--sm spinner--on-primary" />
-                    {placed ? 'Taking you to payment…' : 'Placing your order…'}
+                    {placed ? "Taking you to payment…" : "Placing your order…"}
                   </>
                 ) : (
-                  'Proceed to Pay'
+                  "Proceed to Pay"
                 )}
               </button>
               <p className="cart-drawer__secure">

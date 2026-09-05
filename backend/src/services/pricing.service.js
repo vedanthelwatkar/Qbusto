@@ -1,7 +1,20 @@
 'use strict';
 
 /**
- * Product pricing.
+ * Product pricing - ONE ROW PER (CINEMA, PRODUCT), SEVEN DAY PRICES.
+ *
+ * A row holds `mondayPrice` ... `sundayPrice`. A NULL day price means the
+ * product is not sold that day; it does not mean free, and it is a state the
+ * live data genuinely uses. Which day applies is the QBusto BUSINESS day
+ * (06:00 -> 06:00, utils/businessDay.js), so an order at 01:00 on Monday pays
+ * Sunday's price.
+ *
+ * This replaced one row per (cinema, product, day_of_week) with a
+ * `day_of_week` 0 row meaning "every day"
+ * (migration 20260905000100-product-pricing-weekly). The discount columns
+ * survived that change but are now shared by the whole week rather than being
+ * per-day - a deliberate reduction, checked against the live data first, and
+ * recorded in the migration's header.
  *
  * A price row ties a cinema to a product, and the database does not check that
  * the two belong to the same chain. For a non-owner both lookups are scoped to
@@ -9,10 +22,10 @@
  * so the two chains are compared explicitly. This mirrors the guard the
  * cinema_products and cinema_categories model hooks apply for the same gap.
  *
- * (cinema_id, product_id, day_of_week) is unique - UQ_product_pricing - so a
- * duplicate is left to the database and surfaces as a 409. Those three columns
- * are therefore fixed at creation: changing one identifies a different row, not
- * an edit of this one.
+ * (cinema_id, product_id) is unique - UQ_product_pricing_cinema_product - so a
+ * duplicate is left to the database and surfaces as a 409. Both columns are
+ * therefore fixed at creation: changing one identifies a different row, not an
+ * edit of this one.
  *
  * The rule that a discount amount is meaningless without a discountType lives
  * in the frozen ProductPricing beforeSave hook and is deliberately not repeated
@@ -27,6 +40,12 @@
  */
 
 const { models } = require('../config/database');
+const {
+  businessDayOfWeek,
+  secondsIntoDay,
+  timeToSeconds,
+  isWithinDailyWindow,
+} = require('../utils/businessDay');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES, ORDER_SOURCES } = require('../constants');
 const cache = require('./cache.service');
@@ -35,14 +54,55 @@ const PUBLIC_ATTRIBUTES = [
   'id',
   'cinemaId',
   'productId',
-  'dayOfWeek',
-  'basePrice',
-  'discountType',
-  'discountValue',
-  'discountOnQr',
-  'discountOnKiosk',
-  'discountOnSeatQr',
-  'discountOnCounter',
+  'mondayPrice',
+  'tuesdayPrice',
+  'wednesdayPrice',
+  'thursdayPrice',
+  'fridayPrice',
+  'saturdayPrice',
+  'sundayPrice',
+  'mondayDiscountType',
+  'mondayDiscountValue',
+  'mondayDiscountOnQr',
+  'mondayDiscountOnKiosk',
+  'mondayDiscountOnSeatQr',
+  'mondayDiscountOnCounter',
+  'tuesdayDiscountType',
+  'tuesdayDiscountValue',
+  'tuesdayDiscountOnQr',
+  'tuesdayDiscountOnKiosk',
+  'tuesdayDiscountOnSeatQr',
+  'tuesdayDiscountOnCounter',
+  'wednesdayDiscountType',
+  'wednesdayDiscountValue',
+  'wednesdayDiscountOnQr',
+  'wednesdayDiscountOnKiosk',
+  'wednesdayDiscountOnSeatQr',
+  'wednesdayDiscountOnCounter',
+  'thursdayDiscountType',
+  'thursdayDiscountValue',
+  'thursdayDiscountOnQr',
+  'thursdayDiscountOnKiosk',
+  'thursdayDiscountOnSeatQr',
+  'thursdayDiscountOnCounter',
+  'fridayDiscountType',
+  'fridayDiscountValue',
+  'fridayDiscountOnQr',
+  'fridayDiscountOnKiosk',
+  'fridayDiscountOnSeatQr',
+  'fridayDiscountOnCounter',
+  'saturdayDiscountType',
+  'saturdayDiscountValue',
+  'saturdayDiscountOnQr',
+  'saturdayDiscountOnKiosk',
+  'saturdayDiscountOnSeatQr',
+  'saturdayDiscountOnCounter',
+  'sundayDiscountType',
+  'sundayDiscountValue',
+  'sundayDiscountOnQr',
+  'sundayDiscountOnKiosk',
+  'sundayDiscountOnSeatQr',
+  'sundayDiscountOnCounter',
   'isActive',
   'createdAt',
   'updatedAt',
@@ -51,11 +111,16 @@ const PUBLIC_ATTRIBUTES = [
 // Shared constants and utility functions
 const EVERY_DAY = 0;
 
-const SOURCE_DISCOUNT_COLUMN = Object.freeze({
-  [ORDER_SOURCES.QR]: 'discountOnQr',
-  [ORDER_SOURCES.SEAT_QR]: 'discountOnSeatQr',
-  [ORDER_SOURCES.KIOSK]: 'discountOnKiosk',
-  [ORDER_SOURCES.COUNTER]: 'discountOnCounter',
+/**
+ * The channel-specific discount SUFFIX for each order source. Combined with a
+ * day's field prefix (e.g. `wednesdayDiscountOn`) by `unitDiscountPaise` to
+ * reach that day's channel override - `wednesdayDiscountOnQr`, and so on.
+ */
+const SOURCE_DISCOUNT_SUFFIX = Object.freeze({
+  [ORDER_SOURCES.QR]: 'Qr',
+  [ORDER_SOURCES.SEAT_QR]: 'SeatQr',
+  [ORDER_SOURCES.KIOSK]: 'Kiosk',
+  [ORDER_SOURCES.COUNTER]: 'Counter',
 });
 
 /**
@@ -82,7 +147,7 @@ function normaliseSource(source) {
   // accepted as valid sources - reaching the cache key, and reaching
   // unitDiscountPaise's column lookup, as strings no pricing row has.
   // Object.freeze does not close this; only an own-property check does.
-  return Object.hasOwn(SOURCE_DISCOUNT_COLUMN, candidate) ? candidate : ORDER_SOURCES.QR;
+  return Object.hasOwn(SOURCE_DISCOUNT_SUFFIX, candidate) ? candidate : ORDER_SOURCES.QR;
 }
 
 /**
@@ -132,10 +197,176 @@ function toDecimalString(paise) {
   return (paise / 100).toFixed(2);
 }
 
-/** The ISO day number for a date: 1 = Monday ... 7 = Sunday. */
-function isoDayOfWeek(date) {
-  const day = date.getDay();
-  return day === 0 ? 7 : day;
+/**
+ * The ISO day number whose prices and availability apply at `date`.
+ *
+ * This is the QBusto BUSINESS day (06:00 -> 06:00), not the calendar day, so
+ * an order at 01:00 on Monday is priced as Sunday - which is what the customer
+ * in a Sunday late show expects, and what the counter staff would say. The
+ * calculation lives in utils/businessDay.js; this is the name the pricing,
+ * catalogue and order paths already call, kept so there is exactly one
+ * definition of "which day is it" in the application.
+ */
+function isoDayOfWeek(date = new Date()) {
+  return businessDayOfWeek(date);
+}
+
+/**
+ * The model attribute holding each ISO weekday's price.
+ *
+ * Indexed 1-7 to match `businessDayOfWeek`. Frozen and looked up with an
+ * own-property check wherever it is used, for the same reason
+ * SOURCE_DISCOUNT_COLUMN is: a day number that arrived from outside must never
+ * resolve to an inherited key.
+ */
+const DAY_PRICE_COLUMN = Object.freeze({
+  1: 'mondayPrice',
+  2: 'tuesdayPrice',
+  3: 'wednesdayPrice',
+  4: 'thursdayPrice',
+  5: 'fridayPrice',
+  6: 'saturdayPrice',
+  7: 'sundayPrice',
+});
+
+/**
+ * The same seven columns as the DATABASE spells them.
+ *
+ * Needed because two catalogue queries are raw SQL rather than the ORM. The
+ * value is interpolated into those statements, which is safe precisely because
+ * it comes from this frozen map keyed by an integer day - never from a
+ * request. Anything reaching those queries with a day outside 1-7 gets
+ * `undefined` and a SQL error, not an injection.
+ */
+const DAY_PRICE_SQL_COLUMN = Object.freeze({
+  1: 'monday_price',
+  2: 'tuesday_price',
+  3: 'wednesday_price',
+  4: 'thursday_price',
+  5: 'friday_price',
+  6: 'saturday_price',
+  7: 'sunday_price',
+});
+
+/** Every weekday price column, Monday first. Handy for attribute lists. */
+const DAY_PRICE_COLUMNS = Object.freeze([1, 2, 3, 4, 5, 6, 7].map((day) => DAY_PRICE_COLUMN[day]));
+
+/**
+ * Each day's discount field names, keyed the same way DAY_PRICE_COLUMN is.
+ *
+ * A day's discount is INDEPENDENT of every other day's - a Wednesday-only
+ * discount must never apply on Thursday. These are the model-attribute names
+ * (camelCase); see discountForDay for how a caller reaches them safely.
+ */
+const DAY_DISCOUNT_FIELDS = Object.freeze({
+  1: {
+    type: 'mondayDiscountType',
+    value: 'mondayDiscountValue',
+    onQr: 'mondayDiscountOnQr',
+    onKiosk: 'mondayDiscountOnKiosk',
+    onSeatQr: 'mondayDiscountOnSeatQr',
+    onCounter: 'mondayDiscountOnCounter',
+  },
+  2: {
+    type: 'tuesdayDiscountType',
+    value: 'tuesdayDiscountValue',
+    onQr: 'tuesdayDiscountOnQr',
+    onKiosk: 'tuesdayDiscountOnKiosk',
+    onSeatQr: 'tuesdayDiscountOnSeatQr',
+    onCounter: 'tuesdayDiscountOnCounter',
+  },
+  3: {
+    type: 'wednesdayDiscountType',
+    value: 'wednesdayDiscountValue',
+    onQr: 'wednesdayDiscountOnQr',
+    onKiosk: 'wednesdayDiscountOnKiosk',
+    onSeatQr: 'wednesdayDiscountOnSeatQr',
+    onCounter: 'wednesdayDiscountOnCounter',
+  },
+  4: {
+    type: 'thursdayDiscountType',
+    value: 'thursdayDiscountValue',
+    onQr: 'thursdayDiscountOnQr',
+    onKiosk: 'thursdayDiscountOnKiosk',
+    onSeatQr: 'thursdayDiscountOnSeatQr',
+    onCounter: 'thursdayDiscountOnCounter',
+  },
+  5: {
+    type: 'fridayDiscountType',
+    value: 'fridayDiscountValue',
+    onQr: 'fridayDiscountOnQr',
+    onKiosk: 'fridayDiscountOnKiosk',
+    onSeatQr: 'fridayDiscountOnSeatQr',
+    onCounter: 'fridayDiscountOnCounter',
+  },
+  6: {
+    type: 'saturdayDiscountType',
+    value: 'saturdayDiscountValue',
+    onQr: 'saturdayDiscountOnQr',
+    onKiosk: 'saturdayDiscountOnKiosk',
+    onSeatQr: 'saturdayDiscountOnSeatQr',
+    onCounter: 'saturdayDiscountOnCounter',
+  },
+  7: {
+    type: 'sundayDiscountType',
+    value: 'sundayDiscountValue',
+    onQr: 'sundayDiscountOnQr',
+    onKiosk: 'sundayDiscountOnKiosk',
+    onSeatQr: 'sundayDiscountOnSeatQr',
+    onCounter: 'sundayDiscountOnCounter',
+  },
+});
+
+/**
+ * One day's discount configuration, or null if that day carries none.
+ *
+ * @returns {{type: string, value: string|null, onQr: string|null,
+ *   onKiosk: string|null, onSeatQr: string|null, onCounter: string|null}|null}
+ */
+/**
+ * Every day-discount attribute name, flattened - for Sequelize `attributes`
+ * lists that need the whole week's discount columns without spelling out all
+ * 42 of them by hand.
+ */
+const DAY_DISCOUNT_COLUMNS = Object.freeze(
+  Object.values(DAY_DISCOUNT_FIELDS).flatMap((fields) => Object.values(fields))
+);
+
+function discountForDay(pricing, day) {
+  if (!pricing) return null;
+
+  const fields = Object.hasOwn(DAY_DISCOUNT_FIELDS, day) ? DAY_DISCOUNT_FIELDS[day] : undefined;
+  if (!fields) return null;
+
+  const type = pricing[fields.type];
+  if (!type) return null;
+
+  return {
+    type,
+    value: pricing[fields.value],
+    onQr: pricing[fields.onQr],
+    onKiosk: pricing[fields.onKiosk],
+    onSeatQr: pricing[fields.onSeatQr],
+    onCounter: pricing[fields.onCounter],
+  };
+}
+
+/**
+ * What a product costs on one business day, before any discount.
+ *
+ * @returns {string|null} The DECIMAL as the driver returns it, or null when
+ *   that day carries no price - which means the product is NOT SELLABLE that
+ *   day, not that it is free.
+ */
+function priceForDay(pricing, day) {
+  if (!pricing) return null;
+
+  const column = Object.hasOwn(DAY_PRICE_COLUMN, day) ? DAY_PRICE_COLUMN[day] : undefined;
+  if (!column) return null;
+
+  const value = pricing[column];
+
+  return value === undefined ? null : value;
 }
 
 /** A Date as the 'HH:MM:SS' string a TIME column is compared against. */
@@ -192,57 +423,75 @@ function unavailableReason(cinemaProduct, now) {
 
   if (hours.length === 0) return null;
 
+  /*
+   * WHICH day's windows apply is the business day's decision (06:00 -> 06:00),
+   * so a window filed under Sunday still governs Monday 01:00.
+   *
+   * HOW FAR INTO the window we are is a plain wrap-aware comparison - see
+   * isWithinDailyWindow, which explains why the 06:00 offset cancels out of it
+   * and must not be applied twice. What that buys is a window running past
+   * midnight (22:00 -> 02:00), which the previous string comparison could
+   * never match and which a 06:00 business day makes ordinary.
+   */
   const day = isoDayOfWeek(now);
-  const time = timeOfDay(now);
+  const nowSeconds = secondsIntoDay(now);
 
   const open = hours.some((hour) => {
     if (hour.dayOfWeek !== EVERY_DAY && hour.dayOfWeek !== day) return false;
 
-    const start = formatStoredTime(hour.startTime);
-    const end = formatStoredTime(hour.endTime);
+    const start = timeToSeconds(formatStoredTime(hour.startTime));
+    const end = timeToSeconds(formatStoredTime(hour.endTime));
 
-    return start <= time && time < end;
+    return isWithinDailyWindow(nowSeconds, start, end);
   });
 
   return open ? null : 'is not available at this time of day';
 }
 
 /**
- * The price row that applies to a product at a cinema on a given day.
- * Day-specific row wins over the every-day row.
+ * The pricing row that applies to a product at a cinema on a given day.
+ *
+ * There is now at most ONE row per (cinema, product) - the week lives in its
+ * seven columns - so this no longer chooses between rows. What it still does,
+ * and what callers depend on, is answer "is this product priced today at all":
+ * a row whose column for `day` is NULL means the product is not sold that day,
+ * and returning null here keeps every caller's existing "no pricing" branch
+ * doing the right thing.
  */
 function selectPricing(pricings, day) {
-  return (
-    pricings.find((pricing) => pricing.dayOfWeek === day) ||
-    pricings.find((pricing) => pricing.dayOfWeek === EVERY_DAY) ||
-    null
-  );
+  const rows = Array.isArray(pricings) ? pricings : [pricings];
+  const pricing = rows.find(Boolean) || null;
+
+  if (!pricing) return null;
+
+  return priceForDay(pricing, day) === null ? null : pricing;
 }
 
 /**
  * The per-unit discount in paise for one price row on one channel.
  * Clamped to the unit price to prevent negative totals.
  */
-function unitDiscountPaise(pricing, source, unitPricePaise) {
-  if (!pricing.discountType) return 0;
+function unitDiscountPaise(pricing, source, unitPricePaise, day) {
+  const discount = discountForDay(pricing, day);
+  if (!discount) return 0;
 
   // Own-property check for the same reason as normaliseSource: an inherited
   // key must never resolve to a column name. Every caller normalises first;
   // this is the second lock on the same door.
-  const column =
-    typeof source === 'string' && Object.hasOwn(SOURCE_DISCOUNT_COLUMN, source)
-      ? SOURCE_DISCOUNT_COLUMN[source]
+  const suffix =
+    typeof source === 'string' && Object.hasOwn(SOURCE_DISCOUNT_SUFFIX, source)
+      ? SOURCE_DISCOUNT_SUFFIX[source]
       : undefined;
-  const channelValue = column ? pricing[column] : null;
-  const raw =
-    channelValue !== null && channelValue !== undefined ? channelValue : pricing.discountValue;
+  const channelKey = suffix ? `on${suffix}` : undefined;
+  const channelValue = channelKey ? discount[channelKey] : null;
+  const raw = channelValue !== null && channelValue !== undefined ? channelValue : discount.value;
 
   if (raw === null || raw === undefined) return 0;
 
-  const discount =
-    pricing.discountType === 'P' ? Math.round((unitPricePaise * Number(raw)) / 100) : toPaise(raw);
+  const amount =
+    discount.type === 'P' ? Math.round((unitPricePaise * Number(raw)) / 100) : toPaise(raw);
 
-  return Math.min(Math.max(discount, 0), unitPricePaise);
+  return Math.min(Math.max(amount, 0), unitPricePaise);
 }
 
 // CRUD functions for pricing management
@@ -322,15 +571,11 @@ async function findForUpdate(actor, pricingId) {
  * @param {object} query Validated query params.
  * @returns {Promise<{pricings: object[], total: number}>}
  */
-async function listPricings(
-  actor,
-  { page, limit, sort, order, cinemaId, productId, dayOfWeek, isActive }
-) {
+async function listPricings(actor, { page, limit, sort, order, cinemaId, productId, isActive }) {
   const where = {};
 
   if (cinemaId) where.cinemaId = cinemaId;
   if (productId) where.productId = productId;
-  if (dayOfWeek !== undefined) where.dayOfWeek = dayOfWeek;
   if (isActive !== undefined) where.isActive = isActive;
 
   const { rows, count } = await models.ProductPricing.findAndCountAll({
@@ -426,11 +671,18 @@ module.exports = {
   toPaise,
   toDecimalString,
   isoDayOfWeek,
+  priceForDay,
+  DAY_PRICE_COLUMN,
+  DAY_PRICE_COLUMNS,
+  DAY_PRICE_SQL_COLUMN,
   timeOfDay,
   formatStoredTime,
   unavailableReason,
   selectPricing,
+  discountForDay,
+  DAY_DISCOUNT_FIELDS,
+  DAY_DISCOUNT_COLUMNS,
   unitDiscountPaise,
   EVERY_DAY,
-  SOURCE_DISCOUNT_COLUMN,
+  SOURCE_DISCOUNT_SUFFIX,
 };

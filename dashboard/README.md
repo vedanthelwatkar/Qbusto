@@ -22,7 +22,8 @@ backend, and the interface reflects what the current user is permitted to do.
 | Orders     | Order listing and detail, with order and payment status transitions  |
 | Categories | Product categories per chain                                         |
 | Products   | Products, including add-on products                                  |
-| Pricing    | Price per cinema, product and day of week, with per-source discounts |
+| Pricing    | One weekly editor per cinema and product: seven day prices, each with its own optional discount |
+| Offers     | Coupon codes, plus the per-cinema Offers on/off switch (in Cinema settings) |
 | Banners    | Cinema-specific promotional banners                                  |
 | Users      | Staff accounts and their per-module permissions                      |
 | Settings   | Chains, cinemas, screens and sessions                                 |
@@ -44,6 +45,27 @@ There is no Films page. `session` carries the film title as a column, so there
 is no separate film catalogue to browse.
 
 ---
+
+## Tables — the row is the detail trigger
+
+**Clicking anywhere on a table row opens that row's details.** Every list works
+this way: Chains, Cinemas, Screens, Sessions, Categories, Products, Pricing,
+Banners, Offers, Orders and Users. The details shown are exactly what the first
+column's link used to open; that link is now plain text, because it was only
+ever a small target for something the whole row can do.
+
+Controls inside a row keep their own behaviour. Edit, Deactivate, toggles,
+dropdowns, checkboxes and real navigation links all act normally and do not
+also open the drawer, and selecting text in a cell does not either — copying an
+order reference has to keep working. Modifier-clicks and middle-clicks are left
+alone so "open in a new tab" still means that.
+
+One implementation, `src/utils/rowClick.tsx` (`detailRowProps`), applied as
+`onRow` on the Table. Adding a new list means passing it the same handler the
+details drawer already uses — not writing another click rule.
+
+The three tables inside drawers (order items, and the two permission grids) are
+deliberately untouched: their rows have no detail view to open.
 
 ## Technology
 

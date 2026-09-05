@@ -107,8 +107,8 @@ const {
   isoDayOfWeek: isoDayOfWeekUtil,
   unavailableReason: unavailableReasonUtil,
   selectPricing: selectPricingUtil,
+  priceForDay,
   unitDiscountPaise: unitDiscountPaiseUtil,
-  EVERY_DAY,
 } = pricingService;
 
 // ---------------------------------------------------------------------------
@@ -532,11 +532,12 @@ async function buildOrderLines(cinema, { items, source }, now, transaction) {
       ],
       transaction,
     }),
+    // No day filter: one row per (cinema, product). selectPricing decides
+    // whether today's column carries a price.
     models.ProductPricing.findAll({
       where: {
         cinemaId: cinema.id,
         productId: { [Op.in]: productIds },
-        dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
         isActive: true,
       },
       transaction,
@@ -588,8 +589,8 @@ async function buildOrderLines(cinema, { items, source }, now, transaction) {
       });
     }
 
-    const unitPaise = toPaise(pricing.basePrice);
-    const lineDiscountPaise = unitDiscountPaise(pricing, source, unitPaise) * quantity;
+    const unitPaise = toPaise(priceForDay(pricing, day));
+    const lineDiscountPaise = unitDiscountPaise(pricing, source, unitPaise, day) * quantity;
     const lineGrossPaise = unitPaise * quantity;
 
     lines.push({

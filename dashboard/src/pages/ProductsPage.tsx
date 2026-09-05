@@ -54,6 +54,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useProductsStore } from '@/stores/products.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { Text } = Typography;
 
@@ -225,15 +226,7 @@ export default function ProductsPage() {
       // Wrapping, not truncated: a product name is what the row is, and half of
       // one identifies nothing. `table-link--wrap` unpins antd's single-line
       // button height so a long name runs onto a second line in full.
-      render: (_, product) => (
-        <Button
-          type="link"
-          className="table-link table-link--wrap"
-          onClick={() => setDetailsId(product.id)}
-        >
-          {product.name}
-        </Button>
-      ),
+      render: (_, product) => <span className="table-cell--wrap">{product.name}</span>,
     },
     {
       title: 'Category',
@@ -463,6 +456,8 @@ export default function ProductsPage() {
         ) : null}
 
         <Table<Product>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Product>((product) => setDetailsId(product.id))}
           rowKey={(product) => String(product.id)}
           columns={columns}
           dataSource={products}

@@ -13,6 +13,7 @@
 
 jest.mock('../src/config/database', () => ({
   models: {
+    Cinema: { findByPk: jest.fn() },
     Offer: { findOne: jest.fn() },
     Order: { count: jest.fn() },
     PaymentStatus: { findOne: jest.fn() },
@@ -46,8 +47,51 @@ function offer(overrides = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Offers on by default - most tests are about the coupon rules themselves,
+  // not about the cinema-level switch. The switch has its own describe block.
+  models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, offersEnabled: true });
   models.PaymentStatus.findOne.mockResolvedValue({ id: PAID_STATUS_ID });
   models.Order.count.mockResolvedValue(0);
+});
+
+/**
+ * The cinema-level Offers switch (`cinemas.offers_enabled`).
+ *
+ * The Consumer hiding the "Apply coupon" section is cosmetic; THIS is the
+ * enforcement a hand-crafted request cannot get past. It runs before the
+ * offer itself is even looked up, and it never touches `offers` rows -
+ * turning the switch back on must restore behaviour exactly.
+ */
+describe('validateCoupon - the cinema-level Offers switch', () => {
+  test('a cinema with offers disabled refuses even a valid, active coupon', async () => {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, offersEnabled: false });
+    models.Offer.findOne.mockResolvedValue(offer());
+
+    const result = await validateCoupon({ cinemaId: CINEMA_ID, code: 'SAVE10', subtotalPaise: 10000 });
+
+    expect(result.valid).toBe(false);
+    expect(result.message).toMatch(/not available/i);
+    // Refused before the offer is even looked up - the switch is checked first.
+    expect(models.Offer.findOne).not.toHaveBeenCalled();
+  });
+
+  test('a nonexistent cinema is treated the same as offers disabled', async () => {
+    models.Cinema.findByPk.mockResolvedValue(null);
+
+    const result = await validateCoupon({ cinemaId: 999, code: 'SAVE10', subtotalPaise: 10000 });
+
+    expect(result.valid).toBe(false);
+    expect(models.Offer.findOne).not.toHaveBeenCalled();
+  });
+
+  test('re-enabling offers restores coupon validation exactly as before, with existing offers untouched', async () => {
+    models.Cinema.findByPk.mockResolvedValue({ id: CINEMA_ID, offersEnabled: true });
+    models.Offer.findOne.mockResolvedValue(offer());
+
+    const result = await validateCoupon({ cinemaId: CINEMA_ID, code: 'SAVE10', subtotalPaise: 10000 });
+
+    expect(result.valid).toBe(true);
+  });
 });
 
 describe('validateCoupon', () => {

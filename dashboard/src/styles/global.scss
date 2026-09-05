@@ -335,6 +335,24 @@ body {
   margin-bottom: 16px;
 }
 
+// The whole row opens its details (see utils/rowClick), so the cursor has to
+// say so - there is no link left in the first column to hint at it. Hover
+// highlighting is antd's own and already present.
+//
+// The controls INSIDE a row keep their own cursor: a disabled button must still
+// look disabled rather than inviting a click that rowClick would ignore anyway.
+.table-row--clickable {
+  cursor: pointer;
+
+  .ant-btn,
+  .ant-select,
+  .ant-switch,
+  .ant-checkbox-wrapper,
+  a {
+    cursor: revert;
+  }
+}
+
 // A table cell that is a link to the row's detail view: antd's link button
 // carries button padding, which would misalign it with the other columns.
 .table-link {

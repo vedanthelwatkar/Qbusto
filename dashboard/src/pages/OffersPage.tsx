@@ -31,6 +31,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { hasPermission } from '@/utils/permissions';
 import type { Pagination } from '@/types/api';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiOffersParams['order']> = {
@@ -129,11 +130,7 @@ export default function OffersPage() {
       dataIndex: 'code',
       key: 'code',
       sorter: true,
-      render: (_, offer) => (
-        <Button type="link" className="table-link" onClick={() => openEdit(offer)}>
-          {offer.code}
-        </Button>
-      ),
+      render: (_, offer) => offer.code,
     },
     { title: 'Name', dataIndex: 'name', key: 'name' },
     {
@@ -280,6 +277,8 @@ export default function OffersPage() {
         ) : null}
 
         <Table<Offer>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Offer>((offer) => openEdit(offer))}
           rowKey={(offer) => String(offer.id)}
           columns={columns}
           dataSource={offers}

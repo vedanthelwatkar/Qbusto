@@ -16,16 +16,22 @@ const { id, idParam, dayOfWeek, timeOfDay, paginationQuery } = require('./common
 const SORTABLE_FIELDS = ['id', 'cinemaProductId', 'dayOfWeek', 'startTime', 'endTime', 'createdAt'];
 
 /**
- * startTime must be strictly before endTime.
+ * `endTime` must not EQUAL `startTime` - a window needs positive width, or it
+ * matches no instant at all (see isWithinDailyWindow's zero-width rule).
  *
- * Compared as normalised `HH:MM:SS` strings, where lexicographic order is
- * chronological order. The sibling is normalised again here because key order
- * during validation is not something to rely on - `startTime` may still be in
- * its raw `HH:MM` form when this runs.
+ * `endTime` earlier than `startTime` is explicitly ALLOWED: that is an
+ * overnight window (22:00 -> 02:00), which the frozen model, the migration,
+ * and utils/businessDay.isWithinDailyWindow / dailyWindowsOverlap all already
+ * treat as first-class - a window that runs past midnight, not an error. This
+ * validator used to reject it (`endTime <= startTime`), which was the actual
+ * bug: nothing downstream ever needed that restriction, and it made the
+ * client's own 22:00-02:00-shaped data impossible to enter through the API,
+ * forcing the two-row midnight-split workaround this task's live-data fix
+ * cleans up (see the header on 20260906000300-fix-overnight-availability.js).
  *
- * Note this rules out an overnight window such as 22:00 -> 02:00, which the
- * frozen model and migration both comment as deliberately permitted. See
- * services/availability.service for the consequence.
+ * Compared as normalised `HH:MM:SS` strings. The sibling is normalised again
+ * here because key order during validation is not something to rely on -
+ * `startTime` may still be in its raw `HH:MM` form when this runs.
  */
 const normalise = (value) =>
   typeof value === 'string' && value.length === 5 ? `${value}:00` : value;
@@ -37,9 +43,13 @@ const timeRange = {
     .custom((value, helpers) => {
       const startTime = normalise(helpers.state.ancestors[0].startTime);
 
-      return startTime && value <= startTime ? helpers.error('any.invalid') : value;
+      return startTime && value === startTime ? helpers.error('any.invalid') : value;
     })
-    .messages({ 'any.invalid': "'endTime' must be later than 'startTime'" }),
+    .messages({
+      'any.invalid':
+        "'endTime' must not equal 'startTime' - a window needs positive width. " +
+        "To span midnight, set 'endTime' earlier than 'startTime' (e.g. 22:00 -> 02:00).",
+    }),
 };
 
 const list = {

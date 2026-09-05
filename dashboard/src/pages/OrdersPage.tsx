@@ -34,8 +34,17 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useOrdersStore } from '@/stores/orders.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDateTime } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { RangePicker } = DatePicker;
+
+/**
+ * A QBusto business day starts at 6:00 am and runs to 6:00 am the next
+ * morning. Mirrors backend `utils/businessDay.BUSINESS_DAY_START_HOUR`; the
+ * backend remains the authority, and this is only used to draw the window a
+ * date picker asks for.
+ */
+const BUSINESS_DAY_START_HOUR = 6;
 
 /** The fields GET /api/orders accepts for `sort` (GetApiOrdersSort). */
 const SORTABLE = new Set<string>([
@@ -120,13 +129,27 @@ export default function OrdersPage() {
    * `createdTo > createdFrom`. A day picked in the browser therefore has to
    * cover the whole day, or an order placed in the afternoon of the end date
    * would fall outside a range that visually includes it.
+   *
+   * A DAY HERE IS A TRADING DAY: 6:00 am to 6:00 am, the same business day the
+   * catalogue prices and schedules by. Picking "Sunday" from a midnight
+   * boundary would split the Sunday late show in half - the 11pm orders
+   * counted, the 1am ones filed under Monday - which is not how anyone at the
+   * cinema counts a night's takings.
+   *
+   * `orders.created_at` itself is untouched: it is an instant and stays one.
+   * This is only the window drawn around it.
    */
   const handleDateRange = (range: [Dayjs | null, Dayjs | null] | null) => {
     const [from, to] = range ?? [null, null];
 
     setQuery({
-      createdFrom: from ? from.startOf('day').toISOString() : undefined,
-      createdTo: to ? to.endOf('day').toISOString() : undefined,
+      createdFrom: from
+        ? from.startOf('day').add(BUSINESS_DAY_START_HOUR, 'hour').toISOString()
+        : undefined,
+      // The end day's business day ends at 6:00 am the NEXT morning.
+      createdTo: to
+        ? to.startOf('day').add(1, 'day').add(BUSINESS_DAY_START_HOUR, 'hour').toISOString()
+        : undefined,
     });
   };
 
@@ -163,11 +186,7 @@ export default function OrdersPage() {
       width: 100,
       sorter: true,
       // The identifying column opens the details view, as on every other page.
-      render: (_, order) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(order.id)}>
-          #{order.id}
-        </Button>
-      ),
+      render: (_, order) => <>#{order.id}</>,
     },
     {
       title: 'Cinema',
@@ -312,11 +331,23 @@ export default function OrdersPage() {
             key={`dates-${filterKey}`}
             allowEmpty={[true, true]}
             placeholder={['Placed from', 'Placed to']}
+            // Says the quiet part out loud: a day here is a trading day.
+            title="A day runs 6:00 am to 6:00 am the next morning"
+
+            // Shows the DAYS the user picked, undoing the 6:00 am shift the
+            // query carries - otherwise a range ending on Sunday would read
+            // back as Monday, the morning its business day happens to end on.
             defaultValue={
               query.createdFrom || query.createdTo
                 ? [
-                    query.createdFrom ? dayjs(query.createdFrom) : null,
-                    query.createdTo ? dayjs(query.createdTo) : null,
+                    query.createdFrom
+                      ? dayjs(query.createdFrom).subtract(BUSINESS_DAY_START_HOUR, 'hour')
+                      : null,
+                    query.createdTo
+                      ? dayjs(query.createdTo)
+                          .subtract(BUSINESS_DAY_START_HOUR, 'hour')
+                          .subtract(1, 'day')
+                      : null,
                   ]
                 : undefined
             }
@@ -343,6 +374,8 @@ export default function OrdersPage() {
         ) : null}
 
         <Table<Order>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Order>((order) => setDetailsId(order.id))}
           rowKey={(order) => String(order.id)}
           columns={columns}
           dataSource={orders}

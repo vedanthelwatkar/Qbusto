@@ -59,6 +59,96 @@ export function MinusIcon({ size = 20, className }: IconProps) {
   );
 }
 
+/**
+ * The standard FSSAI vegetarian mark: a green square outline with a solid
+ * green dot centred inside. Fixed colours, not `currentColor` - this is a
+ * regulated food-labelling symbol, not a themable glyph.
+ */
+export function VegMarkIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      className={className}
+      aria-hidden="true"
+      focusable={false}
+    >
+      <rect x="0.75" y="0.75" width="14.5" height="14.5" rx="2" fill="none" stroke="#1f8a4c" strokeWidth="1.5" />
+      <circle cx="8" cy="8" r="4" fill="#1f8a4c" />
+    </svg>
+  );
+}
+
+/**
+ * The standard FSSAI non-vegetarian mark: a brown/maroon square outline with
+ * a solid triangle centred inside. Same fixed-colour reasoning as VegMarkIcon.
+ */
+export function NonVegMarkIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      className={className}
+      aria-hidden="true"
+      focusable={false}
+    >
+      <rect x="0.75" y="0.75" width="14.5" height="14.5" rx="2" fill="none" stroke="#8a3b2f" strokeWidth="1.5" />
+      <path d="M8 3.6 12.6 12.4H3.4Z" fill="#8a3b2f" />
+    </svg>
+  );
+}
+
+export function BuildingIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M4 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17" />
+      <path d="M14 10h5a1 1 0 0 1 1 1v10" />
+      <path d="M9 8h1M9 12h1M9 16h1" />
+      <path d="M3 21h18" />
+    </svg>
+  );
+}
+
+export function DocumentIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M8 8h8M8 12h8M8 16h5" />
+    </svg>
+  );
+}
+
+export function PhoneIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 5 5L14 13l5 2v3a2 2 0 0 1-2 2C10.5 20 4 13.5 4 6a2 2 0 0 1 1-2Z" />
+    </svg>
+  );
+}
+
+export function MailIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m4 7 8 6 8-6" />
+    </svg>
+  );
+}
+
+export function TermsIcon({ size = 40, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <path d="M9 2h6v3H9z" />
+      <path d="m8.5 9 1.5 1.5L12.5 8" />
+      <path d="m8.5 13 1.5 1.5L12.5 12" />
+      <path d="M14 8.5h3M14 12.5h3" />
+    </svg>
+  );
+}
+
 export function TrashIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>

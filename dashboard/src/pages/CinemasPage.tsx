@@ -46,6 +46,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useCinemasStore } from '@/stores/cinemas.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { Text } = Typography;
 
@@ -170,11 +171,7 @@ export default function CinemasPage() {
       dataIndex: 'name',
       key: 'name',
       sorter: true,
-      render: (_, cinema) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(cinema.id)}>
-          {cinema.name}
-        </Button>
-      ),
+      render: (_, cinema) => cinema.name,
     },
     {
       title: 'Code',
@@ -360,6 +357,8 @@ export default function CinemasPage() {
         ) : null}
 
         <Table<Cinema>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Cinema>((cinema) => setDetailsId(cinema.id))}
           rowKey={(cinema) => String(cinema.id)}
           columns={columns}
           dataSource={cinemas}

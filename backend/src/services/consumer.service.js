@@ -80,6 +80,7 @@ const SESSIONS_PER_SCREEN = 2;
 const SESSION_STATUS_OPEN = 'O';
 
 const pricingService = require('./pricing.service');
+const cinemaContentService = require('./cinemaContent.service');
 const cache = require('./cache.service');
 const cashfree = require('./cashfree.client');
 const couponService = require('./coupon.service');
@@ -130,10 +131,16 @@ const {
   isoDayOfWeek,
   unavailableReason,
   selectPricing,
+  priceForDay,
+  DAY_PRICE_COLUMN,
+  DAY_PRICE_COLUMNS,
+  DAY_PRICE_SQL_COLUMN,
+  DAY_DISCOUNT_COLUMNS,
   unitDiscountPaise,
   deriveSource,
-  EVERY_DAY,
 } = pricingService;
+
+const { businessDate } = require('../utils/businessDay');
 
 // ---------------------------------------------------------------------------
 // Catalog endpoints
@@ -145,13 +152,46 @@ async function getCinema(cinemaId) {
     where: { isActive: true },
     // screensaverUrl is public by design: the Consumer's screensaver is what a
     // customer sees before they have identified themselves at all.
-    attributes: ['id', 'name', 'code', 'location', 'city', 'screensaverUrl'],
+    // offersEnabled tells the Consumer whether to show the coupon section at
+    // all - cosmetic only. The actual enforcement is server-side in
+    // coupon.service.validateCoupon, which a hidden section cannot bypass.
+    // gstNumber/fssaiNumber back the footer's "About Cinema" panel, same
+    // reasoning as screensaverUrl: shown before the customer has identified
+    // themselves, and there is nothing sensitive in either.
+    attributes: [
+      'id',
+      'name',
+      'code',
+      'location',
+      'city',
+      'screensaverUrl',
+      'offersEnabled',
+      'gstNumber',
+      'fssaiNumber',
+    ],
+    // LEFT JOIN by default (no `where`) - most cinemas have no content row
+    // yet, and that must not turn the whole cinema lookup into a 404.
+    include: [
+      {
+        model: models.CinemaContent,
+        as: 'content',
+        attributes: ['contactNo', 'mailId', 'tncPoints', 'iconUrl'],
+      },
+    ],
     raw: true,
+    nest: true,
   });
 
   if (!cinema) throw new NotFoundError('Cinema');
 
-  return cinema;
+  // `content` is null when no row exists yet (raw+nest still nests a LEFT
+  // JOIN miss as an all-null object, not `null` itself - normalise both).
+  const contactNo = cinema.content?.contactNo ?? null;
+  const mailId = cinema.content?.mailId ?? null;
+  const tncPoints = cinemaContentService.parseTncPoints(cinema.content?.tncPoints);
+  const iconUrl = cinema.content?.iconUrl ?? null;
+
+  return { ...cinema, content: { contactNo, mailId, tncPoints, iconUrl } };
 }
 
 /** GET /api/consumer/cinemas/{cinemaId}/screens/{id} */
@@ -211,10 +251,10 @@ async function getCategories(
     INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
     INNER JOIN cinema_products cp ON cp.product_id = p.id AND cp.cinema_id = ? AND cp.is_active = 1
     INNER JOIN product_pricing pp ON pp.product_id = p.id AND pp.cinema_id = ?
-      AND pp.day_of_week IN (?, ?) AND pp.is_active = 1
+      AND pp.${DAY_PRICE_SQL_COLUMN[isoDayOfWeek(new Date())]} IS NOT NULL AND pp.is_active = 1
     `,
     {
-      replacements: [cinemaId, cinemaId, EVERY_DAY, isoDayOfWeek(new Date())],
+      replacements: [cinemaId, cinemaId],
       type: sequelize.QueryTypes.SELECT,
     }
   );
@@ -269,22 +309,14 @@ async function getCategories(
     INNER JOIN products p ON p.category_id = c.id AND p.is_active = 1
     INNER JOIN cinema_products cp ON cp.product_id = p.id AND cp.cinema_id = ? AND cp.is_active = 1
     INNER JOIN product_pricing pp ON pp.product_id = p.id AND pp.cinema_id = ?
-      AND pp.day_of_week IN (?, ?) AND pp.is_active = 1
+      AND pp.${DAY_PRICE_SQL_COLUMN[isoDayOfWeek(new Date())]} IS NOT NULL AND pp.is_active = 1
     LEFT JOIN cinema_categories cc ON cc.category_id = c.id AND cc.cinema_id = ? AND cc.is_active = 1
     GROUP BY c.id, c.name, cc.sequence
     ORDER BY ${CATEGORY_ORDER_SQL}
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     `,
           {
-            replacements: [
-              cinemaId,
-              cinemaId,
-              EVERY_DAY,
-              isoDayOfWeek(new Date()),
-              cinemaId,
-              realOffset,
-              realLimit,
-            ],
+            replacements: [cinemaId, cinemaId, cinemaId, realOffset, realLimit],
             type: sequelize.QueryTypes.SELECT,
           }
         )
@@ -411,18 +443,18 @@ async function getProducts(
       },
       {
         association: 'pricings',
-        attributes: [
-          'basePrice',
-          'discountType',
-          'discountValue',
-          'discountOnQr',
-          'discountOnSeatQr',
-          'discountOnKiosk',
-          'discountOnCounter',
-        ],
+        attributes: [...DAY_PRICE_COLUMNS, ...DAY_DISCOUNT_COLUMNS],
+        /*
+         * `required: true` plus "today's column is not NULL" is what keeps an
+         * unpriced product out of the catalogue. It used to be expressed as a
+         * day_of_week row filter; now that the week lives in seven columns on
+         * one row, the same question is "is the product priced on today's
+         * BUSINESS day" - and a NULL column means it is not sold today, which
+         * is a live state (cinema 8 prices product 151 on Fri/Sat/Sun only).
+         */
         where: {
           cinemaId,
-          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
+          [DAY_PRICE_COLUMN[isoDayOfWeek(now)]]: { [Op.ne]: null },
           isActive: true,
         },
         required: true,
@@ -454,8 +486,11 @@ async function getProducts(
   // Transform products to include basePrice with source discount
   const transformedProducts = pageProducts.map((product) => {
     const pricing = product.pricings && product.pricings[0];
-    const unitPaise = toPaise(pricing.basePrice);
-    const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise);
+    // The join already excluded products with no price today, so the column
+    // for today's business day is present.
+    const day = isoDayOfWeek(now);
+    const unitPaise = toPaise(priceForDay(pricing, day));
+    const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise, day);
     const discountedPaise = unitPaise - discountPaise;
 
     return {
@@ -510,18 +545,18 @@ async function getProductDetail(cinemaId, productId, source = null, seat = null)
       },
       {
         association: 'pricings',
-        attributes: [
-          'basePrice',
-          'discountType',
-          'discountValue',
-          'discountOnQr',
-          'discountOnSeatQr',
-          'discountOnKiosk',
-          'discountOnCounter',
-        ],
+        attributes: [...DAY_PRICE_COLUMNS, ...DAY_DISCOUNT_COLUMNS],
+        /*
+         * `required: true` plus "today's column is not NULL" is what keeps an
+         * unpriced product out of the catalogue. It used to be expressed as a
+         * day_of_week row filter; now that the week lives in seven columns on
+         * one row, the same question is "is the product priced on today's
+         * BUSINESS day" - and a NULL column means it is not sold today, which
+         * is a live state (cinema 8 prices product 151 on Fri/Sat/Sun only).
+         */
         where: {
           cinemaId,
-          dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
+          [DAY_PRICE_COLUMN[isoDayOfWeek(now)]]: { [Op.ne]: null },
           isActive: true,
         },
         required: true,
@@ -541,8 +576,9 @@ async function getProductDetail(cinemaId, productId, source = null, seat = null)
   if (unavailableReason(product.cinemaProducts[0], now)) throw new NotFoundError('Product');
 
   const pricing = product.pricings && product.pricings[0];
-  const unitPaise = toPaise(pricing.basePrice);
-  const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise);
+  const day = isoDayOfWeek(now);
+  const unitPaise = toPaise(priceForDay(pricing, day));
+  const discountPaise = unitDiscountPaise(pricing, orderSource, unitPaise, day);
   const discountedPaise = unitPaise - discountPaise;
 
   return {
@@ -566,7 +602,20 @@ async function getBanners(cinemaId, type = null) {
 
   if (!cinema) throw new NotFoundError('Cinema');
 
-  const today = new Date();
+  /*
+   * SCHEDULED BY BUSINESS DAY, NOT BY CLOCK.
+   *
+   * `start_date` and `end_date` are dates a human picked, stored at midnight -
+   * every live row is 00:00:00. Comparing them against the raw instant made a
+   * banner appear at midnight and vanish at midnight, cutting the back half of
+   * the trading night in two: a banner ending on the 30th disappeared while
+   * the 30th's late show was still running.
+   *
+   * Comparing against the BUSINESS date instead means a banner runs from 06:00
+   * on its start date to 06:00 the morning after its end date - the same
+   * 06:00 -> 06:00 day the prices and availability windows use.
+   */
+  const today = businessDate();
 
   const where = {
     cinemaId,
@@ -1538,11 +1587,16 @@ async function buildOrderLines(cinema, payload, now, transaction) {
       ],
       transaction,
     }),
+    /*
+     * One row per (cinema, product), so there is no day filter here any more.
+     * Whether TODAY is priced is `selectPricing`'s call - it returns null when
+     * the business day's column is NULL, and the caller already turns that
+     * into "has no price set at this cinema".
+     */
     models.ProductPricing.findAll({
       where: {
         cinemaId: cinema.id,
         productId: { [Op.in]: productIds },
-        dayOfWeek: { [Op.in]: [EVERY_DAY, isoDayOfWeek(now)] },
         isActive: true,
       },
       transaction,
@@ -1580,8 +1634,8 @@ async function buildOrderLines(cinema, payload, now, transaction) {
       throw new ConflictError(`${product.name} has no price set at this cinema`, { productId });
     }
 
-    const unitPaise = toPaise(pricing.basePrice);
-    const lineDiscountPaise = unitDiscountPaise(pricing, source, unitPaise) * quantity;
+    const unitPaise = toPaise(priceForDay(pricing, day));
+    const lineDiscountPaise = unitDiscountPaise(pricing, source, unitPaise, day) * quantity;
     const lineGrossPaise = unitPaise * quantity;
 
     lines.push({

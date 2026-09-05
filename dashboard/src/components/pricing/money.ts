@@ -11,7 +11,9 @@
  * a price, where "250.00" reads as the price.
  */
 
-import type { ProductPricingDiscountType } from '@/api/generated/cinemaOrderingAPI.schemas';
+// Every day's discount type field shares the same 'P' | 'F' | null shape;
+// ProductPricingMondayDiscountType is just Monday's name for it.
+import type { ProductPricingMondayDiscountType as DiscountType } from '@/api/generated/cinemaOrderingAPI.schemas';
 
 /** What the generated ProductPricing type gives for any of its money columns. */
 type Decimal = number | null | undefined;
@@ -30,7 +32,7 @@ export function formatMoney(value: Decimal): string {
  * and gets the two places, a percentage does not - "10%" is a rate, and
  * "10.00%" only looks like more precision than anyone entered.
  */
-export function formatDiscount(value: Decimal, type: ProductPricingDiscountType): string {
+export function formatDiscount(value: Decimal, type: DiscountType): string {
   if (value === null || value === undefined || !type) return '-';
   if (!Number.isFinite(value)) return String(value);
 

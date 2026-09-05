@@ -13,6 +13,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { clearCheckoutSession } from '@/utils/checkoutSession';
 import { parseUrlParams } from '@/utils/parseUrlParams';
 import { armKioskFullscreen } from '@/utils/kioskFullscreen';
+import { sessionEndPath } from '@/utils/sessionEnd';
 import ScreensaverPage from '@/pages/ScreensaverPage';
 import CatalogPage from '@/pages/CatalogPage';
 import PaymentPage from '@/pages/PaymentPage';
@@ -91,6 +92,13 @@ const ACTIVITY_EVENTS = [
  * exact moment money may have moved.
  *
  * The screensaver is excluded too: there is nothing to abandon there.
+ *
+ * WHERE IT RETURNS TO depends on the device. A kiosk goes back to the
+ * screensaver, because the next customer is about to walk up to it. A phone
+ * goes back to the menu: nobody else is going to pick it up, and an attract
+ * screen on someone's own handset reads as a crash rather than as an
+ * invitation. Both clear the customer's data either way - that is the part
+ * that actually protects the next person. See utils/sessionEnd.
  */
 function IdleReset() {
   const navigate = useNavigate();
@@ -114,7 +122,7 @@ function IdleReset() {
       // Close the cart sheet as well as emptying it. Without this the flag
       // survives the reset and the next customer is shown an open, empty cart.
       resetUI();
-      navigate('/', { replace: true });
+      navigate(sessionEndPath(useContextStore.getState().source), { replace: true });
     };
 
     const restart = () => {

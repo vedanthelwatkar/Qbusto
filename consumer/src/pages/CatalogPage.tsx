@@ -10,6 +10,7 @@ import {
 } from '@/services/catalog.service';
 import ProductCard from '@/components/ProductCard';
 import CheckoutDrawer from '@/components/CheckoutDrawer';
+import CatalogFooter from '@/components/CatalogFooter';
 import StatePanel from '@/components/StatePanel';
 import Thumbnail from '@/components/Thumbnail';
 import {
@@ -22,7 +23,7 @@ import { resolveImageUrl } from '@/utils/imageUrl';
 import { formatApiError, isNotFoundError } from '@/utils/formatApiError';
 import { formatMoney } from '@/utils/formatMoney';
 import { AlertIcon, BagIcon } from '@/components/icons';
-import type { Category, Product, Banner } from '@/api/generated/cinemaOrderingAPI.schemas';
+import type { Category, Product, Banner, Cinema } from '@/api/generated/cinemaOrderingAPI.schemas';
 import '../styles/pages/catalog.scss';
 
 /**
@@ -127,6 +128,8 @@ export default function CatalogPage() {
   const [innerBanner, setInnerBanner] = useState<Banner | null>(null);
   /** For the "Welcome to <cinema>" strip shown above the menu. */
   const [cinemaName, setCinemaName] = useState<string | null>(null);
+  /** Backs the footer's About Cinema / T&C panels. */
+  const [cinemaInfo, setCinemaInfo] = useState<Cinema | null>(null);
   /**
    * Fatal for the page: without the rail there is nothing to browse. Held
    * locally rather than in the shared UI store, which was global state written
@@ -187,6 +190,7 @@ export default function CatalogPage() {
         setCategories(allCategories);
         setCategoriesLoading(false);
         setCinemaName(cinema.name ?? null);
+        setCinemaInfo(cinema);
         // A banner with no artwork cannot be a slide; keeping it would show a
         // blank frame in the rotation.
         setHeaderBanners(headerBanners.data.filter((banner) => banner.imageUrl));
@@ -595,6 +599,8 @@ export default function CatalogPage() {
               <p className="catalog__end" role="status">
                 That's the full menu
               </p>
+
+              <CatalogFooter cinema={cinemaInfo} />
             </>
           ) : listError ? (
             <StatePanel

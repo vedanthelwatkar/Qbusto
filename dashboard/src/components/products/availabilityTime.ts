@@ -36,14 +36,22 @@ export const START_OF_DAY = '00:00:00';
  * How to express hours that run past midnight, given the backend requires
  * `startTime` to be earlier than `endTime`.
  *
+ * BOTH HALVES GO ON THE SAME DAY, and that is the part worth getting right.
+ * A QBusto day runs 6:00 am to 6:00 am, so Sunday already OWNS the small hours
+ * of Monday morning - they are the back end of Sunday's trading night, not the
+ * front of Monday's. Filing the second half under Monday, which is what this
+ * hint used to advise, files it under Monday's 6:00 am to 6:00 am instead, and
+ * it then covers the small hours of TUESDAY.
+ *
  * Written once here because the form and the schedule both have to say the same
  * thing, and it is the one piece of the contract users will run into by
  * accident.
  */
 export const LATE_NIGHT_HINT =
-  'A window has to start and end on the same day. For hours that run past ' +
-  `midnight, add one ending at ${END_OF_DAY} and another on the next day ` +
-  `starting at ${START_OF_DAY}.`;
+  'A window has to start and end on the same day, and a day runs 6:00 am to ' +
+  '6:00 am. For hours that run past midnight, add one ending at ' +
+  `${END_OF_DAY} and another starting at ${START_OF_DAY} on the SAME day - ` +
+  'the small hours after midnight belong to the day that just ended.';
 
 /**
  * `HH:MM` or `HH:MM:SS` as a dayjs, for a TimePicker value.

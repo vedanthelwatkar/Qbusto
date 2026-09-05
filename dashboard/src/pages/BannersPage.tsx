@@ -34,6 +34,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useBannersStore } from '@/stores/banners.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 /** antd's sort direction, in the spelling the API expects. */
 const ORDER: Record<string, GetApiBannersParams['order']> = {
@@ -160,11 +161,7 @@ export default function BannersPage() {
       key: 'sequence',
       sorter: true,
       width: 120,
-      render: (_, banner) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(banner.id)}>
-          {banner.sequence ?? '-'}
-        </Button>
-      ),
+      render: (_, banner) => banner.sequence ?? '-',
     },
     {
       title: 'Cinema',
@@ -346,6 +343,8 @@ export default function BannersPage() {
         ) : null}
 
         <Table<Banner>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Banner>((banner) => setDetailsId(banner.id))}
           rowKey={(banner) => String(banner.id)}
           columns={columns}
           dataSource={banners}

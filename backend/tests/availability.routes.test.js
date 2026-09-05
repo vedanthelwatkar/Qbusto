@@ -17,6 +17,7 @@ jest.mock('../src/config/database', () => {
     CinemaProduct: { findOne: jest.fn() },
     ProductAvailabilityHour: {
       findOne: jest.fn(),
+      findAll: jest.fn(),
       findAndCountAll: jest.fn(),
       create: jest.fn(),
       destroy: jest.fn(),
@@ -235,7 +236,7 @@ describe('POST /api/product-availability-hours', () => {
   it('creates the window and normalises HH:MM to HH:MM:SS', async () => {
     const token = authenticateAs(buildActor({ id: 7 }));
     models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
-    models.ProductAvailabilityHour.findOne.mockResolvedValue(null);
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([]);
     models.ProductAvailabilityHour.create.mockResolvedValue(buildHour());
 
     const response = await request(app)
@@ -281,13 +282,32 @@ describe('POST /api/product-availability-hours', () => {
     expect(models.CinemaProduct.findOne).not.toHaveBeenCalled();
   });
 
-  it('rejects an overnight window, since endTime must be later than startTime', async () => {
+  it('accepts an overnight window - endTime earlier than startTime spans midnight', async () => {
     const token = authenticateAs(buildActor());
+    models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([]);
+    models.ProductAvailabilityHour.create.mockResolvedValue(
+      buildHour({ startTime: '22:00:00', endTime: '02:00:00' })
+    );
 
     const response = await request(app)
       .post('/api/product-availability-hours')
       .set('Authorization', token)
       .send({ ...VALID_WINDOW, startTime: '22:00', endTime: '02:00' });
+
+    expect(response.status).toBe(201);
+    expect(models.ProductAvailabilityHour.create).toHaveBeenCalledWith(
+      expect.objectContaining({ startTime: '22:00:00', endTime: '02:00:00' })
+    );
+  });
+
+  it('rejects a window whose endTime equals startTime - zero width, not 24 hours', async () => {
+    const token = authenticateAs(buildActor());
+
+    const response = await request(app)
+      .post('/api/product-availability-hours')
+      .set('Authorization', token)
+      .send({ ...VALID_WINDOW, startTime: '10:00', endTime: '10:00' });
 
     expect(response.status).toBe(400);
     expect(response.body.error.details[0].field).toBe('endTime');
@@ -307,9 +327,9 @@ describe('POST /api/product-availability-hours', () => {
   it('rejects an overlapping window with 409', async () => {
     const token = authenticateAs(buildActor());
     models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
-    models.ProductAvailabilityHour.findOne.mockResolvedValue(
-      buildHour({ id: 30, startTime: '12:00:00', endTime: '20:00:00' })
-    );
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([
+      buildHour({ id: 30, startTime: '12:00:00', endTime: '20:00:00' }),
+    ]);
 
     const response = await request(app)
       .post('/api/product-availability-hours')
@@ -325,7 +345,7 @@ describe('POST /api/product-availability-hours', () => {
   it('checks a specific day against that day and against day 0', async () => {
     const token = authenticateAs(buildActor());
     models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
-    models.ProductAvailabilityHour.findOne.mockResolvedValue(null);
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([]);
     models.ProductAvailabilityHour.create.mockResolvedValue(buildHour());
 
     await request(app)
@@ -333,17 +353,59 @@ describe('POST /api/product-availability-hours', () => {
       .set('Authorization', token)
       .send({ ...VALID_WINDOW, dayOfWeek: 3 });
 
-    const { where } = models.ProductAvailabilityHour.findOne.mock.calls[0][0];
+    const { where } = models.ProductAvailabilityHour.findAll.mock.calls[0][0];
     expect(where.dayOfWeek).toEqual({ [Op.in]: [0, 3] });
-    // Strict comparisons, so touching ranges do not count as overlapping.
-    expect(where.startTime).toEqual({ [Op.lt]: '17:30:00' });
-    expect(where.endTime).toEqual({ [Op.gt]: '09:00:00' });
+
+    /*
+     * The TIME comparison is no longer in the query. It moved into JS so a
+     * window that runs past midnight (22:00 -> 02:00) can be compared on a
+     * 24-hour circle - a SQL `start < ? AND end > ?` pair silently matches
+     * nothing for such a window, so two overlapping late-night windows would
+     * both have saved. See assertNoOverlap.
+     */
+    expect(where).not.toHaveProperty('startTime');
+    expect(where).not.toHaveProperty('endTime');
+  });
+
+  it('rejects a late-night window overlapping another that runs past midnight', async () => {
+    const token = authenticateAs(buildActor());
+    models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
+    // 22:00 -> 02:00, an ordinary evening under a 06:00 business day.
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([
+      buildHour({ id: 44, startTime: '22:00:00', endTime: '02:00:00' }),
+    ]);
+
+    const response = await request(app)
+      .post('/api/product-availability-hours')
+      .set('Authorization', token)
+      .send({ ...VALID_WINDOW, startTime: '01:00', endTime: '03:00' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.details.conflictingId).toBe(44);
+    expect(models.ProductAvailabilityHour.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a window that merely touches one running past midnight', async () => {
+    const token = authenticateAs(buildActor());
+    models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([
+      buildHour({ id: 44, startTime: '22:00:00', endTime: '02:00:00' }),
+    ]);
+    models.ProductAvailabilityHour.create.mockResolvedValue(buildHour());
+
+    const response = await request(app)
+      .post('/api/product-availability-hours')
+      .set('Authorization', token)
+      .send({ ...VALID_WINDOW, startTime: '02:00', endTime: '05:00' });
+
+    // [start, end) - touching is not overlapping.
+    expect(response.status).toBe(201);
   });
 
   it('checks an every-day window against every day, with no day filter', async () => {
     const token = authenticateAs(buildActor());
     models.CinemaProduct.findOne.mockResolvedValue({ id: 12, cinemaId: 3, productId: 17 });
-    models.ProductAvailabilityHour.findOne.mockResolvedValue(null);
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([]);
     models.ProductAvailabilityHour.create.mockResolvedValue(buildHour());
 
     await request(app)
@@ -351,7 +413,7 @@ describe('POST /api/product-availability-hours', () => {
       .set('Authorization', token)
       .send({ ...VALID_WINDOW, dayOfWeek: 0 });
 
-    expect(models.ProductAvailabilityHour.findOne.mock.calls[0][0].where).not.toHaveProperty(
+    expect(models.ProductAvailabilityHour.findAll.mock.calls[0][0].where).not.toHaveProperty(
       'dayOfWeek'
     );
   });
@@ -379,7 +441,8 @@ describe('PUT /api/product-availability-hours/:id', () => {
   it('updates the window and excludes itself from the overlap check', async () => {
     const token = authenticateAs(buildActor({ id: 7 }));
     const hour = buildHour({ id: 31, cinemaProductId: 12 });
-    models.ProductAvailabilityHour.findOne.mockResolvedValueOnce(hour).mockResolvedValueOnce(null);
+    models.ProductAvailabilityHour.findOne.mockResolvedValue(hour);
+    models.ProductAvailabilityHour.findAll.mockResolvedValue([]);
 
     const response = await request(app)
       .put('/api/product-availability-hours/31')
@@ -387,7 +450,7 @@ describe('PUT /api/product-availability-hours/:id', () => {
       .send({ dayOfWeek: 1, startTime: '10:00', endTime: '18:00' });
 
     expect(response.status).toBe(200);
-    expect(models.ProductAvailabilityHour.findOne.mock.calls[1][0].where.id).toEqual({
+    expect(models.ProductAvailabilityHour.findAll.mock.calls[0][0].where.id).toEqual({
       [Op.ne]: 31,
     });
     expect(hour.update).toHaveBeenCalledWith(

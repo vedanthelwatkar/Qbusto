@@ -22,6 +22,8 @@
 
 const request = require('supertest');
 
+const { everyDayDiscount } = require('./helpers/dayDiscount');
+
 jest.mock('../src/config/database', () => {
   const models = {
     Cinema: { findByPk: jest.fn(), findOne: jest.fn() },
@@ -69,13 +71,17 @@ const BASE_PRICE = '250.00';
  * kiosk 5% = ₹12.50 -> ₹237.50, counter 40% = ₹100 -> ₹150, fallback 50%.
  */
 const DISTINCT_PRICING = {
-  basePrice: BASE_PRICE,
-  discountType: 'P',
-  discountValue: 50,
-  discountOnQr: 10,
-  discountOnSeatQr: 20,
-  discountOnKiosk: 5,
-  discountOnCounter: 40,
+  mondayPrice: BASE_PRICE,
+  tuesdayPrice: BASE_PRICE,
+  wednesdayPrice: BASE_PRICE,
+  thursdayPrice: BASE_PRICE,
+  fridayPrice: BASE_PRICE,
+  saturdayPrice: BASE_PRICE,
+  sundayPrice: BASE_PRICE,
+  // Every day carries the SAME discount - these tests are about channel
+  // arithmetic, not about which day the server's clock lands on when the
+  // suite runs. Day-specific discount behaviour has its own test file.
+  ...everyDayDiscount({ type: 'P', value: 50, onQr: 10, onSeatQr: 20, onKiosk: 5, onCounter: 40 }),
 };
 
 /** What each source must be shown, given DISTINCT_PRICING. */
@@ -201,13 +207,16 @@ describe('sources whose prices differ', () => {
     // buildOrderLines uses unitDiscountPaise with the order's own source, so
     // agreement is asserted against that function rather than a copied
     // constant - a change to either side breaks this test.
-    const { unitDiscountPaise, toPaise } = require('../src/services/pricing.service');
+    const { unitDiscountPaise, toPaise, isoDayOfWeek } = require('../src/services/pricing.service');
 
     for (const source of Object.keys(EXPECTED)) {
       const response = await request(app).get(listUrl(source));
 
       const unitPaise = toPaise(BASE_PRICE);
-      const charged = (unitPaise - unitDiscountPaise(DISTINCT_PRICING, source, unitPaise)) / 100;
+      // Every day carries the same discount in this fixture, so any day works.
+      const day = isoDayOfWeek(new Date());
+      const charged =
+        (unitPaise - unitDiscountPaise(DISTINCT_PRICING, source, unitPaise, day)) / 100;
 
       expect(response.body.data[0].basePrice).toBe(charged);
     }
@@ -356,10 +365,7 @@ describe('the cache key separates the sources', () => {
     models.Product.findAll.mockResolvedValue([
       buildProduct({
         ...DISTINCT_PRICING,
-        discountOnQr: 20,
-        discountOnSeatQr: 40,
-        discountOnKiosk: 10,
-        discountOnCounter: 80,
+        ...everyDayDiscount({ type: 'P', value: 50, onQr: 20, onSeatQr: 40, onKiosk: 10, onCounter: 80 }),
       }),
     ]);
 

@@ -9,11 +9,14 @@ import type {
   DeleteApiCinemasId200,
   GetApiCinemas200,
   GetApiCinemasId200,
+  GetApiCinemasIdContent200,
   GetApiCinemasParams,
   PostApiCinemas201,
   PostApiCinemasBody,
   PutApiCinemasId200,
-  PutApiCinemasIdBody
+  PutApiCinemasIdBody,
+  PutApiCinemasIdContent200,
+  PutApiCinemasIdContentBody
 } from '../cinemaOrderingAPI.schemas';
 
 import { customInstance } from '../../axios-instance';
@@ -88,9 +91,38 @@ const deleteApiCinemasId = (
     },
       );
     }
-  return {getApiCinemas,postApiCinemas,getApiCinemasId,putApiCinemasId,deleteApiCinemasId}};
+  /**
+ * The Consumer footer's "About Cinema" and "Terms & Conditions" content. Returns an empty shape (nulls, an empty `tncPoints`) when nothing has been configured yet - that is a normal state, not a 404. Requires the Settings module read permission.
+ * @summary Get a cinema's About/Terms footer content
+ */
+const getApiCinemasIdContent = (
+    id: number,
+ ) => {
+      return customInstance<GetApiCinemasIdContent200>(
+      {url: `/api/cinemas/${id}/content`, method: 'GET'
+    },
+      );
+    }
+  /**
+ * One row per cinema - created on first save, replaced thereafter. `tncPoints` is the whole list in display order; sending a shorter list removes the trailing points. Requires the Settings module edit permission.
+ * @summary Create or replace a cinema's About/Terms footer content
+ */
+const putApiCinemasIdContent = (
+    id: number,
+    putApiCinemasIdContentBody: PutApiCinemasIdContentBody,
+ ) => {
+      return customInstance<PutApiCinemasIdContent200>(
+      {url: `/api/cinemas/${id}/content`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: putApiCinemasIdContentBody
+    },
+      );
+    }
+  return {getApiCinemas,postApiCinemas,getApiCinemasId,putApiCinemasId,deleteApiCinemasId,getApiCinemasIdContent,putApiCinemasIdContent}};
 export type GetApiCinemasResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['getApiCinemas']>>>
 export type PostApiCinemasResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['postApiCinemas']>>>
 export type GetApiCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['getApiCinemasId']>>>
 export type PutApiCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['putApiCinemasId']>>>
 export type DeleteApiCinemasIdResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['deleteApiCinemasId']>>>
+export type GetApiCinemasIdContentResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['getApiCinemasIdContent']>>>
+export type PutApiCinemasIdContentResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getCinemas>['putApiCinemasIdContent']>>>

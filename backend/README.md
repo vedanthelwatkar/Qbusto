@@ -65,9 +65,10 @@ exist.
 | Chains, cinemas, screens | Tenant hierarchy                                               |
 | Categories & products    | Catalogue, including add-on products                           |
 | Cinema products          | Which products a given cinema carries                          |
-| Availability hours       | Per-cinema, per-day serving windows                            |
-| Pricing                  | Per cinema, product and day of week, with per-source discounts |
+| Availability hours       | Per-cinema, per-day serving windows, overnight windows allowed  |
+| Pricing                  | One row per cinema/product, seven day prices, each with its own discount |
 | Banners                  | Cinema-specific promotional images                             |
+| Offers / coupons         | Per-cinema Offers on/off switch plus coupon codes               |
 | Image uploads            | Authenticated image upload, storage and serving                |
 | Orders                   | Staff-facing order listing, creation and status transitions    |
 | Consumer API             | Public, unauthenticated catalogue, sessions and ordering       |

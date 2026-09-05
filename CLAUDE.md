@@ -86,6 +86,60 @@ its own clock (`startsAt <= now < endsAt`). A client-supplied time is never
 accepted, and the customer can still change the selection. Detail:
 [client-tables.md](./.claude/rules/client-tables.md).
 
+## Business day — 6:00 am to 6:00 am
+
+**A QBusto day starts at 6:00 am and ends at 5:59:59 am the next morning.**
+Sunday means Sunday 6:00 am through Monday 6:00 am, so an order placed at
+01:00 on Monday is a *Sunday* order: it pays Sunday's price and sees Sunday's
+availability. A cinema's last show ends at 01:30 and nobody there calls that
+Monday.
+
+One implementation, `backend/src/utils/businessDay.js`. It decides **which
+day's rules apply** — the price column, the availability windows, whether a
+banner is in season, the window a Dashboard date filter covers. It is
+deliberately **not** applied to instants: `created_at`, order and payment times
+and every status log are unchanged. Don't call `Date.getDay()` to pick a day's
+rules; call `businessDayOfWeek`.
+
+## Pricing — one row, seven day columns, seven independent discounts
+
+`product_pricing` holds `monday_price` … `sunday_price` on a single row per
+`(cinema, product)`. **A NULL day price means the product is not sold that
+day** — not free, not zero; it drops out of the customer's menu. There is no
+`day_of_week` and no `base_price`; `20260905000100-product-pricing-weekly`
+collapsed the old row-per-day shape into columns.
+
+**Each day also has its own discount** — `{day}DiscountType`,
+`{day}DiscountValue`, `{day}DiscountOn{Qr,Kiosk,SeatQr,Counter}`, one full set
+per day (`20260906000200-product-pricing-day-discounts`). A Wednesday-only
+discount (live data: cinema 1 / product 14) must never apply on Thursday, so
+there is no shared, whole-week discount field — `pricing.service
+.discountForDay(pricing, day)` and `unitDiscountPaise(pricing, source,
+unitPrice, day)` both take the business day explicitly. The Dashboard edits
+all seven prices and all seven discounts from one modal
+(`WeeklyPriceFields`), each day's discount in its own Popover so a Wednesday
+edit cannot fat-finger Thursday's fields.
+
+## Cinema Offers flag — coupon feature, gated per cinema
+
+`cinemas.offers_enabled` (default `true`) turns the coupon feature on or off
+per cinema. **Enforced server-side**, in `coupon.service.validateCoupon` —
+it refuses any coupon code when the flag is off, regardless of what the
+client sends; the Consumer hiding its "Apply coupon" section is cosmetic on
+top of that, not the actual guard. Turning it off never deletes or
+deactivates `offers` rows.
+
+## Dashboard tables — the row opens the details
+
+Every list table's row is clickable and opens that row's existing detail
+modal/drawer — the first-column link that used to be the only way in is now
+plain text. One shared helper, `dashboard/src/utils/rowClick.tsx`
+(`detailRowProps`), applied via `onRow`; it ignores clicks on buttons,
+selects, switches, checkboxes, links, and text selections, and leaves
+modifier/middle-clicks alone. Applied to all eleven list tables; the three
+tables that live inside drawers (order items, permission grids) have no
+detail view and are untouched.
+
 ## Timezone — IST everywhere, storage included
 
 **The database stores IST wall clock, not UTC.** A client requirement, and the
@@ -215,6 +269,13 @@ and skills in `.claude/skills/` (`/gen-api`, `/verify`, `/migration`,
 7. Don't bypass `applyPaidTransition()` for a `pending → paid` move.
 8. Out-of-scope resource ⇒ **404, not 403**.
 9. `make migrate`, not `npm run db:migrate` (that script doesn't exist).
+9a. Don't map BOTH ends of a daily window onto the 6:00 am axis. The offset
+    cancels in a wrap-aware comparison, and applying it twice turns the
+    everyday `00:00:00-23:59:59` window into `18:00:00 -> 17:59:59` — 110 live
+    rows would go dark from 6:00 am. Only the weekday choice uses the boundary.
+9b. A late-night availability window splits across two rows **on the same
+    weekday**, not onto the next one: the small hours belong to the day that
+    just ended.
 10. Rebuild frontends to change `VITE_API_URL` — it's baked in at build time.
 11. Don't give Cashfree any role in a coupon/discount decision — no
     `order_meta.offer_filters`, no "short payment matches a known offer"

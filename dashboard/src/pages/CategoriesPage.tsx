@@ -40,6 +40,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useCategoriesStore } from '@/stores/categories.store';
 import { hasPermission } from '@/utils/permissions';
 import { formatDate } from '@/utils/datetime';
+import { detailRowProps } from '@/utils/rowClick';
 
 const { Text } = Typography;
 
@@ -120,11 +121,7 @@ export default function CategoriesPage() {
       dataIndex: 'name',
       key: 'name',
       sorter: true,
-      render: (_, category) => (
-        <Button type="link" className="table-link" onClick={() => setDetailsId(category.id)}>
-          {category.name}
-        </Button>
-      ),
+      render: (_, category) => category.name,
     },
     {
       title: 'Description',
@@ -273,6 +270,8 @@ export default function CategoriesPage() {
         ) : null}
 
         <Table<Category>
+          // The row is the detail trigger - see utils/rowClick.
+          onRow={detailRowProps<Category>((category) => setDetailsId(category.id))}
           rowKey={(category) => String(category.id)}
           columns={columns}
           dataSource={categories}

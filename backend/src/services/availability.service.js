@@ -22,6 +22,7 @@
 const { Op } = require('sequelize');
 
 const { models } = require('../config/database');
+const { timeToSeconds, dailyWindowsOverlap } = require('../utils/businessDay');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 const { ROLES } = require('../constants');
 const cache = require('./cache.service');
@@ -139,19 +140,25 @@ async function findCinemaProductInScope(actor, cinemaProductId) {
  * is checked against that day *and* day 0. Without this an "all days" window
  * and a Monday window could silently cover the same hour.
  *
- * Times are TIME columns compared against normalised 'HH:MM:SS' strings. Two
- * ranges overlap when each starts before the other ends; touching ranges
- * (09:00-12:00 and 12:00-15:00) do not overlap, which is why the comparisons
- * are strict.
+ * THE COMPARISON IS DONE IN JS, NOT IN SQL, AND THAT IS THE POINT.
+ *
+ * Under a 06:00 business day an evening window may legitimately run past
+ * midnight (22:00 -> 02:00). A SQL `start < ? AND end > ?` pair cannot express
+ * that - it treats the day as a line, and a window whose end precedes its start
+ * silently matches nothing, so two overlapping late-night windows would both
+ * save. `dailyWindowsOverlap` compares them on a 24-hour circle instead, which
+ * is the same shape `isWithinDailyWindow` reads them with, so what the writer
+ * rejects and what the reader honours cannot drift apart.
+ *
+ * Fetching the candidates first is affordable: these are the windows of ONE
+ * cinema product, a handful of rows even in the busiest catalogue.
+ *
+ * Touching windows (09:00-12:00 and 12:00-15:00) do not overlap.
  *
  * @throws {ConflictError} 409 naming the window that clashes.
  */
 async function assertNoOverlap(cinemaProductId, { dayOfWeek, startTime, endTime }, excludeId) {
-  const where = {
-    cinemaProductId,
-    startTime: { [Op.lt]: endTime },
-    endTime: { [Op.gt]: startTime },
-  };
+  const where = { cinemaProductId };
 
   // An every-day window is checked against every existing day, so no day filter
   // is applied at all in that case.
@@ -161,10 +168,22 @@ async function assertNoOverlap(cinemaProductId, { dayOfWeek, startTime, endTime 
 
   if (excludeId !== undefined) where.id = { [Op.ne]: excludeId };
 
-  const clash = await models.ProductAvailabilityHour.findOne({
+  const candidates = await models.ProductAvailabilityHour.findAll({
     where,
     attributes: ['id', 'dayOfWeek', 'startTime', 'endTime'],
   });
+
+  const start = timeToSeconds(startTime);
+  const end = timeToSeconds(endTime);
+
+  const clash = candidates.find((existing) =>
+    dailyWindowsOverlap(
+      start,
+      end,
+      timeToSeconds(formatTime(existing.startTime)),
+      timeToSeconds(formatTime(existing.endTime))
+    )
+  );
 
   if (clash) {
     throw new ConflictError('This availability window overlaps an existing one', {

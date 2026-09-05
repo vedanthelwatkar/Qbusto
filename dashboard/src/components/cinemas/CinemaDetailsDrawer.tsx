@@ -10,9 +10,14 @@ import { Alert, App, Button, Descriptions, Drawer, Image, Space, Tag, Typography
 
 import DetailsSkeleton from '@/components/DetailsSkeleton';
 
-import type { Cinema, PaymentGatewayConfig } from '@/api/generated/cinemaOrderingAPI.schemas';
+import type {
+  Cinema,
+  CinemaContent,
+  PaymentGatewayConfig,
+} from '@/api/generated/cinemaOrderingAPI.schemas';
 import CinemaPaymentGatewayModal from '@/components/cinemas/CinemaPaymentGatewayModal';
 import CinemaCategoryOrderModal from '@/components/cinemas/CinemaCategoryOrderModal';
+import CinemaContentFormModal from '@/components/cinemas/CinemaContentFormModal';
 import { toApiError } from '@/services/api';
 import * as cinemasService from '@/services/cinemas.service';
 import * as gatewayConfigService from '@/services/paymentGatewayConfig.service';
@@ -49,6 +54,13 @@ export default function CinemaDetailsDrawer({
   const [gatewayError, setGatewayError] = useState<string | null>(null);
   const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
   const [categoryOrderOpen, setCategoryOrderOpen] = useState(false);
+
+  const [content, setContent] = useState<CinemaContent | null>(null);
+  const [contentLoading, setContentLoading] = useState(true);
+  const [contentError, setContentError] = useState<string | null>(null);
+  const [contentModalOpen, setContentModalOpen] = useState(false);
+  /** Bumped to re-run the fetch effect below after a save. */
+  const [contentRefreshKey, setContentRefreshKey] = useState(0);
 
   /** Closes itself, then tells the parent, so the slide-out animation runs. */
   const [visible, setVisible] = useState(true);
@@ -105,6 +117,32 @@ export default function CinemaDetailsDrawer({
     setGatewayLoading(true);
     setGatewayError(null);
     setGatewayRefreshKey((n) => n + 1);
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    cinemasService
+      .getCinemaContent(cinemaId)
+      .then((loaded) => {
+        if (active) setContent(loaded);
+      })
+      .catch((caught: unknown) => {
+        if (active) setContentError(toApiError(caught).message);
+      })
+      .finally(() => {
+        if (active) setContentLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [cinemaId, contentRefreshKey]);
+
+  const fetchContent = () => {
+    setContentLoading(true);
+    setContentError(null);
+    setContentRefreshKey((n) => n + 1);
   };
 
   const confirmDeactivateGateway = () => {
@@ -198,6 +236,11 @@ export default function CinemaDetailsDrawer({
             </Tag>
             <Tag color={cinema.whatsappEnabled ? 'success' : 'default'}>
               WhatsApp {cinema.whatsappEnabled ? 'on' : 'off'}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Offers">
+            <Tag color={cinema.offersEnabled !== false ? 'success' : 'default'}>
+              Coupons {cinema.offersEnabled !== false ? 'on' : 'off'}
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Created">
@@ -297,6 +340,44 @@ export default function CinemaDetailsDrawer({
         </>
       ) : null}
 
+      {cinema ? (
+        <>
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
+            About &amp; Terms
+          </Typography.Title>
+
+          {contentError ? (
+            <Alert type="error" showIcon message={contentError} className="form-alert" />
+          ) : null}
+
+          {contentLoading ? (
+            <DetailsSkeleton rows={2} />
+          ) : (
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="Contact number">
+                {content?.contactNo ?? <Text type="secondary">Not set</Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Mail ID">
+                {content?.mailId ?? <Text type="secondary">Not set</Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Terms & Conditions">
+                {content?.tncPoints?.length ? (
+                  `${content.tncPoints.length} point${content.tncPoints.length === 1 ? '' : 's'}`
+                ) : (
+                  <Text type="secondary">Not set</Text>
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+          )}
+
+          <Space style={{ marginTop: 12 }}>
+            <Button size="small" onClick={() => setContentModalOpen(true)}>
+              Edit About &amp; Terms
+            </Button>
+          </Space>
+        </>
+      ) : null}
+
       {gatewayModalOpen && cinema ? (
         <CinemaPaymentGatewayModal
           cinemaId={cinemaId}
@@ -311,6 +392,15 @@ export default function CinemaDetailsDrawer({
           cinemaId={cinemaId}
           cinemaName={cinema.name ?? 'this cinema'}
           onClose={() => setCategoryOrderOpen(false)}
+        />
+      ) : null}
+
+      {contentModalOpen && cinema ? (
+        <CinemaContentFormModal
+          cinemaId={cinemaId}
+          cinemaName={cinema.name ?? 'this cinema'}
+          onClose={() => setContentModalOpen(false)}
+          onSaved={fetchContent}
         />
       ) : null}
     </Drawer>
